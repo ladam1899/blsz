@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>League Manager</title>
+<script src="https://accounts.google.com/gsi/client"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f4f0;--surface:#ffffff;--surface2:#f0efe9;--border:#e2e0d8;--border2:#ccc9be;
+  --text:#1a1a18;--muted:#888680;--dimmed:#b8b5ac;
+  --green:#1a6b3a;--green-light:#e8f5ee;--green-mid:#2d9653;
+  --red:#c0392b;--red-light:#fdf0ee;
+  --gold:#c8980a;--gold-light:#fdf6e0;
+  --blue:#1a4fa0;--blue-light:#eaf0fb;
+  --accent:#1a6b3a;--accent2:#e8f5ee;
+  --r:8px;--r2:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* AUTH */
+.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:40px 36px;width:380px;max-width:92vw;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.06);}
+.auth-badge{width:56px;height:56px;background:var(--green-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:24px;}
+.auth-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.04em;color:var(--text);margin-bottom:8px;}
+.auth-sub{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:28px;}
+.auth-btn{display:inline-flex;align-items:center;gap:10px;padding:12px 24px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;width:100%;justify-content:center;}
+.auth-btn:hover{background:var(--surface2);border-color:var(--green);}
+.auth-note{font-size:11px;color:var(--dimmed);margin-top:14px;line-height:1.6;}
+
+/* HEADER */
+header{background:var(--green);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:30;}
+.header-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.08em;color:#fff;}
+.header-logo span{color:#7dd8a0;margin-left:6px;font-size:14px;letter-spacing:.06em;}
+.header-right{display:flex;align-items:center;gap:8px;}
+.hbtn{font-size:11px;padding:5px 12px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;transition:all .15s;font-family:'JetBrains Mono',monospace;letter-spacing:.04em;white-space:nowrap;}
+.hbtn:hover{background:rgba(255,255,255,.12);color:#fff;}
+.hbtn.admin-on{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.5);}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);}
+.sync-dot.ok{background:#7dd8a0;}
+.sync-dot.busy{background:#f59e0b;animation:pulse 1s infinite;}
+.sync-dot.err{background:#f87171;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* LEAGUE TABS */
+.league-nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto;scrollbar-width:none;}
+.league-nav::-webkit-scrollbar{display:none;}
+.ltab{font-size:13px;font-weight:500;padding:14px 18px;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
+.ltab:hover{color:var(--text);}
+.ltab.active{color:var(--green);border-bottom-color:var(--green);}
+
+/* MAIN LAYOUT */
+.main-wrap{max-width:1100px;margin:0 auto;padding:24px 16px;}
+.page-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
+.ptab{font-size:12px;padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;font-weight:500;}
+.ptab:hover{border-color:var(--green);color:var(--green);}
+.ptab.active{background:var(--green);border-color:var(--green);color:#fff;}
+
+/* STANDINGS TABLE */
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.06em;color:var(--text);margin-bottom:12px;}
+.standings-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:24px;}
+.standings-table{width:100%;border-collapse:collapse;font-size:13px;}
+.standings-table th{background:var(--surface2);padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+.standings-table th.num{text-align:center;}
+.standings-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.standings-table tr:last-child td{border-bottom:none;}
+.standings-table tr:hover td{background:var(--surface2);}
+.standings-table td.num{text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
+.standings-table td.pts{text-align:center;font-weight:700;font-size:14px;}
+.pos-num{width:24px;height:24px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;}
+.pos-1{background:var(--gold-light);color:var(--gold);}
+.pos-2,.pos-3{background:var(--blue-light);color:var(--blue);}
+.pos-rel{background:var(--red-light);color:var(--red);}
+.pos-def{background:var(--surface2);color:var(--muted);}
+.team-cell{display:flex;align-items:center;gap:8px;}
+.team-badge{width:22px;height:22px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;}
+.form-dots{display:flex;gap:2px;}
+.form-dot{width:8px;height:8px;border-radius:50%;}
+.form-w{background:var(--green-mid);}
+.form-d{background:var(--gold);}
+.form-l{background:var(--red);}
+
+/* RESULTS / FIXTURES */
+.matches-list{display:flex;flex-direction:column;gap:6px;margin-bottom:24px;}
+.round-header{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px;}
+.match-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;transition:border-color .15s;}
+.match-card:hover{border-color:var(--border2);}
+.match-card.played{border-left:3px solid var(--green);}
+.match-card.upcoming{border-left:3px solid var(--border2);}
+.match-home{text-align:right;}
+.match-away{text-align:left;}
+.match-team{font-size:13px;font-weight:500;}
+.match-score{text-align:center;min-width:60px;}
+.score-box{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.06em;color:var(--text);}
+.score-sep{color:var(--dimmed);margin:0 2px;}
+.match-date{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;}
+.fixture-time{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--green);}
+.match-edit-btn{font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;margin-left:8px;}
+.match-edit-btn:hover{border-color:var(--green);color:var(--green);}
+
+/* TOP SCORERS */
+.scorers-table{width:100%;border-collapse:collapse;font-size:13px;}
+.scorers-table th{background:var(--surface2);padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+.scorers-table th.num,.scorers-table td.num{text-align:center;}
+.scorers-table td{padding:10px 12px;border-bottom:1px solid var(--border);}
+.scorers-table tr:last-child td{border-bottom:none;}
+.scorers-table tr:hover td{background:var(--surface2);}
+.scorer-rank{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
+.scorer-rank.top{color:var(--gold);font-weight:600;}
+
+/* TEAM PROFILE */
+.team-profile{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:24px;margin-bottom:20px;}
+.team-profile-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;}
+.team-profile-badge{width:56px;height:56px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff;}
+.team-profile-name{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.04em;}
+.team-profile-league{font-size:13px;color:var(--muted);}
+.team-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.team-stat{background:var(--surface2);border-radius:var(--r);padding:12px;text-align:center;}
+.team-stat-val{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--text);}
+.team-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
+
+/* ADMIN */
+.admin-bar{background:var(--gold-light);border-bottom:1px solid #e8d080;padding:8px 24px;font-size:12px;color:var(--gold);font-weight:600;display:none;align-items:center;gap:8px;}
+.admin-bar.visible{display:flex;}
+.admin-bar svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;}
+
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:flex-end;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--surface);border-radius:16px 16px 0 0;padding:24px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;margin-bottom:4px;}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.field-group{margin-bottom:14px;}
+.field-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+.field-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border .15s;}
+.field-input:focus{border-color:var(--green);}
+.score-inputs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;}
+.score-sep-lbl{text-align:center;font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--dimmed);}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+.mbtn{font-size:13px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.mbtn:hover{color:var(--text);border-color:var(--border2);}
+.mbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
+.mbtn.primary:hover{background:var(--green-mid);}
+.mbtn.danger{border-color:#fca5a5;color:var(--red);}
+.mbtn.danger:hover{background:var(--red-light);}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:48px 20px;color:var(--muted);}
+.empty-icon{font-size:40px;margin-bottom:12px;opacity:.4;}
+.empty-text{font-size:14px;}
+
+/* LOADING */
+.loading{text-align:center;padding:48px;color:var(--muted);}
+.spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+
+/* TEAM CARDS */
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px;}
+.team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;transition:border-color .15s;}
+.team-card:hover{border-color:var(--border2);}
+.team-card-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.team-card-details{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);padding-top:12px;}
+.team-detail-row{display:flex;align-items:baseline;gap:8px;}
+.team-detail-lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;width:70px;flex-shrink:0;}
+.team-detail-val{font-size:13px;color:var(--text);}
+/* MOBILE */
+@media(max-width:700px){
+  header{padding:0 14px;height:50px;}
+  .header-logo{font-size:18px;}
+  .hbtn{font-size:10px;padding:4px 9px;}
+  .league-nav{padding:0 14px;}
+  .ltab{font-size:12px;padding:12px 12px;}
+  .main-wrap{padding:16px 12px;}
+  .match-card{grid-template-columns:1fr auto 1fr;padding:10px 12px;gap:8px;}
+  .match-team{font-size:12px;}
+  .score-box{font-size:18px;}
+  .team-stats-grid{grid-template-columns:repeat(2,1fr);}
+  .standings-table{font-size:12px;}
+  .standings-table th,.standings-table td{padding:8px 6px;}
+  .form-dots{display:none;}
+  .modal{border-radius:16px 16px 0 0;}
+}
+</style>
+</head>
+<body>
+
+<!-- Auth -->
+<div class="auth-screen" id="authScreen">
+  <div class="auth-card">
+    <div class="auth-badge">⚽</div>
+    <div class="auth-title">League Manager</div>
+    <div class="auth-sub">Sign in to load your league data from Google Drive.</div>
+    <button class="auth-btn" onclick="signIn()">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+    <div class="auth-note">Your data stays in your own Google Drive.</div>
+  </div>
+</div>
+
+<!-- Admin bar -->
+<div class="admin-bar" id="adminBar">
+  <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+  Admin mode active — changes save to Google Drive
+  <button class="hbtn" style="margin-left:auto;background:rgba(200,152,10,.15);border-color:#c8980a;color:#8a6500" onclick="toggleAdmin()">Exit admin</button>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="header-logo">League Manager <span id="seasonLabel"></span></div>
+  <div class="header-right">
+    <div class="sync-dot" id="syncDot" title="Sync status"></div>
+    <button class="hbtn" id="adminBtn" onclick="toggleAdmin()" style="display:none">Admin</button>
+    <button class="hbtn" onclick="refreshData()">↺ Refresh</button>
+    <button class="hbtn" onclick="signOut()" id="signOutBtn" style="display:none">Sign out</button>
+  </div>
+</header>
+
+<!-- League tabs -->
+<div class="league-nav" id="leagueNav">
+  <div class="ltab active" style="color:var(--dimmed)">Loading…</div>
+</div>
+
+<!-- Main -->
+<div class="main-wrap">
+  <div class="page-tabs" id="pageTabs" style="display:none">
+    <button class="ptab active" onclick="switchPage('standings',this)">Standings</button>
+    <button class="ptab" onclick="switchPage('results',this)">Results</button>
+    <button class="ptab" onclick="switchPage('fixtures',this)">Fixtures</button>
+    <button class="ptab" onclick="switchPage('scorers',this)">Top Scorers</button>
+    <button class="ptab" onclick="switchPage('teams',this)">Teams</button>
+  </div>
+  <div id="mainContent"><div class="loading"><div class="spinner"></div>Loading data…</div></div>
+</div>
+
+<!-- Edit Match Modal -->
+<div class="modal-bg" id="matchModal">
+  <div class="modal">
+    <div class="modal-title" id="matchModalTitle">Edit Result</div>
+    <div class="modal-sub">Update the match score. Leave blank for upcoming fixture.</div>
+    <div class="field-group">
+      <div class="field-label">Date</div>
+      <input class="field-input" type="date" id="mDate">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Round</div>
+      <input class="field-input" type="text" id="mRound" placeholder="e.g. 12">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Score</div>
+      <div class="score-inputs">
+        <input class="field-input" type="number" id="mHomeScore" min="0" placeholder="Home">
+        <div class="score-sep-lbl">—</div>
+        <input class="field-input" type="number" id="mAwayScore" min="0" placeholder="Away">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal('matchModal')">Cancel</button>
+      <button class="mbtn primary" onclick="saveMatch()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Match Modal -->
+<div class="modal-bg" id="addMatchModal">
+  <div class="modal">
+    <div class="modal-title">Add Match</div>
+    <div class="modal-sub">Add a new fixture or result.</div>
+    <div class="field-group">
+      <div class="field-label">Home Team</div>
+      <select class="field-input" id="amHome"></select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Away Team</div>
+      <select class="field-input" id="amAway"></select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Date</div>
+      <input class="field-input" type="date" id="amDate">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Round</div>
+      <input class="field-input" type="text" id="amRound" placeholder="e.g. 12">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Score (leave blank if not played)</div>
+      <div class="score-inputs">
+        <input class="field-input" type="number" id="amHomeScore" min="0" placeholder="Home">
+        <div class="score-sep-lbl">—</div>
+        <input class="field-input" type="number" id="amAwayScore" min="0" placeholder="Away">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal('addMatchModal')">Cancel</button>
+      <button class="mbtn primary" onclick="saveNewMatch()">Add Match</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Scorer Modal -->
+<div class="modal-bg" id="scorerModal">
+  <div class="modal">
+    <div class="modal-title" id="scorerModalTitle">Add / Edit Scorer</div>
+    <div class="field-group">
+      <div class="field-label">Player Name</div>
+      <input class="field-input" type="text" id="sPlayer" placeholder="Full name">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Team</div>
+      <select class="field-input" id="sTeam"></select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Goals</div>
+      <input class="field-input" type="number" id="sGoals" min="0" value="0">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Assists</div>
+      <input class="field-input" type="number" id="sAssists" min="0" value="0">
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal('scorerModal')">Cancel</button>
+      <button class="mbtn primary" onclick="saveScorer()">Save</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- League Modal -->
+<div class="modal-bg" id="leagueModal">
+  <div class="modal">
+    <div class="modal-title" id="leagueModalTitle">Add League</div>
+    <div class="modal-sub">Create a new league or division.</div>
+    <div class="field-group">
+      <div class="field-label">League Name *</div>
+      <input class="field-input" type="text" id="lName" placeholder="e.g. NB I">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Season</div>
+      <input class="field-input" type="text" id="lSeason" placeholder="e.g. 2025/26">
+    </div>
+    <div class="field-group">
+      <div class="field-label" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="lActive" checked style="width:16px;height:16px;cursor:pointer">
+        Active league (show in navigation)
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal('leagueModal')">Cancel</button>
+      <button class="mbtn primary" onclick="saveLeague()">Save League</button>
+    </div>
+  </div>
+</div>
+<!-- Team Modal -->
+<div class="modal-bg" id="teamModal">
+  <div class="modal">
+    <div class="modal-title" id="teamModalTitle">Add Team</div>
+    <div class="modal-sub">Fill in the team details. All fields except name are optional.</div>
+    <div class="field-group">
+      <div class="field-label">League *</div>
+      <select class="field-input" id="tLeague"></select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Team Name *</div>
+      <input class="field-input" type="text" id="tName" placeholder="e.g. Ferencváros TC">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Stadium Name</div>
+      <input class="field-input" type="text" id="tStadion" placeholder="e.g. Groupama Aréna">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Location</div>
+      <input class="field-input" type="text" id="tLocation" placeholder="e.g. Budapest">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Coordinates</div>
+      <input class="field-input" type="text" id="tCoords" placeholder="e.g. 47.4816,19.0515">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Foundation Year</div>
+      <input class="field-input" type="text" id="tFoundation" placeholder="e.g. 1899">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Team Colour</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input class="field-input" type="color" id="tColor" value="#1a6b3a" style="width:56px;height:40px;padding:2px;cursor:pointer">
+        <span style="font-size:12px;color:var(--muted)">Pick a colour for the team badge</span>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal('teamModal')">Cancel</button>
+      <button class="mbtn primary" onclick="saveTeam()">Save Team</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────
+const CLIENT_ID='584383376067-p4oadd30cutenjtahevq2q4tlr33rsft.apps.googleusercontent.com';
+const API_KEY='AIzaSyCGWLRFP6dVaiynna5ionpJyNFjYv_0Bec';
+const FOLDER_ID='16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
+const SCOPES='https://www.googleapis.com/auth/drive.file';
+
+// ── STATE ───────────────────────────────────────────────────────
+let accessToken=null;
+let tokenClient=null;
+let leagues=[],teams=[],matches=[],scorers=[];
+let fileIds={leagues:null,teams:null,matches:null,scorers:null};
+let currentLeague=null;
+let currentPage='standings';
+let adminMode=false;
+let editingMatchId=null;
+let editingScorerIdx=null;
+let editingTeamId=null;
+let editingLeagueId=null;
+
+// ── AUTH ────────────────────────────────────────────────────────
+function initAuth(){
+  if(typeof google==='undefined'){setTimeout(initAuth,400);return;}
+  tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,scope:SCOPES,prompt:'',
+    callback:(resp)=>{
+      if(resp.error){document.getElementById('authScreen').style.display='flex';return;}
+      accessToken=resp.access_token;
+      localStorage.setItem('lm_signed_in','1');
+      onSignedIn();
+    }
+  });
+  if(localStorage.getItem('lm_signed_in')==='1'){
+    document.getElementById('authScreen').style.display='none';
+    setSyncStatus('busy');
+    tokenClient.requestAccessToken({prompt:''});
+  }
+}
+
+function signIn(){
+  if(typeof google==='undefined'||!tokenClient){setTimeout(()=>signIn(),400);return;}
+  tokenClient.requestAccessToken({prompt:'consent'});
+}
+
+function signOut(){
+  if(accessToken)google.accounts.oauth2.revoke(accessToken,()=>{});
+  accessToken=null;localStorage.removeItem('lm_signed_in');
+  document.getElementById('authScreen').style.display='flex';
+  document.getElementById('signOutBtn').style.display='none';
+  document.getElementById('adminBtn').style.display='none';
+  setSyncStatus('off');
+}
+
+async function onSignedIn(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('signOutBtn').style.display='inline-block';
+  document.getElementById('adminBtn').style.display='inline-block';
+  await loadAllData();
+}
+
+// ── SYNC STATUS ─────────────────────────────────────────────────
+function setSyncStatus(s){
+  const d=document.getElementById('syncDot');
+  d.className='sync-dot'+(s==='ok'?' ok':s==='busy'?' busy':s==='err'?' err':'');
+  d.title=s==='ok'?'Synced':s==='busy'?'Saving…':s==='err'?'Error':'Not connected';
+}
+
+// ── DRIVE API ───────────────────────────────────────────────────
+async function driveGet(path,params=''){
+  const r=await fetch(`https://www.googleapis.com/drive/v3/${path}${params}`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  return r.json();
+}
+
+async function findFile(name){
+  const q=encodeURIComponent(`name='${name}' and '${FOLDER_ID}' in parents and trashed=false`);
+  const d=await driveGet('files',`?q=${q}&fields=files(id,name)`);
+  return d.files&&d.files.length?d.files[0]:null;
+}
+
+async function readFile(fileId){
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  return r.text();
+}
+
+async function writeFile(name,content,existingId){
+  setSyncStatus('busy');
+  const blob=new Blob([content],{type:'text/csv'});
+  try{
+    if(existingId){
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,{
+        method:'PATCH',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'text/csv'},body:content
+      });
+    } else {
+      const meta={name,parents:[FOLDER_ID]};
+      const form=new FormData();
+      form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+      form.append('file',blob);
+      const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{
+        method:'POST',headers:{Authorization:`Bearer ${accessToken}`},body:form
+      });
+      const d=await r.json();
+      return d.id;
+    }
+    setSyncStatus('ok');
+  }catch(e){setSyncStatus('err');console.error(e);}
+  return existingId;
+}
+
+// ── CSV PARSING ─────────────────────────────────────────────────
+function parseCSV(text){
+  if(!text||!text.trim())return[];
+  const lines=text.trim().split('\n');
+  if(!lines.length)return[];
+  const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  return lines.slice(1).filter(l=>l.trim()).map(line=>{
+    const vals=[];let cur='',inQ=false;
+    for(const ch of line){
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}
+      else cur+=ch;
+    }
+    vals.push(cur.trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=(vals[i]||'').replace(/^"|"$/g,''));
+    return obj;
+  });
+}
+
+function toCSV(arr){
+  if(!arr.length)return'';
+  const headers=Object.keys(arr[0]);
+  const escape=v=>v&&v.includes(',')?`"${v}"`:v||'';
+  return[headers.join(','),...arr.map(r=>headers.map(h=>escape(String(r[h]||''))).join(','))].join('\n');
+}
+
+// ── LOAD DATA ───────────────────────────────────────────────────
+async function loadAllData(){
+  setSyncStatus('busy');
+  try{
+    const files=['leagues','teams','matches','scorers'];
+    for(const name of files){
+      const f=await findFile(`${name}.csv`);
+      if(f){
+        fileIds[name]=f.id;
+        const text=await readFile(f.id);
+        if(name==='leagues')leagues=parseCSV(text);
+        if(name==='teams')teams=parseCSV(text);
+        if(name==='matches')matches=parseCSV(text);
+        if(name==='scorers')scorers=parseCSV(text);
+      } else {
+        fileIds[name]=null;
+        if(name==='leagues')leagues=[];
+        if(name==='teams')teams=[];
+        if(name==='matches')matches=[];
+        if(name==='scorers')scorers=[];
+      }
+    }
+    setSyncStatus('ok');
+    buildLeagueTabs();
+  }catch(e){setSyncStatus('err');console.error(e);}
+}
+
+async function refreshData(){
+  document.getElementById('mainContent').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
+  await loadAllData();
+}
+
+// ── LEAGUE TABS ─────────────────────────────────────────────────
+function buildLeagueTabs(){
+  const nav=document.getElementById('leagueNav');
+  nav.innerHTML='';
+
+  // Always show Setup tab
+  const setupTab=document.createElement('div');
+  setupTab.className='ltab'+(leagues.length===0?' active':'');
+  setupTab.textContent='⚙ Setup';
+  setupTab.id='setupTab';
+  setupTab.onclick=()=>{
+    document.querySelectorAll('.ltab').forEach(t=>t.classList.remove('active'));
+    setupTab.classList.add('active');
+    currentLeague=null;
+    currentPage='setup';
+    document.getElementById('pageTabs').style.display='none';
+    renderPage();
+  };
+  nav.appendChild(setupTab);
+
+  leagues.filter(l=>l.active!=='0').forEach((l,i)=>{
+    const tab=document.createElement('div');
+    tab.className='ltab'+(i===0&&leagues.length>0?' active':'');
+    tab.textContent=l.name;
+    tab.onclick=()=>{
+      document.querySelectorAll('.ltab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      currentLeague=l;
+      currentPage='standings';
+      document.getElementById('pageTabs').style.display='flex';
+      // restore active ptab
+      document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+      document.querySelector('.ptab').classList.add('active');
+      renderPage();
+    };
+    nav.appendChild(tab);
+  });
+
+  if(leagues.length>0){
+    const active=leagues.find(l=>l.active==='1')||leagues[0];
+    if(active)document.getElementById('seasonLabel').textContent=active.season||'';
+    currentLeague=leagues.filter(l=>l.active!=='0')[0]||leagues[0];
+    document.getElementById('pageTabs').style.display='flex';
+    currentPage='standings';
+    renderPage();
+  } else {
+    currentLeague=null;
+    currentPage='setup';
+    document.getElementById('pageTabs').style.display='none';
+    renderPage();
+  }
+}
+
+// ── PAGE SWITCHING ───────────────────────────────────────────────
+function switchPage(page,btn){
+  currentPage=page;
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderPage();
+}
+
+function renderPage(){
+  const el=document.getElementById('mainContent');
+  if(currentPage==='setup'){el.innerHTML=renderSetup();return;}
+  if(!currentLeague)return;
+  if(currentPage==='standings')el.innerHTML=renderStandings();
+  else if(currentPage==='results')el.innerHTML=renderMatches(true);
+  else if(currentPage==='fixtures')el.innerHTML=renderMatches(false);
+  else if(currentPage==='scorers')el.innerHTML=renderScorers();
+  else if(currentPage==='teams')el.innerHTML=renderTeams();
+}
+
+function renderSetup(){
+  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div class="section-title" style="margin:0">Leagues</div>
+    <button class="mbtn primary" onclick="openAddLeague()">+ Add League</button>
+  </div>`;
+  if(!leagues.length){
+    html+=`<div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">No leagues yet.<br>Click "+ Add League" to create your first league.<br><br>You can also go straight to <strong>Teams</strong> — create a league first, then assign teams to it.</div></div>`;
+    return html;
+  }
+  html+=`<div class="standings-wrap"><table class="standings-table">
+    <thead><tr><th>League</th><th>Season</th><th>Status</th><th></th></tr></thead><tbody>`;
+  leagues.forEach(l=>{
+    html+=`<tr>
+      <td><strong>${l.name}</strong></td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${l.season||'—'}</td>
+      <td><span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${l.active==='1'?'var(--green-light)':'var(--surface2)'};color:${l.active==='1'?'var(--green)':'var(--muted)'}">${l.active==='1'?'Active':'Inactive'}</span></td>
+      <td style="text-align:right">
+        <button class="match-edit-btn" onclick="openEditLeague('${l.id}')">Edit</button>
+        <button class="match-edit-btn" style="color:var(--red);border-color:#fca5a5;margin-left:4px" onclick="deleteLeague('${l.id}')">Del</button>
+      </td>
+    </tr>`;
+  });
+  html+=`</tbody></table></div>`;
+  html+=`<div style="margin-top:24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);font-size:13px;color:var(--muted);line-height:1.7)">
+    <strong style="color:var(--text)">Quick start:</strong> Create a league here, then click the league tab and go to Teams to add your teams.
+  </div>`;
+  return html;
+}
+
+function openAddLeague(){
+  editingLeagueId=null;
+  document.getElementById('leagueModalTitle').textContent='Add League';
+  document.getElementById('lName').value='';
+  document.getElementById('lSeason').value='';
+  document.getElementById('lActive').checked=true;
+  document.getElementById('leagueModal').classList.add('open');
+}
+
+function openEditLeague(id){
+  const l=leagues.find(l=>l.id===id);if(!l)return;
+  editingLeagueId=id;
+  document.getElementById('leagueModalTitle').textContent='Edit League';
+  document.getElementById('lName').value=l.name||'';
+  document.getElementById('lSeason').value=l.season||'';
+  document.getElementById('lActive').checked=l.active==='1';
+  document.getElementById('leagueModal').classList.add('open');
+}
+
+async function saveLeague(){
+  const entry={
+    id:editingLeagueId||'l'+(Date.now()),
+    name:document.getElementById('lName').value.trim(),
+    season:document.getElementById('lSeason').value.trim(),
+    active:document.getElementById('lActive').checked?'1':'0'
+  };
+  if(!entry.name){alert('League name is required.');return;}
+  if(editingLeagueId){
+    const idx=leagues.findIndex(l=>l.id===editingLeagueId);
+    if(idx>=0)leagues[idx]=entry;
+  } else {
+    leagues.push(entry);
+  }
+  closeModal('leagueModal');
+  await saveCSV('leagues');
+  buildLeagueTabs();
+}
+
+async function deleteLeague(id){
+  if(!confirm('Delete this league? Teams assigned to it will not be deleted.'))return;
+  leagues=leagues.filter(l=>l.id!==id);
+  await saveCSV('leagues');
+  buildLeagueTabs();
+}
+
+// ── STANDINGS ───────────────────────────────────────────────────
+function calcStandings(){
+  const leagueTeams=teams.filter(t=>t.league_id===currentLeague.id);
+  const stats={};
+  leagueTeams.forEach(t=>{stats[t.team_id]={id:t.team_id,name:t.team_name,color:t.color||'#1a6b3a',p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,form:[]};});
+  const leagueMatches=matches.filter(m=>m.league_id===currentLeague.id&&m.home_score!==''&&m.away_score!==''&&m.home_score!==undefined);
+  leagueMatches.sort((a,b)=>a.date>b.date?1:-1);
+  leagueMatches.forEach(m=>{
+    const hs=parseInt(m.home_score),as=parseInt(m.away_score);
+    if(isNaN(hs)||isNaN(as))return;
+    const h=stats[m.home_id],a=stats[m.away_id];
+    if(!h||!a)return;
+    h.p++;a.p++;h.gf+=hs;h.ga+=as;a.gf+=as;a.ga+=hs;
+    if(hs>as){h.w++;h.pts+=3;a.l++;h.form.push('W');a.form.push('L');}
+    else if(hs<as){a.w++;a.pts+=3;h.l++;h.form.push('L');a.form.push('W');}
+    else{h.d++;a.d++;h.pts+=1;a.pts+=1;h.form.push('D');a.form.push('D');}
+  });
+  return Object.values(stats).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf);
+}
+
+function renderStandings(){
+  const table=calcStandings();
+  if(!table.length)return'<div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">No teams found for this league.<br>Add teams to <strong>teams.csv</strong></div></div>';
+  const total=table.length;
+  let rows='';
+  table.forEach((t,i)=>{
+    const pos=i+1;
+    const posClass=pos===1?'pos-1':pos<=3?'pos-2':pos>=total-1?'pos-rel':'pos-def';
+    const gd=(t.gf-t.ga>0?'+':'')+( t.gf-t.ga);
+    const form=t.form.slice(-5).map(f=>`<div class="form-dot form-${f.toLowerCase()}"></div>`).join('');
+    rows+=`<tr>
+      <td><span class="pos-num ${posClass}">${pos}</span></td>
+      <td><div class="team-cell"><div class="team-badge" style="background:${t.color}">${(t.name||'?').slice(0,3).toUpperCase()}</div>${t.name||'?'}</div></td>
+      <td class="num">${t.p}</td>
+      <td class="num">${t.w}</td>
+      <td class="num">${t.d}</td>
+      <td class="num">${t.l}</td>
+      <td class="num">${t.gf}:${t.ga}</td>
+      <td class="num">${gd}</td>
+      <td class="pts">${t.pts}</td>
+      <td><div class="form-dots">${form}</div></td>
+    </tr>`;
+  });
+  return`<div class="section-title">${currentLeague.name} — Standings</div>
+  <div class="standings-wrap">
+    <table class="standings-table">
+      <thead><tr>
+        <th>#</th><th>Team</th>
+        <th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th>
+        <th class="num">G</th><th class="num">GD</th><th class="num">Pts</th><th>Form</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ── MATCHES ─────────────────────────────────────────────────────
+function teamName(id){const t=teams.find(t=>t.team_id===id);return t?t.team_name:id;}
+function teamColor(id){const t=teams.find(t=>t.team_id===id);return t&&t.color?t.color:'#1a6b3a';}
+
+function renderMatches(played){
+  const lm=matches
+    .filter(m=>m.league_id===currentLeague.id)
+    .filter(m=>played?(m.home_score!==''&&m.home_score!==undefined):(m.home_score===''||m.home_score===undefined))
+    .sort((a,b)=>played?b.date>a.date?1:-1:a.date>b.date?1:-1);
+
+  if(!lm.length)return`<div class="empty"><div class="empty-icon">${played?'📋':'📅'}</div><div class="empty-text">No ${played?'results':'fixtures'} yet.</div></div>`;
+
+  // Group by round
+  const rounds={};
+  lm.forEach(m=>{const r=m.round||'—';if(!rounds[r])rounds[r]=[];rounds[r].push(m);});
+
+  let html=`<div class="section-title">${currentLeague.name} — ${played?'Results':'Fixtures'}</div>`;
+  if(adminMode)html+=`<button class="mbtn primary" style="margin-bottom:14px" onclick="openAddMatch()">+ Add Match</button>`;
+
+  html+='<div class="matches-list">';
+  Object.entries(rounds).forEach(([round,ms])=>{
+    html+=`<div class="round-header">Round ${round}</div>`;
+    ms.forEach(m=>{
+      const isPlayed=m.home_score!==''&&m.home_score!==undefined&&m.home_score!==null;
+      const editBtn=adminMode?`<button class="match-edit-btn" onclick="openEditMatch('${m.id}')">Edit</button>`:'';
+      html+=`<div class="match-card ${isPlayed?'played':'upcoming'}">
+        <div class="match-home">
+          <div class="match-team">${teamName(m.home_id)}</div>
+          <div class="match-date">${m.date||''}</div>
+        </div>
+        <div class="match-score">
+          ${isPlayed
+            ?`<div class="score-box">${m.home_score}<span class="score-sep"> : </span>${m.away_score}</div>`
+            :`<div class="fixture-time">${m.time||'TBD'}</div>`}
+          ${editBtn}
+        </div>
+        <div class="match-away">
+          <div class="match-team">${teamName(m.away_id)}</div>
+        </div>
+      </div>`;
+    });
+  });
+  html+='</div>';
+  return html;
+}
+
+// ── SCORERS ─────────────────────────────────────────────────────
+function renderScorers(){
+  const ls=scorers.filter(s=>s.league_id===currentLeague.id).sort((a,b)=>parseInt(b.goals)-parseInt(a.goals)||parseInt(b.assists)-parseInt(a.assists));
+  if(!ls.length)return`<div class="empty"><div class="empty-icon">⚽</div><div class="empty-text">No scorers yet.<br>${adminMode?'Click "Add Scorer" to add one.':'Enable admin mode to add scorers.'}</div></div>`;
+  let rows='';
+  ls.forEach((s,i)=>{
+    const rankClass=i<3?'top':'';
+    const editBtn=adminMode?`<button class="match-edit-btn" onclick="openEditScorer(${scorers.indexOf(s)})">Edit</button>`:'';
+    rows+=`<tr>
+      <td class="num"><span class="scorer-rank ${rankClass}">${i+1}</span></td>
+      <td><strong>${s.player}</strong></td>
+      <td>${teamName(s.team_id)}</td>
+      <td class="num">${s.goals}</td>
+      <td class="num">${s.assists}</td>
+      <td>${editBtn}</td>
+    </tr>`;
+  });
+  let html=`<div class="section-title">${currentLeague.name} — Top Scorers</div>`;
+  if(adminMode)html+=`<button class="mbtn primary" style="margin-bottom:14px" onclick="openAddScorer()">+ Add Scorer</button>`;
+  html+=`<div class="standings-wrap"><table class="scorers-table">
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">G</th><th class="num">A</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+  return html;
+}
+
+// ── TEAMS ───────────────────────────────────────────────────────
+function renderTeams(){
+  const lt=teams.filter(t=>t.league_id===currentLeague.id);
+  if(!lt.length)return`<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No teams found for this league.</div></div>`;
+  const standings=calcStandings();
+  let html=`<div class="section-title">${currentLeague.name} — Teams</div>`;
+  lt.forEach(t=>{
+    const st=standings.find(s=>s.id===t.id)||{p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+    html+=`<div class="team-profile">
+      <div class="team-profile-header">
+        <div class="team-profile-badge" style="background:${t.color||'#2d9653'}">${t.name.slice(0,3).toUpperCase()}</div>
+        <div><div class="team-profile-name">${t.name}</div><div class="team-profile-league">${currentLeague.name}</div></div>
+      </div>
+      <div class="team-stats-grid">
+        <div class="team-stat"><div class="team-stat-val">${st.pts}</div><div class="team-stat-lbl">Points</div></div>
+        <div class="team-stat"><div class="team-stat-val">${st.w}</div><div class="team-stat-lbl">Wins</div></div>
+        <div class="team-stat"><div class="team-stat-val">${st.gf}</div><div class="team-stat-lbl">Goals For</div></div>
+        <div class="team-stat"><div class="team-stat-val">${st.gf-st.ga>0?'+':''}${st.gf-st.ga}</div><div class="team-stat-lbl">Goal Diff</div></div>
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
+// ── ADMIN ───────────────────────────────────────────────────────
+function toggleAdmin(){
+  adminMode=!adminMode;
+  document.getElementById('adminBar').classList.toggle('visible',adminMode);
+  document.getElementById('adminBtn').classList.toggle('admin-on',adminMode);
+  document.getElementById('adminBtn').textContent=adminMode?'Admin ✓':'Admin';
+  renderPage();
+}
+
+// ── EDIT MATCH ──────────────────────────────────────────────────
+function openEditMatch(id){
+  const m=matches.find(m=>m.id===id);if(!m)return;
+  editingMatchId=id;
+  document.getElementById('matchModalTitle').textContent='Edit Match — '+teamName(m.home_id)+' vs '+teamName(m.away_id);
+  document.getElementById('mDate').value=m.date||'';
+  document.getElementById('mRound').value=m.round||'';
+  document.getElementById('mHomeScore').value=m.home_score||'';
+  document.getElementById('mAwayScore').value=m.away_score||'';
+  document.getElementById('matchModal').classList.add('open');
+}
+
+async function saveMatch(){
+  const m=matches.find(m=>m.id===editingMatchId);if(!m)return;
+  m.date=document.getElementById('mDate').value;
+  m.round=document.getElementById('mRound').value;
+  m.home_score=document.getElementById('mHomeScore').value;
+  m.away_score=document.getElementById('mAwayScore').value;
+  closeModal('matchModal');
+  await saveCSV('matches');
+  renderPage();
+}
+
+function openAddMatch(){
+  const lt=teams.filter(t=>t.league_id===currentLeague.id);
+  const opts=lt.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  document.getElementById('amHome').innerHTML=opts;
+  document.getElementById('amAway').innerHTML=opts;
+  document.getElementById('amDate').value=new Date().toISOString().split('T')[0];
+  document.getElementById('amRound').value='';
+  document.getElementById('amHomeScore').value='';
+  document.getElementById('amAwayScore').value='';
+  document.getElementById('addMatchModal').classList.add('open');
+}
+
+async function saveNewMatch(){
+  const newId='m'+(Date.now());
+  matches.push({
+    id:newId,
+    date:document.getElementById('amDate').value,
+    home_id:document.getElementById('amHome').value,
+    away_id:document.getElementById('amAway').value,
+    home_score:document.getElementById('amHomeScore').value,
+    away_score:document.getElementById('amAwayScore').value,
+    league_id:document.getElementById('tLeague').value||currentLeague?.id||'',
+    round:document.getElementById('amRound').value,
+    time:''
+  });
+  closeModal('addMatchModal');
+  await saveCSV('matches');
+  renderPage();
+}
+
+// ── EDIT SCORER ─────────────────────────────────────────────────
+function openAddScorer(){
+  editingScorerIdx=null;
+  document.getElementById('scorerModalTitle').textContent='Add Scorer';
+  document.getElementById('sPlayer').value='';
+  document.getElementById('sGoals').value='0';
+  document.getElementById('sAssists').value='0';
+  const lt=teams.filter(t=>t.league_id===currentLeague.id);
+  document.getElementById('sTeam').innerHTML=lt.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  document.getElementById('scorerModal').classList.add('open');
+}
+
+function openEditScorer(idx){
+  editingScorerIdx=idx;
+  const s=scorers[idx];
+  document.getElementById('scorerModalTitle').textContent='Edit Scorer';
+  document.getElementById('sPlayer').value=s.player||'';
+  document.getElementById('sGoals').value=s.goals||'0';
+  document.getElementById('sAssists').value=s.assists||'0';
+  const lt=teams.filter(t=>t.league_id===currentLeague.id);
+  document.getElementById('sTeam').innerHTML=lt.map(t=>`<option value="${t.id}"${t.id===s.team_id?' selected':''}>${t.name}</option>`).join('');
+  document.getElementById('scorerModal').classList.add('open');
+}
+
+async function saveScorer(){
+  const entry={
+    player:document.getElementById('sPlayer').value,
+    team_id:document.getElementById('sTeam').value,
+    league_id:document.getElementById('tLeague').value||currentLeague?.id||'',
+    goals:document.getElementById('sGoals').value,
+    assists:document.getElementById('sAssists').value,
+    id:editingScorerIdx!==null?scorers[editingScorerIdx].id:'s'+(Date.now())
+  };
+  if(editingScorerIdx!==null)scorers[editingScorerIdx]=entry;
+  else scorers.push(entry);
+  closeModal('scorerModal');
+  await saveCSV('scorers');
+  renderPage();
+}
+
+// ── SAVE CSV ────────────────────────────────────────────────────
+async function saveCSV(name){
+  const data=name==='matches'?matches:name==='scorers'?scorers:name==='teams'?teams:leagues;
+  const csv=toCSV(data);
+  const newId=await writeFile(`${name}.csv`,csv,fileIds[name]);
+  if(newId&&!fileIds[name])fileIds[name]=newId;
+}
+
+// ── MODAL ────────────────────────────────────────────────────────
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===e.currentTarget)e.target.classList.remove('open');}));
+
+// ── INIT ─────────────────────────────────────────────────────────
+window.addEventListener('load',()=>setTimeout(initAuth,300));
+</script>
+</body>
+</html>
