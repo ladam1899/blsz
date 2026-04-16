@@ -15,7 +15,6 @@
   --red:#c0392b;--red-light:#fdf0ee;
   --gold:#c8980a;--gold-light:#fdf6e0;
   --blue:#1a4fa0;--blue-light:#eaf0fb;
-  --accent:#1a6b3a;--accent2:#e8f5ee;
   --r:8px;--r2:12px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -34,138 +33,108 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 /* HEADER */
 header{background:var(--green);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:30;}
 .header-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.08em;color:#fff;}
-.header-logo span{color:#7dd8a0;margin-left:6px;font-size:14px;letter-spacing:.06em;}
 .header-right{display:flex;align-items:center;gap:8px;}
 .hbtn{font-size:11px;padding:5px 12px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;transition:all .15s;font-family:'JetBrains Mono',monospace;letter-spacing:.04em;white-space:nowrap;}
 .hbtn:hover{background:rgba(255,255,255,.12);color:#fff;}
-.hbtn.admin-on{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.5);}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);}
 .sync-dot.ok{background:#7dd8a0;}
 .sync-dot.busy{background:#f59e0b;animation:pulse 1s infinite;}
 .sync-dot.err{background:#f87171;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* LEAGUE TABS */
-.league-nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto;scrollbar-width:none;}
-.league-nav::-webkit-scrollbar{display:none;}
-.ltab{font-size:13px;font-weight:500;padding:14px 18px;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
-.ltab:hover{color:var(--text);}
-.ltab.active{color:var(--green);border-bottom-color:var(--green);}
+/* TOP NAV */
+.top-nav{background:var(--surface);border-bottom:2px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto;scrollbar-width:none;}
+.top-nav::-webkit-scrollbar{display:none;}
+.tnav-tab{font-size:13px;font-weight:600;padding:14px 20px;border-bottom:3px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;margin-bottom:-2px;}
+.tnav-tab:hover{color:var(--text);}
+.tnav-tab.active{color:var(--green);border-bottom-color:var(--green);}
 
-/* MAIN LAYOUT */
-.main-wrap{max-width:1100px;margin:0 auto;padding:24px 16px;}
-.main-wrap.editor-mode{max-width:none;padding:0;margin:0;}
-.page-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
-.ptab{font-size:12px;padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;font-weight:500;}
-.ptab:hover{border-color:var(--green);color:var(--green);}
-.ptab.active{background:var(--green);border-color:var(--green);color:#fff;}
-.ptab.editor-tab{border-color:var(--gold);color:var(--gold);}
-.ptab.editor-tab.active{background:var(--gold);border-color:var(--gold);color:#fff;}
+/* MAIN */
+.main-wrap{max-width:1200px;margin:0 auto;padding:28px 20px;}
+.main-wrap.full{max-width:none;padding:0;margin:0;}
 
-/* STANDINGS TABLE */
-.section-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.06em;color:var(--text);margin-bottom:12px;}
-.standings-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:24px;}
-.standings-table{width:100%;border-collapse:collapse;font-size:13px;}
-.standings-table th{background:var(--surface2);padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
-.standings-table th.num{text-align:center;}
-.standings-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
-.standings-table tr:last-child td{border-bottom:none;}
-.standings-table tr:hover td{background:var(--surface2);}
-.standings-table td.num{text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
-.standings-table td.pts{text-align:center;font-weight:700;font-size:14px;}
-.pos-num{width:24px;height:24px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;}
-.pos-1{background:var(--gold-light);color:var(--gold);}
-.pos-2,.pos-3{background:var(--blue-light);color:var(--blue);}
-.pos-rel{background:var(--red-light);color:var(--red);}
-.pos-def{background:var(--surface2);color:var(--muted);}
-.team-cell{display:flex;align-items:center;gap:8px;}
-.team-badge{width:22px;height:22px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;}
-.form-dots{display:flex;gap:2px;}
-.form-dot{width:8px;height:8px;border-radius:50%;}
-.form-w{background:var(--green-mid);}
-.form-d{background:var(--gold);}
-.form-l{background:var(--red);}
+/* TEAMS SHEET */
+.sheet-header{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+.sheet-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.06em;color:var(--text);}
+.sheet-subtitle{font-size:12px;color:var(--muted);margin-top:2px;}
 
-/* RESULTS / FIXTURES */
-.matches-list{display:flex;flex-direction:column;gap:6px;margin-bottom:24px;}
-.round-header{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px;}
-.match-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;transition:border-color .15s;}
-.match-card:hover{border-color:var(--border2);}
-.match-card.played{border-left:3px solid var(--green);}
-.match-card.upcoming{border-left:3px solid var(--border2);}
-.match-home{text-align:right;}
-.match-away{text-align:left;}
-.match-team{font-size:13px;font-weight:500;}
-.match-score{text-align:center;min-width:60px;}
-.score-box{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.06em;color:var(--text);}
-.score-sep{color:var(--dimmed);margin:0 2px;}
-.match-date{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;}
-.fixture-time{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--green);}
-.match-edit-btn{font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;margin-left:4px;}
-.match-edit-btn:hover{border-color:var(--green);color:var(--green);}
+/* DROP ZONE */
+.drop-zone{border:2px dashed var(--border2);border-radius:var(--r2);padding:40px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:20px;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--green);background:var(--green-light);}
+.drop-zone-icon{font-size:2.5rem;margin-bottom:10px;}
+.drop-zone p{font-size:14px;color:var(--muted);line-height:1.7;}
+.drop-zone p strong{color:var(--green);}
+.drop-zone small{font-size:11px;color:var(--dimmed);}
 
-/* TOP SCORERS */
-.scorers-table{width:100%;border-collapse:collapse;font-size:13px;}
-.scorers-table th{background:var(--surface2);padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
-.scorers-table th.num,.scorers-table td.num{text-align:center;}
-.scorers-table td{padding:10px 12px;border-bottom:1px solid var(--border);}
-.scorers-table tr:last-child td{border-bottom:none;}
-.scorers-table tr:hover td{background:var(--surface2);}
-.scorer-rank{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
-.scorer-rank.top{color:var(--gold);font-weight:600;}
+/* SHEET TOOLBAR */
+.sheet-toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r) var(--r) 0 0;padding:8px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.stbtn{font-size:12px;padding:5px 11px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap;font-weight:500;font-family:'Inter',sans-serif;}
+.stbtn:hover{background:var(--border2);}
+.stbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
+.stbtn.primary:hover{background:var(--green-mid);}
+.stbtn.danger{border-color:#fca5a5;color:var(--red);}
+.stbtn.danger:hover{background:var(--red-light);}
+.st-sep{width:1px;height:20px;background:var(--border);margin:0 2px;flex-shrink:0;}
+.st-search{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;width:160px;font-family:'Inter',sans-serif;}
+.st-search:focus{border-color:var(--green);}
 
-/* TEAM PROFILE */
-.team-profile{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:24px;margin-bottom:20px;}
-.team-profile-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;}
-.team-profile-badge{width:56px;height:56px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff;flex-shrink:0;}
-.team-profile-name{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.04em;}
-.team-profile-league{font-size:13px;color:var(--muted);}
-.team-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
-.team-stat{background:var(--surface2);border-radius:var(--r);padding:12px;text-align:center;}
-.team-stat-val{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--text);}
-.team-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
-.team-meta{font-size:12px;color:var(--muted);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:14px;}
+/* SPREADSHEET TABLE */
+.sheet-table-wrap{border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:auto;max-height:calc(100vh - 240px);background:var(--surface);}
+.sheet-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;}
+.sheet-table thead th{position:sticky;top:0;z-index:2;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;padding:9px 12px;border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
+.sheet-table thead th:hover{color:var(--text);}
+.sheet-table thead th.sort-asc::after{content:' ▲';color:var(--green);font-size:9px;}
+.sheet-table thead th.sort-desc::after{content:' ▼';color:var(--green);font-size:9px;}
+.sheet-table thead th.rn,.sheet-table tbody td.rn{position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--dimmed);font-size:11px;font-family:'JetBrains Mono',monospace;text-align:center;width:40px;min-width:40px;border-right:1px solid var(--border);cursor:pointer;}
+.sheet-table thead th.rn{z-index:3;cursor:default;}
+.sheet-table tbody tr:nth-child(even) td{background:#faf9f6;}
+.sheet-table tbody tr:hover td{background:var(--blue-light) !important;}
+.sheet-table tbody tr.row-sel td{background:#dbeafe !important;}
+.sheet-table tbody tr.row-sel td.rn{background:#bfdbfe !important;}
+.sheet-table tbody tr.row-new td{animation:row-pop .6s ease;}
+@keyframes row-pop{from{background:var(--green-light);}}
+.sheet-table tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle;}
+.sheet-table tbody td.rn{padding:5px 6px;}
 
-/* ADMIN */
-.admin-bar{background:var(--gold-light);border-bottom:1px solid #e8d080;padding:8px 24px;font-size:12px;color:var(--gold);font-weight:600;display:none;align-items:center;gap:8px;}
-.admin-bar.visible{display:flex;}
-.admin-bar svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;}
+.cell{padding:6px 12px;min-height:32px;min-width:80px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:border-color .1s;line-height:1.4;}
+.cell:hover{border-color:var(--border2);}
+.cell.editing{padding:0;border-color:var(--green);background:var(--green-light);}
+.cell.editing input{width:100%;min-width:80px;background:transparent;border:none;color:var(--text);padding:6px 10px;font-size:inherit;font-family:inherit;outline:none;}
 
-/* MODAL */
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:flex-end;justify-content:center;}
+/* COLOR CELL */
+.color-swatch{display:inline-flex;align-items:center;gap:6px;}
+.color-dot{width:14px;height:14px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.1);}
+
+/* SHEET STATUS BAR */
+.sheet-statusbar{display:flex;gap:16px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);}
+.sheet-statusbar b{color:var(--text);}
+
+/* TEAM MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;}
 .modal-bg.open{display:flex;}
-.modal{background:var(--surface);border-radius:16px 16px 0 0;padding:24px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;}
-.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;margin-bottom:4px;}
-.modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.modal{background:var(--surface);border-radius:var(--r2);padding:28px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.15);}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;margin-bottom:18px;}
 .field-group{margin-bottom:14px;}
-.field-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+.field-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;display:block;}
 .field-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border .15s;}
 .field-input:focus{border-color:var(--green);}
-.score-inputs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;}
-.score-sep-lbl{text-align:center;font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--dimmed);}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
-.mbtn{font-size:13px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.mbtn{font-size:13px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif;}
 .mbtn:hover{color:var(--text);border-color:var(--border2);}
 .mbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
 .mbtn.primary:hover{background:var(--green-mid);}
 .mbtn.danger{border-color:#fca5a5;color:var(--red);}
 .mbtn.danger:hover{background:var(--red-light);}
 
-/* EMPTY STATE */
-.empty{text-align:center;padding:48px 20px;color:var(--muted);}
-.empty-icon{font-size:40px;margin-bottom:12px;opacity:.4;}
-.empty-text{font-size:14px;}
+/* FIND & REPLACE MODAL */
+.fr-modal{max-width:400px;}
 
-/* LOADING */
-.loading{text-align:center;padding:48px;color:var(--muted);}
+/* EMPTY / LOADING */
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-icon{font-size:3rem;margin-bottom:14px;opacity:.35;}
+.loading{text-align:center;padding:60px;color:var(--muted);}
 .spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* TEAM CARDS */
-.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px;}
-.team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;transition:border-color .15s;}
-.team-card:hover{border-color:var(--border2);}
-.team-card-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
 
 /* TOAST */
 #toast-container{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999;pointer-events:none;}
@@ -174,245 +143,94 @@ header{background:var(--green);padding:0 24px;display:flex;align-items:center;ju
 .toast.error{border-left-color:var(--red);}
 @keyframes toast-in{from{transform:translateX(110%);opacity:0;}to{transform:translateX(0);opacity:1;}}
 
-/* ═══════════════ EDITOR ═══════════════ */
-.editor-shell{display:flex;flex-direction:column;height:calc(100vh - 56px - 49px - 52px);}
-.editor-type-bar{background:var(--surface2);border-bottom:1px solid var(--border);padding:0 16px;display:flex;gap:0;flex-shrink:0;}
-.etab{font-size:12px;font-weight:600;padding:10px 16px;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
-.etab:hover{color:var(--text);}
-.etab.active{color:var(--green);border-bottom-color:var(--green);}
-
-.editor-toolbar{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0;}
-.etbtn{font-size:12px;padding:5px 11px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap;font-weight:500;font-family:'Inter',sans-serif;}
-.etbtn:hover{background:var(--border);color:var(--text);}
-.etbtn.danger{border-color:#fca5a5;color:var(--red);}
-.etbtn.danger:hover{background:var(--red-light);}
-.etbtn:disabled{opacity:.4;cursor:not-allowed;}
-.ed-search{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;width:170px;font-family:'Inter',sans-serif;}
-.ed-search:focus{border-color:var(--green);}
-.ed-sep{width:1px;height:20px;background:var(--border);margin:0 2px;flex-shrink:0;}
-
-.editor-table-wrap{flex:1;overflow:auto;}
-.etable{width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;}
-.etable thead th{position:sticky;top:0;z-index:2;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
-.etable thead th:hover{color:var(--text);}
-.etable thead th.sort-asc::after{content:' ▲';color:var(--green);font-size:9px;}
-.etable thead th.sort-desc::after{content:' ▼';color:var(--green);font-size:9px;}
-.etable thead th.rn,.etable tbody td.rn{position:sticky;left:0;background:var(--surface2);color:var(--dimmed);font-size:11px;font-family:'JetBrains Mono',monospace;text-align:center;min-width:40px;cursor:default;border-right:1px solid var(--border);z-index:1;}
-.etable thead th.rn{z-index:3;cursor:default;}
-.etable tbody tr:nth-child(even) td{background:#faf9f6;}
-.etable tbody tr:hover td{background:var(--blue-light) !important;}
-.etable tbody tr.esel td{background:#dbeafe !important;}
-.etable tbody tr.esel td.rn{background:#bfdbfe !important;}
-.etable tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle;}
-.etable tbody td.rn{padding:5px 8px;cursor:pointer;}
-.ecell{padding:6px 10px;min-height:30px;min-width:60px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:border-color .1s;line-height:1.4;}
-.ecell:hover{border-color:var(--border2);}
-.ecell.editing{padding:0;border-color:var(--green);background:var(--green-light);}
-.ecell.editing input{width:100%;min-width:80px;background:transparent;border:none;color:var(--text);padding:6px 8px;font-size:inherit;font-family:inherit;outline:none;}
-
-.editor-statusbar{background:var(--surface2);border-top:1px solid var(--border);padding:5px 16px;display:flex;gap:16px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
-.editor-statusbar b{color:var(--text);}
-.editor-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--muted);gap:10px;}
-.editor-empty .icon{font-size:2.5rem;opacity:.4;}
-
-/* MOBILE */
-@media(max-width:700px){
-  header{padding:0 14px;height:50px;}
-  .header-logo{font-size:18px;}
-  .hbtn{font-size:10px;padding:4px 9px;}
-  .league-nav{padding:0 14px;}
-  .ltab{font-size:12px;padding:12px 12px;}
+@media(max-width:680px){
   .main-wrap{padding:16px 12px;}
-  .match-card{grid-template-columns:1fr auto 1fr;padding:10px 12px;gap:8px;}
-  .match-team{font-size:12px;}
-  .score-box{font-size:18px;}
-  .team-stats-grid{grid-template-columns:repeat(2,1fr);}
-  .standings-table{font-size:12px;}
-  .standings-table th,.standings-table td{padding:8px 6px;}
-  .form-dots{display:none;}
-  .modal{border-radius:16px 16px 0 0;}
-  .editor-shell{height:calc(100vh - 50px - 49px - 52px);}
+  .sheet-table-wrap{max-height:calc(100vh - 200px);}
 }
 </style>
 </head>
 <body>
 
-<!-- Auth -->
+<!-- Auth Screen -->
 <div class="auth-screen" id="authScreen">
   <div class="auth-card">
     <div class="auth-badge">⚽</div>
     <div class="auth-title">League Manager</div>
-    <div class="auth-sub">Sign in to load your league data from Google Drive.</div>
+    <div class="auth-sub">Sign in with Google to load and save your data in Google Drive.</div>
     <button class="auth-btn" onclick="signIn()">
       <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
       Sign in with Google
     </button>
-    <div class="auth-note">Your data stays in your own Google Drive.</div>
+    <div class="auth-note">Your data stays in your own Google Drive folder.</div>
   </div>
-</div>
-
-<!-- Admin bar -->
-<div class="admin-bar" id="adminBar">
-  <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-  Admin mode — changes save to Google Drive
-  <button class="hbtn" style="margin-left:auto;background:rgba(200,152,10,.15);border-color:#c8980a;color:#8a6500" onclick="toggleAdmin()">Exit admin</button>
 </div>
 
 <!-- Header -->
 <header>
-  <div class="header-logo">League Manager <span id="seasonLabel"></span></div>
+  <div class="header-logo">⚽ League Manager</div>
   <div class="header-right">
     <div class="sync-dot" id="syncDot" title="Sync status"></div>
-    <button class="hbtn" id="adminBtn" onclick="toggleAdmin()" style="display:none">Admin</button>
-    <button class="hbtn" onclick="refreshData()">↺ Refresh</button>
+    <button class="hbtn" onclick="refreshAll()">↺ Refresh</button>
     <button class="hbtn" onclick="signOut()" id="signOutBtn" style="display:none">Sign out</button>
   </div>
 </header>
 
-<!-- League tabs -->
-<div class="league-nav" id="leagueNav">
-  <div class="ltab active" style="color:var(--dimmed)">Loading…</div>
+<!-- Top Nav -->
+<div class="top-nav">
+  <div class="tnav-tab active" id="tab-teams" onclick="switchTab('teams')">👥 Teams</div>
+  <div class="tnav-tab" id="tab-matches" onclick="switchTab('matches')">📅 Matches</div>
+  <div class="tnav-tab" id="tab-scorers" onclick="switchTab('scorers')">⚽ Top Scorers</div>
 </div>
 
-<!-- Main -->
+<!-- Main Content -->
 <div class="main-wrap" id="mainWrap">
-  <div class="page-tabs" id="pageTabs" style="display:none">
-    <button class="ptab active" onclick="switchPage('standings',this)">Standings</button>
-    <button class="ptab" onclick="switchPage('results',this)">Results</button>
-    <button class="ptab" onclick="switchPage('fixtures',this)">Fixtures</button>
-    <button class="ptab" onclick="switchPage('scorers',this)">Top Scorers</button>
-    <button class="ptab" onclick="switchPage('teams',this)">Teams</button>
-  </div>
-  <div id="mainContent"><div class="loading"><div class="spinner"></div>Loading data…</div></div>
+  <div class="loading"><div class="spinner"></div>Loading…</div>
 </div>
 
-<!-- Edit Match Modal -->
-<div class="modal-bg" id="matchModal">
-  <div class="modal">
-    <div class="modal-title" id="matchModalTitle">Edit Result</div>
-    <div class="modal-sub">Update the match score. Leave blank for upcoming fixture.</div>
-    <div class="field-group"><div class="field-label">Date</div><input class="field-input" type="date" id="mDate"></div>
-    <div class="field-group"><div class="field-label">Round</div><input class="field-input" type="text" id="mRound" placeholder="e.g. 12"></div>
-    <div class="field-group">
-      <div class="field-label">Score</div>
-      <div class="score-inputs">
-        <input class="field-input" type="number" id="mHomeScore" min="0" placeholder="Home">
-        <div class="score-sep-lbl">—</div>
-        <input class="field-input" type="number" id="mAwayScore" min="0" placeholder="Away">
-      </div>
-    </div>
-    <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('matchModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveMatch()">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- Add Match Modal -->
-<div class="modal-bg" id="addMatchModal">
-  <div class="modal">
-    <div class="modal-title">Add Match</div>
-    <div class="modal-sub">Add a new fixture or result.</div>
-    <div class="field-group"><div class="field-label">Home Team</div><select class="field-input" id="amHome"></select></div>
-    <div class="field-group"><div class="field-label">Away Team</div><select class="field-input" id="amAway"></select></div>
-    <div class="field-group"><div class="field-label">Date</div><input class="field-input" type="date" id="amDate"></div>
-    <div class="field-group"><div class="field-label">Round</div><input class="field-input" type="text" id="amRound" placeholder="e.g. 12"></div>
-    <div class="field-group">
-      <div class="field-label">Score (leave blank if not played)</div>
-      <div class="score-inputs">
-        <input class="field-input" type="number" id="amHomeScore" min="0" placeholder="Home">
-        <div class="score-sep-lbl">—</div>
-        <input class="field-input" type="number" id="amAwayScore" min="0" placeholder="Away">
-      </div>
-    </div>
-    <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('addMatchModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveNewMatch()">Add Match</button>
-    </div>
-  </div>
-</div>
-
-<!-- Add Scorer Modal -->
-<div class="modal-bg" id="scorerModal">
-  <div class="modal">
-    <div class="modal-title" id="scorerModalTitle">Add / Edit Scorer</div>
-    <div class="field-group"><div class="field-label">Player Name</div><input class="field-input" type="text" id="sPlayer" placeholder="Full name"></div>
-    <div class="field-group"><div class="field-label">Team</div><select class="field-input" id="sTeam"></select></div>
-    <div class="field-group"><div class="field-label">Goals</div><input class="field-input" type="number" id="sGoals" min="0" value="0"></div>
-    <div class="field-group"><div class="field-label">Assists</div><input class="field-input" type="number" id="sAssists" min="0" value="0"></div>
-    <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('scorerModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveScorer()">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- League Modal -->
-<div class="modal-bg" id="leagueModal">
-  <div class="modal">
-    <div class="modal-title" id="leagueModalTitle">Add League</div>
-    <div class="modal-sub">Create a new league or division.</div>
-    <div class="field-group"><div class="field-label">League Name *</div><input class="field-input" type="text" id="lName" placeholder="e.g. NB I"></div>
-    <div class="field-group"><div class="field-label">Season</div><input class="field-input" type="text" id="lSeason" placeholder="e.g. 2025/26"></div>
-    <div class="field-group">
-      <div class="field-label" style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="lActive" checked style="width:16px;height:16px;cursor:pointer">
-        Active league (show in navigation)
-      </div>
-    </div>
-    <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('leagueModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveLeague()">Save League</button>
-    </div>
-  </div>
-</div>
+<!-- Hidden file inputs -->
+<input type="file" id="teamsFileInput" accept=".csv,.txt" style="display:none">
+<input type="file" id="matchesFileInput" accept=".csv,.txt" style="display:none">
+<input type="file" id="scorersFileInput" accept=".csv,.txt" style="display:none">
 
 <!-- Team Modal -->
 <div class="modal-bg" id="teamModal">
   <div class="modal">
     <div class="modal-title" id="teamModalTitle">Add Team</div>
-    <div class="modal-sub">Fill in the team details. All fields except name are optional.</div>
-    <div class="field-group"><div class="field-label">League *</div><select class="field-input" id="tLeague"></select></div>
-    <div class="field-group"><div class="field-label">Team Name *</div><input class="field-input" type="text" id="tName" placeholder="e.g. Ferencváros TC"></div>
-    <div class="field-group"><div class="field-label">Stadium Name</div><input class="field-input" type="text" id="tStadion" placeholder="e.g. Groupama Aréna"></div>
-    <div class="field-group"><div class="field-label">Location</div><input class="field-input" type="text" id="tLocation" placeholder="e.g. Budapest"></div>
-    <div class="field-group"><div class="field-label">Coordinates</div><input class="field-input" type="text" id="tCoords" placeholder="e.g. 47.4816,19.0515"></div>
-    <div class="field-group"><div class="field-label">Foundation Year</div><input class="field-input" type="text" id="tFoundation" placeholder="e.g. 1899"></div>
+    <div class="field-group"><label class="field-label">Team Name *</label><input class="field-input" type="text" id="tName" placeholder="e.g. Ferencváros TC"></div>
+    <div class="field-group"><label class="field-label">Stadium</label><input class="field-input" type="text" id="tStadion" placeholder="e.g. Groupama Aréna"></div>
+    <div class="field-group"><label class="field-label">Location / City</label><input class="field-input" type="text" id="tLocation" placeholder="e.g. Budapest"></div>
+    <div class="field-group"><label class="field-label">Foundation Year</label><input class="field-input" type="text" id="tFoundation" placeholder="e.g. 1899"></div>
     <div class="field-group">
-      <div class="field-label">Team Colour</div>
+      <label class="field-label">Team Colour</label>
       <div style="display:flex;align-items:center;gap:10px">
         <input class="field-input" type="color" id="tColor" value="#1a6b3a" style="width:56px;height:40px;padding:2px;cursor:pointer">
-        <span style="font-size:12px;color:var(--muted)">Pick a colour for the team badge</span>
+        <span style="font-size:12px;color:var(--muted)">Used for the team badge</span>
       </div>
     </div>
     <div class="modal-btns">
       <button class="mbtn" onclick="closeModal('teamModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveTeam()">Save Team</button>
+      <button class="mbtn primary" onclick="saveTeamModal()">Save Team</button>
     </div>
   </div>
 </div>
 
-<!-- Find & Replace Modal (Editor) -->
-<div class="modal-bg" id="edFRModal">
-  <div class="modal" style="border-radius:12px;max-width:420px;">
+<!-- Find & Replace Modal -->
+<div class="modal-bg" id="frModal">
+  <div class="modal fr-modal">
     <div class="modal-title">Find &amp; Replace</div>
     <div class="field-group">
-      <div class="field-label">Column</div>
-      <select class="field-input" id="edFRCol"><option value="__all__">All columns</option></select>
+      <label class="field-label">Column</label>
+      <select class="field-input" id="frCol"><option value="__all__">All columns</option></select>
     </div>
-    <div class="field-group"><div class="field-label">Find</div><input class="field-input" type="text" id="edFRFind" placeholder="value to find…"></div>
-    <div class="field-group"><div class="field-label">Replace with</div><input class="field-input" type="text" id="edFRReplace" placeholder="new value…"></div>
-    <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)">
-        <input type="checkbox" id="edFRCase"> Case-insensitive
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)">
-        <input type="checkbox" id="edFRRegex"> Regex
-      </label>
+    <div class="field-group"><label class="field-label">Find</label><input class="field-input" type="text" id="frFind" placeholder="value to find…"></div>
+    <div class="field-group"><label class="field-label">Replace with</label><input class="field-input" type="text" id="frReplace" placeholder="new value…"></div>
+    <div style="display:flex;gap:16px;margin-bottom:4px;font-size:13px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="frCase"> Case-insensitive</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="frRegex"> Regex</label>
     </div>
     <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('edFRModal')">Cancel</button>
-      <button class="mbtn primary" onclick="edDoFindReplace()">Replace All</button>
+      <button class="mbtn" onclick="closeModal('frModal')">Cancel</button>
+      <button class="mbtn primary" onclick="doFindReplace()">Replace All</button>
     </div>
   </div>
 </div>
@@ -421,37 +239,47 @@ header{background:var(--green);padding:0 24px;display:flex;align-items:center;ju
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────
-const CLIENT_ID='584383376067-p4oadd30cutenjtahevq2q4tlr33rsft.apps.googleusercontent.com';
-const API_KEY='AIzaSyCGWLRFP6dVaiynna5ionpJyNFjYv_0Bec';
-const FOLDER_ID='16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
-const SCOPES='https://www.googleapis.com/auth/drive.file';
+const CLIENT_ID = '584383376067-p4oadd30cutenjtahevq2q4tlr33rsft.apps.googleusercontent.com';
+const FOLDER_ID = '16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
+const SCOPES    = 'https://www.googleapis.com/auth/drive.file';
 
 // ── STATE ───────────────────────────────────────────────────────
-let accessToken=null;
-let tokenClient=null;
-let leagues=[],teams=[],matches=[],scorers=[];
-let fileIds={leagues:null,teams:null,matches:null,scorers:null};
-let currentLeague=null;
-let currentPage='standings';
-let adminMode=false;
-let editingMatchId=null;
-let editingScorerIdx=null;
-let editingTeamId=null;
-let editingLeagueId=null;
+let accessToken = null, tokenClient = null;
+let currentTab  = 'teams';
+
+// Per-sheet data: { headers:[], rows:[[]], fileId:null, history:[], modified:0, sortCol:-1, sortDir:1, selected:Set, saveTimer:null }
+const sheets = {
+  teams:   newSheet(),
+  matches: newSheet(),
+  scorers: newSheet()
+};
+
+const SHEET_DEFAULTS = {
+  teams:   ['id','name','color','stadium','location','foundation'],
+  matches: ['id','date','round','home','away','home_score','away_score','competition'],
+  scorers: ['id','player','team','competition','goals','assists']
+};
+
+function newSheet(){
+  return {headers:[],rows:[],fileId:null,history:[],modified:0,sortCol:-1,sortDir:1,selected:new Set(),saveTimer:null,lastSaved:null};
+}
+
+let editingTeamRowIdx = null; // for modal
+let _lastSel = undefined;
 
 // ── AUTH ────────────────────────────────────────────────────────
 function initAuth(){
   if(typeof google==='undefined'){setTimeout(initAuth,400);return;}
-  tokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID,scope:SCOPES,prompt:'',
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID, scope:SCOPES, prompt:'',
     callback:(resp)=>{
       if(resp.error){document.getElementById('authScreen').style.display='flex';return;}
-      accessToken=resp.access_token;
-      localStorage.setItem('lm_signed_in','1');
+      accessToken = resp.access_token;
+      localStorage.setItem('lm_in','1');
       onSignedIn();
     }
   });
-  if(localStorage.getItem('lm_signed_in')==='1'){
+  if(localStorage.getItem('lm_in')==='1'){
     document.getElementById('authScreen').style.display='none';
     setSyncStatus('busy');
     tokenClient.requestAccessToken({prompt:''});
@@ -459,24 +287,22 @@ function initAuth(){
 }
 
 function signIn(){
-  if(typeof google==='undefined'||!tokenClient){setTimeout(()=>signIn(),400);return;}
+  if(!tokenClient){setTimeout(signIn,400);return;}
   tokenClient.requestAccessToken({prompt:'consent'});
 }
 
 function signOut(){
-  if(accessToken)google.accounts.oauth2.revoke(accessToken,()=>{});
-  accessToken=null;localStorage.removeItem('lm_signed_in');
+  if(accessToken) google.accounts.oauth2.revoke(accessToken,()=>{});
+  accessToken=null; localStorage.removeItem('lm_in');
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('signOutBtn').style.display='none';
-  document.getElementById('adminBtn').style.display='none';
   setSyncStatus('off');
 }
 
 async function onSignedIn(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('signOutBtn').style.display='inline-block';
-  document.getElementById('adminBtn').style.display='inline-block';
-  await loadAllData();
+  await loadAllSheets();
 }
 
 // ── SYNC STATUS ─────────────────────────────────────────────────
@@ -486,791 +312,407 @@ function setSyncStatus(s){
   d.title=s==='ok'?'Synced':s==='busy'?'Saving…':s==='err'?'Error':'Not connected';
 }
 
-// ── DRIVE API ───────────────────────────────────────────────────
+// ── DRIVE ───────────────────────────────────────────────────────
 async function driveGet(path,params=''){
   const r=await fetch(`https://www.googleapis.com/drive/v3/${path}${params}`,{headers:{Authorization:`Bearer ${accessToken}`}});
-  if(!r.ok)throw new Error(`Drive API ${r.status}: ${path}`);
+  if(!r.ok) throw new Error(`Drive ${r.status}`);
   return r.json();
 }
 
 async function findFile(name){
   const q=encodeURIComponent(`name='${name}' and '${FOLDER_ID}' in parents and trashed=false`);
   const d=await driveGet('files',`?q=${q}&fields=files(id,name,mimeType)`);
-  return d.files&&d.files.length?d.files[0]:null;
+  return d.files&&d.files.length ? d.files[0] : null;
 }
 
-// Fixed: handles Google Sheets that were auto-converted from uploaded CSVs
-async function readFile(fileId,mimeType){
+async function readFile(fileId, mimeType){
   let r;
   if(mimeType==='application/vnd.google-apps.spreadsheet'){
-    // Export Google Sheet as CSV
-    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text%2Fcsv`,{
-      headers:{Authorization:`Bearer ${accessToken}`}
-    });
+    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text%2Fcsv`,{headers:{Authorization:`Bearer ${accessToken}`}});
   } else {
-    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{
-      headers:{Authorization:`Bearer ${accessToken}`}
-    });
+    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:`Bearer ${accessToken}`}});
   }
-  if(!r.ok)throw new Error(`Read failed: ${r.status}`);
+  if(!r.ok) throw new Error(`Read failed ${r.status}`);
   return r.text();
 }
 
-async function writeFile(name,content,existingId){
+async function writeFileToDrive(name, content, existingId){
   setSyncStatus('busy');
-  const blob=new Blob([content],{type:'text/csv'});
   try{
     if(existingId){
-      // If the existing file is a Google Sheet, we can't PATCH it as CSV media.
-      // Check type first and if Sheet, create a new proper CSV file instead.
-      const meta=await driveGet(`files/${existingId}`,'?fields=mimeType').catch(()=>null);
-      if(meta&&meta.mimeType==='application/vnd.google-apps.spreadsheet'){
-        // Delete the sheet and create a fresh CSV
-        await fetch(`https://www.googleapis.com/drive/v3/files/${existingId}`,{
-          method:'DELETE',headers:{Authorization:`Bearer ${accessToken}`}
-        });
+      const meta = await driveGet(`files/${existingId}`,'?fields=mimeType').catch(()=>null);
+      if(meta && meta.mimeType==='application/vnd.google-apps.spreadsheet'){
+        await fetch(`https://www.googleapis.com/drive/v3/files/${existingId}`,{method:'DELETE',headers:{Authorization:`Bearer ${accessToken}`}});
         existingId=null;
       }
     }
     if(existingId){
       await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,{
-        method:'PATCH',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'text/csv'},body:content
+        method:'PATCH', headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'text/csv'}, body:content
       });
-      setSyncStatus('ok');
-      return existingId;
+      setSyncStatus('ok'); return existingId;
     } else {
-      const meta={name,parents:[FOLDER_ID],mimeType:'text/csv'};
       const form=new FormData();
-      form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
-      form.append('file',blob);
+      form.append('metadata', new Blob([JSON.stringify({name, parents:[FOLDER_ID], mimeType:'text/csv'})],{type:'application/json'}));
+      form.append('file', new Blob([content],{type:'text/csv'}));
       const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{
-        method:'POST',headers:{Authorization:`Bearer ${accessToken}`},body:form
+        method:'POST', headers:{Authorization:`Bearer ${accessToken}`}, body:form
       });
       const d=await r.json();
-      setSyncStatus('ok');
-      return d.id;
+      setSyncStatus('ok'); return d.id;
     }
-  }catch(e){setSyncStatus('err');console.error(e);toast('Save error: '+e.message,'error');}
-  return existingId;
+  }catch(e){setSyncStatus('err');toast('Save error: '+e.message,'error');return existingId;}
 }
 
-// ── CSV PARSING ─────────────────────────────────────────────────
+// ── CSV PARSE / SERIALIZE ───────────────────────────────────────
 function parseCSV(text){
-  if(!text||!text.trim())return[];
-  const lines=text.trim().split('\n');
-  if(!lines.length)return[];
-  const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
-  return lines.slice(1).filter(l=>l.trim()).map(line=>{
-    const vals=[];let cur='',inQ=false;
-    for(const ch of line){
-      if(ch==='"'){inQ=!inQ;}
-      else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}
-      else cur+=ch;
-    }
-    vals.push(cur.trim());
-    const obj={};
-    headers.forEach((h,i)=>obj[h]=(vals[i]||'').replace(/^"|"$/g,''));
-    return obj;
+  if(!text||!text.trim()) return {headers:[],rows:[]};
+  // Full quoted-field parser
+  const lines=[];let inQ=false,cur='',row=[];
+  for(let i=0;i<text.length;i++){
+    const c=text[i],n=text[i+1];
+    if(c==='"'){if(inQ&&n==='"'){cur+='"';i++;}else inQ=!inQ;}
+    else if(c===','&&!inQ){row.push(cur);cur='';}
+    else if((c==='\n'||c==='\r')&&!inQ){
+      row.push(cur);cur='';
+      if(row.some(v=>v!=='')||row.length>1) lines.push(row);
+      row=[];if(c==='\r'&&n==='\n')i++;
+    }else cur+=c;
+  }
+  row.push(cur);
+  if(row.some(v=>v!=='')||row.length>1) lines.push(row);
+  if(!lines.length) return {headers:[],rows:[]};
+  const headers=lines[0].map(h=>h.trim());
+  const rows=lines.slice(1).map(r=>{
+    const out=r.slice(0,headers.length);
+    while(out.length<headers.length) out.push('');
+    return out;
   });
+  return {headers,rows};
 }
 
-function toCSV(arr){
-  if(!arr.length)return'';
-  const headers=Object.keys(arr[0]);
-  const escape=v=>{v=String(v||'');return(v.includes(',')||v.includes('"')||v.includes('\n'))?`"${v.replace(/"/g,'""')}"`:v;};
-  return[headers.join(','),...arr.map(r=>headers.map(h=>escape(r[h]||'')).join(','))].join('\n');
+function serializeCSV(headers,rows){
+  const esc=v=>{v=String(v||'');return(v.includes(',')||v.includes('"')||v.includes('\n'))?`"${v.replace(/"/g,'""')}"`:v;};
+  return [headers.join(','),...rows.map(r=>r.map(esc).join(','))].join('\r\n');
 }
 
-// ── LOAD DATA ───────────────────────────────────────────────────
-async function loadAllData(){
+// ── LOAD ALL SHEETS ─────────────────────────────────────────────
+async function loadAllSheets(){
   setSyncStatus('busy');
   try{
-    const files=['leagues','teams','matches','scorers'];
-    for(const name of files){
+    for(const name of ['teams','matches','scorers']){
       const f=await findFile(`${name}.csv`);
       if(f){
-        fileIds[name]=f.id;
+        sheets[name].fileId=f.id;
         const text=await readFile(f.id, f.mimeType);
-        if(name==='leagues')leagues=parseCSV(text);
-        if(name==='teams')teams=parseCSV(text);
-        if(name==='matches')matches=parseCSV(text);
-        if(name==='scorers')scorers=parseCSV(text);
-      } else {
-        fileIds[name]=null;
-        if(name==='leagues')leagues=[];
-        if(name==='teams')teams=[];
-        if(name==='matches')matches=[];
-        if(name==='scorers')scorers=[];
+        const {headers,rows}=parseCSV(text);
+        sheets[name].headers=headers;
+        sheets[name].rows=rows.map(r=>[...r]);
       }
     }
     setSyncStatus('ok');
-    buildLeagueTabs();
-    // Refresh editor if open
-    if(currentPage==='editor')edRefresh();
-  }catch(e){setSyncStatus('err');console.error(e);toast('Load error: '+e.message,'error');}
+  }catch(e){setSyncStatus('err');toast('Load error: '+e.message,'error');}
+  renderTab(currentTab);
 }
 
-async function refreshData(){
-  document.getElementById('mainContent').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
-  await loadAllData();
+async function refreshAll(){
+  document.getElementById('mainWrap').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
+  await loadAllSheets();
 }
 
-// ── SAVE CSV ────────────────────────────────────────────────────
-async function saveCSV(name){
-  const data=name==='matches'?matches:name==='scorers'?scorers:name==='teams'?teams:leagues;
-  const csv=toCSV(data);
-  const newId=await writeFile(`${name}.csv`,csv,fileIds[name]);
-  if(newId&&newId!==fileIds[name])fileIds[name]=newId;
+// ── SAVE SHEET TO DRIVE ─────────────────────────────────────────
+async function saveSheet(name){
+  const s=sheets[name];
+  if(!s.headers.length) return;
+  const csv=serializeCSV(s.headers,s.rows);
+  const newId=await writeFileToDrive(`${name}.csv`,csv,s.fileId);
+  if(newId) s.fileId=newId;
 }
 
-// ── LEAGUE TABS ─────────────────────────────────────────────────
-function buildLeagueTabs(){
-  const nav=document.getElementById('leagueNav');
-  nav.innerHTML='';
-  const setupTab=document.createElement('div');
-  setupTab.className='ltab'+(leagues.length===0?' active':'');
-  setupTab.textContent='⚙ Setup';
-  setupTab.id='setupTab';
-  setupTab.onclick=()=>{
-    document.querySelectorAll('.ltab').forEach(t=>t.classList.remove('active'));
-    setupTab.classList.add('active');
-    currentLeague=null;
-    currentPage='setup';
-    document.getElementById('pageTabs').style.display='none';
-    renderPage();
-  };
-  nav.appendChild(setupTab);
-
-  leagues.filter(l=>l.active!=='0').forEach((l,i)=>{
-    const tab=document.createElement('div');
-    tab.className='ltab'+(i===0&&leagues.length>0?' active':'');
-    tab.textContent=l.name;
-    tab.onclick=()=>{
-      document.querySelectorAll('.ltab').forEach(t=>t.classList.remove('active'));
-      tab.classList.add('active');
-      currentLeague=l;
-      currentPage='standings';
-      document.getElementById('pageTabs').style.display='flex';
-      document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
-      document.querySelector('.ptab').classList.add('active');
-      leaveEditorMode();
-      renderPage();
-    };
-    nav.appendChild(tab);
-  });
-
-  if(leagues.length>0){
-    const active=leagues.find(l=>l.active==='1')||leagues[0];
-    if(active)document.getElementById('seasonLabel').textContent=active.season||'';
-    currentLeague=leagues.filter(l=>l.active!=='0')[0]||leagues[0];
-    document.getElementById('pageTabs').style.display='flex';
-    currentPage='standings';
-    renderPage();
-  } else {
-    currentLeague=null;currentPage='setup';
-    document.getElementById('pageTabs').style.display='none';
-    renderPage();
-  }
+function schedSave(name){
+  const s=sheets[name];
+  clearTimeout(s.saveTimer);
+  s.saveTimer=setTimeout(async()=>{
+    await saveSheet(name);
+    s.lastSaved=new Date();
+    s.modified=0;
+    updateStatusBar(name);
+  },1500);
 }
 
-// ── PAGE SWITCHING ───────────────────────────────────────────────
-function switchPage(page,btn){
-  if(currentPage==='editor'&&page!=='editor')leaveEditorMode();
-  currentPage=page;
-  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
-  if(btn)btn.classList.add('active');
-  renderPage();
+async function forceSave(name){
+  const s=sheets[name];
+  clearTimeout(s.saveTimer);
+  await saveSheet(name);
+  s.lastSaved=new Date();
+  s.modified=0;
+  updateStatusBar(name);
+  toast('Saved to Drive','success');
 }
 
-function leaveEditorMode(){
-  document.getElementById('mainWrap').classList.remove('editor-mode');
-  // Auto-save if pending
-  if(edModified>0)edForceSave();
+// ── LOAD FROM CSV STRING (local import) ─────────────────────────
+function loadCSVIntoSheet(name, text, filename){
+  const {headers,rows}=parseCSV(text);
+  if(!headers.length){toast('Empty or invalid CSV','error');return;}
+  const s=sheets[name];
+  s.headers=headers;
+  s.rows=rows.map(r=>[...r]);
+  s.history=[];s.selected=new Set();s.modified=0;s.sortCol=-1;s.sortDir=1;
+  schedSave(name); // auto-save to Drive
+  renderTab(name);
+  toast(`Loaded ${rows.length} rows from ${filename||'CSV'}. Saving to Drive…`,'success');
 }
 
-function renderPage(){
-  const el=document.getElementById('mainContent');
-  if(currentPage==='setup'){el.innerHTML=renderSetup();return;}
-  if(currentPage==='editor'){renderEditorPage();return;}
-  if(!currentLeague)return;
-  if(currentPage==='standings')el.innerHTML=renderStandings();
-  else if(currentPage==='results')el.innerHTML=renderMatches(true);
-  else if(currentPage==='fixtures')el.innerHTML=renderMatches(false);
-  else if(currentPage==='scorers')el.innerHTML=renderScorers();
-  else if(currentPage==='teams')el.innerHTML=renderTeams();
+// ── TAB SWITCHING ───────────────────────────────────────────────
+function switchTab(name){
+  currentTab=name;
+  document.querySelectorAll('.tnav-tab').forEach(t=>t.classList.remove('active'));
+  const el=document.getElementById('tab-'+name);
+  if(el)el.classList.add('active');
+  renderTab(name);
 }
 
-// ── SETUP ───────────────────────────────────────────────────────
-function renderSetup(){
-  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <div class="section-title" style="margin:0">Leagues</div>
-    <button class="mbtn primary" onclick="openAddLeague()">+ Add League</button>
+function renderTab(name){
+  const wrap=document.getElementById('mainWrap');
+  wrap.className='main-wrap';
+  if(name==='teams')   renderTeamsSheet(wrap);
+  else if(name==='matches') renderGenericSheet(wrap,'matches','Matches');
+  else if(name==='scorers') renderGenericSheet(wrap,'scorers','Top Scorers');
+}
+
+// ── TEAMS SHEET ─────────────────────────────────────────────────
+function renderTeamsSheet(wrap){
+  const s=sheets.teams;
+  let html=`
+  <div class="sheet-header">
+    <div>
+      <div class="sheet-title">Teams</div>
+      <div class="sheet-subtitle">All teams — independent of leagues &amp; competitions</div>
+    </div>
   </div>`;
-  if(!leagues.length){
-    html+=`<div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">No leagues yet.<br>Click "+ Add League" to create your first league.</div></div>`;
-    return html;
-  }
-  html+=`<div class="standings-wrap"><table class="standings-table">
-    <thead><tr><th>League</th><th>Season</th><th>Status</th><th></th></tr></thead><tbody>`;
-  leagues.forEach(l=>{
-    html+=`<tr>
-      <td><strong>${esc(l.name)}</strong></td>
-      <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(l.season||'—')}</td>
-      <td><span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${l.active==='1'?'var(--green-light)':'var(--surface2)'};color:${l.active==='1'?'var(--green)':'var(--muted)'}">${l.active==='1'?'Active':'Inactive'}</span></td>
-      <td style="text-align:right">
-        <button class="match-edit-btn" onclick="openEditLeague('${l.id}')">Edit</button>
-        <button class="match-edit-btn" style="color:var(--red);border-color:#fca5a5" onclick="deleteLeague('${l.id}')">Del</button>
-      </td>
-    </tr>`;
-  });
-  html+=`</tbody></table></div>`;
-  return html;
-}
 
-function openAddLeague(){
-  editingLeagueId=null;
-  document.getElementById('leagueModalTitle').textContent='Add League';
-  document.getElementById('lName').value='';
-  document.getElementById('lSeason').value='';
-  document.getElementById('lActive').checked=true;
-  document.getElementById('leagueModal').classList.add('open');
-}
-
-function openEditLeague(id){
-  const l=leagues.find(l=>l.id===id);if(!l)return;
-  editingLeagueId=id;
-  document.getElementById('leagueModalTitle').textContent='Edit League';
-  document.getElementById('lName').value=l.name||'';
-  document.getElementById('lSeason').value=l.season||'';
-  document.getElementById('lActive').checked=l.active==='1';
-  document.getElementById('leagueModal').classList.add('open');
-}
-
-async function saveLeague(){
-  const entry={id:editingLeagueId||'l'+(Date.now()),name:document.getElementById('lName').value.trim(),season:document.getElementById('lSeason').value.trim(),active:document.getElementById('lActive').checked?'1':'0'};
-  if(!entry.name){alert('League name is required.');return;}
-  if(editingLeagueId){const idx=leagues.findIndex(l=>l.id===editingLeagueId);if(idx>=0)leagues[idx]=entry;}
-  else leagues.push(entry);
-  closeModal('leagueModal');
-  await saveCSV('leagues');
-  buildLeagueTabs();
-}
-
-async function deleteLeague(id){
-  if(!confirm('Delete this league? Teams assigned to it will not be deleted.'))return;
-  leagues=leagues.filter(l=>l.id!==id);
-  await saveCSV('leagues');
-  buildLeagueTabs();
-}
-
-// ── STANDINGS ───────────────────────────────────────────────────
-function calcStandings(){
-  const leagueTeams=teams.filter(t=>t.league_id===currentLeague.id);
-  const stats={};
-  leagueTeams.forEach(t=>{
-    const id=t.team_id||t.id;
-    stats[id]={id,name:t.team_name||t.name,color:t.color||'#1a6b3a',p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,form:[]};
-  });
-  const leagueMatches=matches.filter(m=>m.league_id===currentLeague.id&&m.home_score!==''&&m.away_score!==''&&m.home_score!==undefined);
-  leagueMatches.sort((a,b)=>a.date>b.date?1:-1);
-  leagueMatches.forEach(m=>{
-    const hs=parseInt(m.home_score),as=parseInt(m.away_score);
-    if(isNaN(hs)||isNaN(as))return;
-    const h=stats[m.home_id],a=stats[m.away_id];
-    if(!h||!a)return;
-    h.p++;a.p++;h.gf+=hs;h.ga+=as;a.gf+=as;a.ga+=hs;
-    if(hs>as){h.w++;h.pts+=3;a.l++;h.form.push('W');a.form.push('L');}
-    else if(hs<as){a.w++;a.pts+=3;h.l++;h.form.push('L');a.form.push('W');}
-    else{h.d++;a.d++;h.pts+=1;a.pts+=1;h.form.push('D');a.form.push('D');}
-  });
-  return Object.values(stats).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf);
-}
-
-function renderStandings(){
-  const table=calcStandings();
-  if(!table.length)return'<div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">No teams found for this league.<br>Go to <strong>Teams</strong> tab and add some teams.</div></div>';
-  const total=table.length;
-  let rows='';
-  table.forEach((t,i)=>{
-    const pos=i+1;
-    const posClass=pos===1?'pos-1':pos<=3?'pos-2':pos>=total-1?'pos-rel':'pos-def';
-    const gd=(t.gf-t.ga>0?'+':'')+(t.gf-t.ga);
-    const form=t.form.slice(-5).map(f=>`<div class="form-dot form-${f.toLowerCase()}"></div>`).join('');
-    rows+=`<tr>
-      <td><span class="pos-num ${posClass}">${pos}</span></td>
-      <td><div class="team-cell"><div class="team-badge" style="background:${t.color}">${(t.name||'?').slice(0,3).toUpperCase()}</div>${esc(t.name||'?')}</div></td>
-      <td class="num">${t.p}</td><td class="num">${t.w}</td><td class="num">${t.d}</td><td class="num">${t.l}</td>
-      <td class="num">${t.gf}:${t.ga}</td><td class="num">${gd}</td><td class="pts">${t.pts}</td>
-      <td><div class="form-dots">${form}</div></td>
-    </tr>`;
-  });
-  return`<div class="section-title">${esc(currentLeague.name)} — Standings</div>
-  <div class="standings-wrap">
-    <table class="standings-table">
-      <thead><tr><th>#</th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">G</th><th class="num">GD</th><th class="num">Pts</th><th>Form</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-}
-
-// ── MATCHES ─────────────────────────────────────────────────────
-function teamName(id){const t=teams.find(t=>(t.team_id||t.id)===id);return t?(t.team_name||t.name||id):id;}
-function teamColor(id){const t=teams.find(t=>(t.team_id||t.id)===id);return t&&t.color?t.color:'#1a6b3a';}
-
-function renderMatches(played){
-  const lm=matches
-    .filter(m=>m.league_id===currentLeague.id)
-    .filter(m=>played?(m.home_score!==''&&m.home_score!==undefined):(m.home_score===''||m.home_score===undefined))
-    .sort((a,b)=>played?b.date>a.date?1:-1:a.date>b.date?1:-1);
-  if(!lm.length)return`<div class="empty"><div class="empty-icon">${played?'📋':'📅'}</div><div class="empty-text">No ${played?'results':'fixtures'} yet.</div></div>`;
-  const rounds={};
-  lm.forEach(m=>{const r=m.round||'—';if(!rounds[r])rounds[r]=[];rounds[r].push(m);});
-  let html=`<div class="section-title">${esc(currentLeague.name)} — ${played?'Results':'Fixtures'}</div>`;
-  if(adminMode)html+=`<button class="mbtn primary" style="margin-bottom:14px" onclick="openAddMatch()">+ Add Match</button>`;
-  html+='<div class="matches-list">';
-  Object.entries(rounds).forEach(([round,ms])=>{
-    html+=`<div class="round-header">Round ${esc(round)}</div>`;
-    ms.forEach(m=>{
-      const isPlayed=m.home_score!==''&&m.home_score!==undefined&&m.home_score!==null;
-      const editBtn=adminMode?`<button class="match-edit-btn" onclick="openEditMatch('${m.id}')">Edit</button>`:'';
-      html+=`<div class="match-card ${isPlayed?'played':'upcoming'}">
-        <div class="match-home"><div class="match-team">${esc(teamName(m.home_id))}</div><div class="match-date">${esc(m.date||'')}</div></div>
-        <div class="match-score">
-          ${isPlayed?`<div class="score-box">${m.home_score}<span class="score-sep"> : </span>${m.away_score}</div>`:`<div class="fixture-time">${esc(m.time||'TBD')}</div>`}
-          ${editBtn}
-        </div>
-        <div class="match-away"><div class="match-team">${esc(teamName(m.away_id))}</div></div>
-      </div>`;
-    });
-  });
-  html+='</div>';
-  return html;
-}
-
-// ── SCORERS ─────────────────────────────────────────────────────
-function renderScorers(){
-  const ls=scorers.filter(s=>s.league_id===currentLeague.id).sort((a,b)=>parseInt(b.goals)-parseInt(a.goals)||parseInt(b.assists)-parseInt(a.assists));
-  if(!ls.length)return`<div class="empty"><div class="empty-icon">⚽</div><div class="empty-text">No scorers yet.<br>${adminMode?'Click "Add Scorer" to add one.':'Enable admin mode to add scorers.'}</div></div>`;
-  let rows='';
-  ls.forEach((s,i)=>{
-    const rankClass=i<3?'top':'';
-    const editBtn=adminMode?`<button class="match-edit-btn" onclick="openEditScorer(${scorers.indexOf(s)})">Edit</button>`:'';
-    rows+=`<tr>
-      <td class="num"><span class="scorer-rank ${rankClass}">${i+1}</span></td>
-      <td><strong>${esc(s.player)}</strong></td>
-      <td>${esc(teamName(s.team_id))}</td>
-      <td class="num">${esc(s.goals)}</td><td class="num">${esc(s.assists)}</td>
-      <td>${editBtn}</td>
-    </tr>`;
-  });
-  let html=`<div class="section-title">${esc(currentLeague.name)} — Top Scorers</div>`;
-  if(adminMode)html+=`<button class="mbtn primary" style="margin-bottom:14px" onclick="openAddScorer()">+ Add Scorer</button>`;
-  html+=`<div class="standings-wrap"><table class="scorers-table">
-    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">G</th><th class="num">A</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
-  return html;
-}
-
-// ── TEAMS ───────────────────────────────────────────────────────
-function renderTeams(){
-  const lt=teams.filter(t=>t.league_id===currentLeague.id);
-  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <div class="section-title" style="margin:0">${esc(currentLeague.name)} — Teams</div>
-    ${adminMode?'<button class="mbtn primary" onclick="openAddTeam()">+ Add Team</button>':''}
-  </div>`;
-  if(!lt.length)return html+`<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No teams found for this league.<br>${adminMode?'Click "+ Add Team" above to add one.':'Enable admin mode to add teams.'}</div></div>`;
-  const standings=calcStandings();
-  lt.forEach(t=>{
-    const tid=t.team_id||t.id;
-    const tname=t.team_name||t.name||'?';
-    const st=standings.find(s=>s.id===tid)||{p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
-    html+=`<div class="team-profile">
-      <div class="team-profile-header">
-        <div class="team-profile-badge" style="background:${t.color||'#2d9653'}">${tname.slice(0,3).toUpperCase()}</div>
-        <div>
-          <div class="team-profile-name">${esc(tname)}</div>
-          <div class="team-profile-league">${esc(currentLeague.name)}</div>
-        </div>
-        ${adminMode?`<div style="margin-left:auto;display:flex;gap:6px">
-          <button class="match-edit-btn" onclick="openEditTeam('${tid}')">Edit</button>
-          <button class="match-edit-btn" style="color:var(--red);border-color:#fca5a5" onclick="deleteTeam('${tid}')">Del</button>
-        </div>`:''}
-      </div>
-      ${(t.stadion||t.location||t.foundation)?`<div class="team-meta">
-        ${t.stadion?`<span>🏟 ${esc(t.stadion)}</span>`:''}
-        ${t.location?`<span>📍 ${esc(t.location)}</span>`:''}
-        ${t.foundation?`<span>📅 Est. ${esc(t.foundation)}</span>`:''}
-      </div>`:''}
-      <div class="team-stats-grid">
-        <div class="team-stat"><div class="team-stat-val">${st.pts}</div><div class="team-stat-lbl">Points</div></div>
-        <div class="team-stat"><div class="team-stat-val">${st.w}</div><div class="team-stat-lbl">Wins</div></div>
-        <div class="team-stat"><div class="team-stat-val">${st.gf}</div><div class="team-stat-lbl">Goals For</div></div>
-        <div class="team-stat"><div class="team-stat-val">${st.gf-st.ga>0?'+':''}${st.gf-st.ga}</div><div class="team-stat-lbl">Goal Diff</div></div>
-      </div>
+  // If no data: show drop zone prominently
+  if(!s.headers.length){
+    html+=`
+    <div class="drop-zone" id="teamsDropZone">
+      <div class="drop-zone-icon">📂</div>
+      <p><strong>Drop your teams.csv here</strong> or click to browse</p>
+      <p style="margin-top:4px">Any CSV with team data works — columns will be detected automatically</p>
+      <p style="margin-top:8px"><small>Or use the "＋ Add Row" button below to build from scratch</small></p>
     </div>`;
-  });
-  return html;
-}
-
-// ── ADMIN ───────────────────────────────────────────────────────
-function toggleAdmin(){
-  adminMode=!adminMode;
-  document.getElementById('adminBar').classList.toggle('visible',adminMode);
-  document.getElementById('adminBtn').classList.toggle('admin-on',adminMode);
-  document.getElementById('adminBtn').textContent=adminMode?'Admin ✓':'Admin';
-  const pageTabs=document.getElementById('pageTabs');
-  const existing=document.getElementById('editorPtab');
-  if(adminMode){
-    if(!existing){
-      const tab=document.createElement('button');
-      tab.className='ptab editor-tab';tab.id='editorPtab';tab.textContent='✏ Editor';
-      tab.onclick=()=>switchPage('editor',tab);
-      pageTabs.appendChild(tab);
-    }
-  } else {
-    if(existing)existing.remove();
-    if(currentPage==='editor'){
-      leaveEditorMode();
-      switchPage('standings',pageTabs.querySelector('.ptab'));
-    }
   }
-  renderPage();
-}
 
-// ── MATCH EDITING ───────────────────────────────────────────────
-function openEditMatch(id){
-  const m=matches.find(m=>m.id===id);if(!m)return;
-  editingMatchId=id;
-  document.getElementById('matchModalTitle').textContent='Edit Match — '+teamName(m.home_id)+' vs '+teamName(m.away_id);
-  document.getElementById('mDate').value=m.date||'';
-  document.getElementById('mRound').value=m.round||'';
-  document.getElementById('mHomeScore').value=m.home_score||'';
-  document.getElementById('mAwayScore').value=m.away_score||'';
-  document.getElementById('matchModal').classList.add('open');
-}
-
-async function saveMatch(){
-  const m=matches.find(m=>m.id===editingMatchId);if(!m)return;
-  m.date=document.getElementById('mDate').value;
-  m.round=document.getElementById('mRound').value;
-  m.home_score=document.getElementById('mHomeScore').value;
-  m.away_score=document.getElementById('mAwayScore').value;
-  closeModal('matchModal');
-  await saveCSV('matches');
-  renderPage();
-}
-
-function openAddMatch(){
-  const lt=teams.filter(t=>t.league_id===currentLeague.id);
-  const opts=lt.map(t=>`<option value="${t.team_id||t.id}">${esc(t.team_name||t.name)}</option>`).join('');
-  document.getElementById('amHome').innerHTML=opts;
-  document.getElementById('amAway').innerHTML=opts;
-  document.getElementById('amDate').value=new Date().toISOString().split('T')[0];
-  document.getElementById('amRound').value='';
-  document.getElementById('amHomeScore').value='';
-  document.getElementById('amAwayScore').value='';
-  document.getElementById('addMatchModal').classList.add('open');
-}
-
-async function saveNewMatch(){
-  matches.push({
-    id:'m'+(Date.now()),
-    date:document.getElementById('amDate').value,
-    home_id:document.getElementById('amHome').value,
-    away_id:document.getElementById('amAway').value,
-    home_score:document.getElementById('amHomeScore').value,
-    away_score:document.getElementById('amAwayScore').value,
-    league_id:currentLeague?.id||'',
-    round:document.getElementById('amRound').value,
-    time:''
-  });
-  closeModal('addMatchModal');
-  await saveCSV('matches');
-  renderPage();
-  toast('Match added','success');
-}
-
-// ── SCORER EDITING ───────────────────────────────────────────────
-function openAddScorer(){
-  editingScorerIdx=null;
-  document.getElementById('scorerModalTitle').textContent='Add Scorer';
-  document.getElementById('sPlayer').value='';
-  document.getElementById('sGoals').value='0';
-  document.getElementById('sAssists').value='0';
-  const lt=teams.filter(t=>t.league_id===currentLeague.id);
-  document.getElementById('sTeam').innerHTML=lt.map(t=>`<option value="${t.team_id||t.id}">${esc(t.team_name||t.name)}</option>`).join('');
-  document.getElementById('scorerModal').classList.add('open');
-}
-
-function openEditScorer(idx){
-  editingScorerIdx=idx;
-  const s=scorers[idx];
-  document.getElementById('scorerModalTitle').textContent='Edit Scorer';
-  document.getElementById('sPlayer').value=s.player||'';
-  document.getElementById('sGoals').value=s.goals||'0';
-  document.getElementById('sAssists').value=s.assists||'0';
-  const lt=teams.filter(t=>t.league_id===currentLeague.id);
-  document.getElementById('sTeam').innerHTML=lt.map(t=>`<option value="${t.team_id||t.id}"${(t.team_id||t.id)===s.team_id?' selected':''}>${esc(t.team_name||t.name)}</option>`).join('');
-  document.getElementById('scorerModal').classList.add('open');
-}
-
-async function saveScorer(){
-  const entry={
-    id:editingScorerIdx!==null?scorers[editingScorerIdx].id:'s'+(Date.now()),
-    player:document.getElementById('sPlayer').value,
-    team_id:document.getElementById('sTeam').value,
-    league_id:currentLeague?.id||'',
-    goals:document.getElementById('sGoals').value,
-    assists:document.getElementById('sAssists').value
-  };
-  if(editingScorerIdx!==null)scorers[editingScorerIdx]=entry;
-  else scorers.push(entry);
-  closeModal('scorerModal');
-  await saveCSV('scorers');
-  renderPage();
-}
-
-// ── TEAM EDITING ─────────────────────────────────────────────────
-function openAddTeam(){
-  editingTeamId=null;
-  document.getElementById('teamModalTitle').textContent='Add Team';
-  const opts=leagues.map(l=>`<option value="${l.id}"${currentLeague&&l.id===currentLeague.id?' selected':''}>${esc(l.name)}</option>`).join('');
-  document.getElementById('tLeague').innerHTML=opts;
-  document.getElementById('tName').value='';
-  document.getElementById('tStadion').value='';
-  document.getElementById('tLocation').value='';
-  document.getElementById('tCoords').value='';
-  document.getElementById('tFoundation').value='';
-  document.getElementById('tColor').value='#1a6b3a';
-  document.getElementById('teamModal').classList.add('open');
-}
-
-function openEditTeam(id){
-  const t=teams.find(t=>(t.team_id||t.id)===id);if(!t)return;
-  editingTeamId=id;
-  document.getElementById('teamModalTitle').textContent='Edit Team';
-  const opts=leagues.map(l=>`<option value="${l.id}"${l.id===t.league_id?' selected':''}>${esc(l.name)}</option>`).join('');
-  document.getElementById('tLeague').innerHTML=opts;
-  document.getElementById('tName').value=t.team_name||t.name||'';
-  document.getElementById('tStadion').value=t.stadion||'';
-  document.getElementById('tLocation').value=t.location||'';
-  document.getElementById('tCoords').value=t.coords||'';
-  document.getElementById('tFoundation').value=t.foundation||'';
-  document.getElementById('tColor').value=t.color||'#1a6b3a';
-  document.getElementById('teamModal').classList.add('open');
-}
-
-async function saveTeam(){
-  const name=document.getElementById('tName').value.trim();
-  if(!name){alert('Team name is required.');return;}
-  const entry={
-    team_id:editingTeamId||'t'+(Date.now()),
-    team_name:name,
-    league_id:document.getElementById('tLeague').value,
-    stadion:document.getElementById('tStadion').value,
-    location:document.getElementById('tLocation').value,
-    coords:document.getElementById('tCoords').value,
-    foundation:document.getElementById('tFoundation').value,
-    color:document.getElementById('tColor').value
-  };
-  if(editingTeamId){const idx=teams.findIndex(t=>(t.team_id||t.id)===editingTeamId);if(idx>=0)teams[idx]=entry;}
-  else teams.push(entry);
-  closeModal('teamModal');
-  await saveCSV('teams');
-  renderPage();
-  toast(editingTeamId?'Team updated':'Team added','success');
-}
-
-async function deleteTeam(id){
-  if(!confirm('Delete this team?'))return;
-  teams=teams.filter(t=>(t.team_id||t.id)!==id);
-  await saveCSV('teams');
-  renderPage();
-  toast('Team deleted','');
-}
-
-// ── MODAL HELPERS ────────────────────────────────────────────────
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===e.currentTarget)e.target.classList.remove('open');}));
-
-// ── TOAST ────────────────────────────────────────────────────────
-function toast(msg,type=''){
-  const c=document.getElementById('toast-container');
-  const t=document.createElement('div');
-  t.className='toast'+(type?' '+type:'');
-  t.textContent=msg;
-  c.appendChild(t);
-  setTimeout(()=>t.remove(),3000);
-}
-
-// ── ESCAPE HTML ──────────────────────────────────────────────────
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-
-// ═══════════════════════════════════════════════════════════════
-//  EDITOR
-// ═══════════════════════════════════════════════════════════════
-let edType='teams';
-let edHeaders=[],edRows=[],edHistory=[];
-let edSelectedRows=new Set();
-let edSortCol=-1,edSortDir=1;
-let edModified=0;
-let edSaveTimer=null;
-let edLastSaved=null;
-let _edLastSel=undefined;
-
-const ED_DEFAULTS={
-  leagues:['id','name','season','active'],
-  teams:['team_id','team_name','league_id','color','stadion','location','coords','foundation'],
-  matches:['id','league_id','home_id','away_id','home_score','away_score','date','round','time'],
-  scorers:['id','player','team_id','league_id','goals','assists']
-};
-
-function edGetLive(){return edType==='teams'?teams:edType==='matches'?matches:edType==='scorers'?scorers:leagues;}
-function edSetLive(arr){if(edType==='teams')teams=arr;else if(edType==='matches')matches=arr;else if(edType==='scorers')scorers=arr;else leagues=arr;}
-
-function dataToEd(arr){
-  if(!arr.length)return{headers:[],rows:[]};
-  const headers=Object.keys(arr[0]);
-  const rows=arr.map(obj=>headers.map(h=>String(obj[h]||'')));
-  return{headers,rows};
-}
-function edToData(){
-  return edRows.map(row=>{const obj={};edHeaders.forEach((h,i)=>obj[h]=row[i]||'');return obj;});
-}
-
-function edLoad(type,forceInit){
-  if(edType!==type&&edModified>0)edForceSave();
-  edType=type;
-  const arr=edGetLive();
-  if(arr.length||!forceInit){
-    const{headers,rows}=dataToEd(arr);
-    edHeaders=headers.length?headers:[...ED_DEFAULTS[type]];
-    edRows=rows.map(r=>[...r]);
-  } else {
-    edHeaders=[...ED_DEFAULTS[type]];
-    edRows=[];
-  }
-  edHistory=[];edSelectedRows=new Set();edSortCol=-1;edSortDir=1;edModified=0;_edLastSel=undefined;
-  // Update active tab
-  document.querySelectorAll('.etab').forEach(t=>t.classList.remove('active'));
-  const tab=document.getElementById('etab-'+type);
-  if(tab)tab.classList.add('active');
-  edRenderTable();
-  edUpdateStatus();
-}
-
-function edRefresh(){
-  const arr=edGetLive();
-  const{headers,rows}=dataToEd(arr);
-  if(headers.length){edHeaders=headers;edRows=rows.map(r=>[...r]);}
-  edRenderTable();edUpdateStatus();
-}
-
-function renderEditorPage(){
-  document.getElementById('mainWrap').classList.add('editor-mode');
-  const el=document.getElementById('mainContent');
-  el.innerHTML=`
-  <div class="editor-shell">
-    <div class="editor-type-bar">
-      <div class="etab" id="etab-leagues" onclick="edLoad('leagues')">Leagues</div>
-      <div class="etab" id="etab-teams" onclick="edLoad('teams')">Teams</div>
-      <div class="etab" id="etab-matches" onclick="edLoad('matches')">Matches</div>
-      <div class="etab" id="etab-scorers" onclick="edLoad('scorers')">Scorers</div>
-    </div>
-    <div class="editor-toolbar">
-      <button class="etbtn" onclick="edAddRow()">➕ Add Row</button>
-      <button class="etbtn danger" onclick="edDeleteSelected()">🗑 Delete</button>
-      <button class="etbtn" onclick="edUndo()">↩ Undo</button>
-      <div class="ed-sep"></div>
-      <input class="ed-search" id="edSearch" placeholder="Search…" oninput="edRenderTable()" autocomplete="off">
-      <button class="etbtn" onclick="edOpenFR()">Find &amp; Replace</button>
-      <div class="ed-sep"></div>
-      <button class="etbtn" onclick="edSelectAll()">☑ All</button>
-      <button class="etbtn" onclick="edClearSel()">☐ Clear</button>
-      <div style="margin-left:auto;display:flex;gap:6px">
-        <button class="etbtn" onclick="edDownloadCSV()">⬇ CSV</button>
-        <button class="etbtn" style="background:var(--green);color:#fff;border-color:var(--green)" onclick="edForceSave()">☁ Save Now</button>
-      </div>
-    </div>
-    <div class="editor-table-wrap" id="edTableWrap"></div>
-    <div class="editor-statusbar">
-      <span><b id="edSRows">0</b> rows</span>
-      <span><b id="edSSel">0</b> selected</span>
-      <span><b id="edSMod">0</b> modified</span>
-      <span style="margin-left:auto" id="edSSaved">Not saved yet</span>
+  // Toolbar
+  html+=`
+  <div class="sheet-toolbar">
+    <button class="stbtn primary" onclick="sheetAddRow('teams')">➕ Add Row</button>
+    <button class="stbtn danger" onclick="sheetDeleteSel('teams')">🗑 Delete</button>
+    <button class="stbtn" onclick="sheetUndo('teams')">↩ Undo</button>
+    <div class="st-sep"></div>
+    <input class="st-search" id="teamsSearch" placeholder="🔍 Search…" oninput="renderSheetTable('teams')" autocomplete="off">
+    <button class="stbtn" onclick="openFR('teams')">Find &amp; Replace</button>
+    <div class="st-sep"></div>
+    <label class="stbtn" style="cursor:pointer" title="Import CSV file">
+      📎 Attach CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'teams')">
+    </label>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="stbtn" onclick="downloadCSV('teams')">⬇ Download</button>
+      <button class="stbtn primary" onclick="forceSave('teams')">☁ Save to Drive</button>
     </div>
   </div>`;
-  edLoad(edType,true);
-}
 
-function edRenderTable(){
-  const wrap=document.getElementById('edTableWrap');
-  if(!wrap)return;
-  const searchQ=(document.getElementById('edSearch')?.value||'').toLowerCase();
-  let vis=edRows.map((r,i)=>({r,i}));
-  if(searchQ)vis=vis.filter(({r})=>r.some(v=>v.toLowerCase().includes(searchQ)));
-  if(edSortCol>=0){
-    vis.sort((a,b)=>{
-      const av=a.r[edSortCol],bv=b.r[edSortCol];
-      const an=parseFloat(av),bn=parseFloat(bv);
-      if(!isNaN(an)&&!isNaN(bn))return(an-bn)*edSortDir;
-      return av.localeCompare(bv)*edSortDir;
+  // Table container
+  html+=`<div class="sheet-table-wrap" id="teamsTableWrap"></div>
+  <div class="sheet-statusbar">
+    <span><b id="tRows">0</b> rows</span>
+    <span><b id="tSel">0</b> selected</span>
+    <span><b id="tMod">0</b> unsaved changes</span>
+    <span style="margin-left:auto" id="tSaved"></span>
+  </div>`;
+
+  wrap.innerHTML=html;
+
+  // Wire up drop zone if present
+  const dz=document.getElementById('teamsDropZone');
+  if(dz){
+    dz.addEventListener('click',()=>{
+      const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
+      fi.onchange=e=>handleFileInput(e,'teams');fi.click();
+    });
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+    dz.addEventListener('drop',e=>{
+      e.preventDefault();dz.classList.remove('drag-over');
+      const f=e.dataTransfer.files[0];if(!f)return;
+      const r=new FileReader();r.onload=ev=>loadCSVIntoSheet('teams',ev.target.result,f.name);r.readAsText(f);
     });
   }
-  if(!edHeaders.length){
-    wrap.innerHTML='<div class="editor-empty"><div class="icon">📊</div><p>No data. Click "+ Add Row" to start.</p></div>';
+
+  renderSheetTable('teams');
+}
+
+// ── GENERIC SHEET (matches / scorers) ───────────────────────────
+function renderGenericSheet(wrap, name, title){
+  const s=sheets[name];
+  let html=`
+  <div class="sheet-header">
+    <div><div class="sheet-title">${title}</div></div>
+  </div>`;
+
+  if(!s.headers.length){
+    html+=`
+    <div class="drop-zone" id="${name}DropZone">
+      <div class="drop-zone-icon">📂</div>
+      <p><strong>Drop your ${name}.csv here</strong> or click to browse</p>
+      <p style="margin-top:4px">Any CSV with ${title.toLowerCase()} data works</p>
+    </div>`;
+  }
+
+  html+=`
+  <div class="sheet-toolbar">
+    <button class="stbtn primary" onclick="sheetAddRow('${name}')">➕ Add Row</button>
+    <button class="stbtn danger" onclick="sheetDeleteSel('${name}')">🗑 Delete</button>
+    <button class="stbtn" onclick="sheetUndo('${name}')">↩ Undo</button>
+    <div class="st-sep"></div>
+    <input class="st-search" id="${name}Search" placeholder="🔍 Search…" oninput="renderSheetTable('${name}')" autocomplete="off">
+    <button class="stbtn" onclick="openFR('${name}')">Find &amp; Replace</button>
+    <div class="st-sep"></div>
+    <label class="stbtn" style="cursor:pointer">
+      📎 Attach CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'${name}')">
+    </label>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="stbtn" onclick="downloadCSV('${name}')">⬇ Download</button>
+      <button class="stbtn primary" onclick="forceSave('${name}')">☁ Save to Drive</button>
+    </div>
+  </div>
+  <div class="sheet-table-wrap" id="${name}TableWrap"></div>
+  <div class="sheet-statusbar">
+    <span><b id="${name}Rows">0</b> rows</span>
+    <span><b id="${name}Sel">0</b> selected</span>
+    <span><b id="${name}Mod">0</b> unsaved</span>
+    <span style="margin-left:auto" id="${name}Saved"></span>
+  </div>`;
+
+  wrap.innerHTML=html;
+
+  const dz=document.getElementById(`${name}DropZone`);
+  if(dz){
+    dz.addEventListener('click',()=>{
+      const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
+      fi.onchange=e=>handleFileInput(e,name);fi.click();
+    });
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+    dz.addEventListener('drop',e=>{
+      e.preventDefault();dz.classList.remove('drag-over');
+      const f=e.dataTransfer.files[0];if(!f)return;
+      const r=new FileReader();r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);r.readAsText(f);
+    });
+  }
+
+  renderSheetTable(name);
+}
+
+// ── FILE INPUT HANDLER ──────────────────────────────────────────
+function handleFileInput(e, name){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);
+  r.readAsText(f);
+  e.target.value='';
+}
+
+// ── RENDER SHEET TABLE ──────────────────────────────────────────
+function renderSheetTable(name){
+  const s=sheets[name];
+  const wrap=document.getElementById(`${name}TableWrap`);
+  if(!wrap)return;
+
+  if(!s.headers.length){
+    wrap.innerHTML='';
+    updateStatusBar(name);
     return;
   }
-  let head=`<thead><tr><th class="rn" style="cursor:default">#</th>`;
-  edHeaders.forEach((h,i)=>{
-    const sc=edSortCol===i?(edSortDir===1?' sort-asc':' sort-desc'):'';
-    head+=`<th class="${sc}" data-ci="${i}">${esc(h)}</th>`;
-  });
-  head+=`</tr></thead>`;
 
-  let body='<tbody>';
-  vis.forEach(({r,i:origIdx})=>{
-    const sel=edSelectedRows.has(origIdx);
-    body+=`<tr data-idx="${origIdx}"${sel?' class="esel"':''}>`;
-    body+=`<td class="rn" data-ridx="${origIdx}">${origIdx+1}</td>`;
-    r.forEach((val,ci)=>{
-      body+=`<td><div class="ecell" data-r="${origIdx}" data-c="${ci}">${esc(val)}</div></td>`;
+  const q=(document.getElementById(`${name}Search`)?.value||'').toLowerCase();
+  let vis=s.rows.map((r,i)=>({r,i}));
+  if(q) vis=vis.filter(({r})=>r.some(v=>v.toLowerCase().includes(q)));
+  if(s.sortCol>=0){
+    vis.sort((a,b)=>{
+      const av=a.r[s.sortCol],bv=b.r[s.sortCol];
+      const an=parseFloat(av),bn=parseFloat(bv);
+      if(!isNaN(an)&&!isNaN(bn))return(an-bn)*s.sortDir;
+      return av.localeCompare(bv)*s.sortDir;
     });
-    body+='</tr>';
+  }
+
+  // Detect color column index
+  const colorColIdx=s.headers.findIndex(h=>h.toLowerCase()==='color'||h.toLowerCase()==='colour');
+
+  let thead=`<thead><tr><th class="rn">#</th>`;
+  s.headers.forEach((h,i)=>{
+    const sc=s.sortCol===i?(s.sortDir===1?' sort-asc':' sort-desc'):'';
+    thead+=`<th class="${sc}" data-ci="${i}">${esc(h)}</th>`;
   });
-  body+='</tbody>';
+  thead+=`</tr></thead>`;
 
-  wrap.innerHTML=`<table class="etable">${head}${body}</table>`;
+  let tbody='<tbody>';
+  vis.forEach(({r,i:origIdx})=>{
+    const sel=s.selected.has(origIdx);
+    tbody+=`<tr data-idx="${origIdx}"${sel?' class="row-sel"':''}>`;
+    tbody+=`<td class="rn" data-ridx="${origIdx}">${origIdx+1}</td>`;
+    r.forEach((val,ci)=>{
+      let display=esc(val);
+      if(ci===colorColIdx&&val){
+        display=`<span class="color-swatch"><span class="color-dot" style="background:${esc(val)}"></span>${esc(val)}</span>`;
+      }
+      tbody+=`<td><div class="cell" data-r="${origIdx}" data-c="${ci}" data-sn="${name}">${display}</div></td>`;
+    });
+    tbody+='</tr>';
+  });
+  tbody+='</tbody>';
 
-  // Sort handlers
+  wrap.innerHTML=`<table class="sheet-table">${thead}${tbody}</table>`;
+
+  // Sort
   wrap.querySelectorAll('thead th[data-ci]').forEach(th=>{
     th.addEventListener('click',()=>{
       const ci=parseInt(th.dataset.ci);
-      edSortCol===ci?edSortDir*=-1:(edSortCol=ci,edSortDir=1);
-      edRenderTable();
+      s.sortCol===ci ? s.sortDir*=-1 : (s.sortCol=ci, s.sortDir=1);
+      renderSheetTable(name);
     });
   });
-  // Cell edit handlers
-  wrap.querySelectorAll('.ecell').forEach(cell=>cell.addEventListener('click',()=>edStartEdit(cell)));
-  // Row select handlers
-  wrap.querySelectorAll('td.rn[data-ridx]').forEach(td=>td.addEventListener('click',e=>edToggleSel(parseInt(td.dataset.ridx),e)));
+  // Cell edit
+  wrap.querySelectorAll('.cell').forEach(cell=>cell.addEventListener('click',()=>startCellEdit(cell)));
+  // Row select
+  wrap.querySelectorAll('td.rn[data-ridx]').forEach(td=>td.addEventListener('click',e=>toggleRowSel(name,parseInt(td.dataset.ridx),e)));
 
-  document.getElementById('edSRows').textContent=edRows.length;
-  document.getElementById('edSSel').textContent=edSelectedRows.size;
-  // visible count sub-label
-  const visEl=document.getElementById('edSRows');
-  if(visEl&&searchQ)visEl.textContent=`${vis.length}/${edRows.length}`;
+  updateStatusBar(name, vis.length);
 }
 
-function edStartEdit(cell){
+function updateStatusBar(name, visCount){
+  const s=sheets[name];
+  const r=document.getElementById(`${name}Rows`);if(r)r.textContent=s.rows.length;
+  const sel=document.getElementById(`${name}Sel`);if(sel)sel.textContent=s.selected.size;
+  const m=document.getElementById(`${name}Mod`);if(m)m.textContent=s.modified;
+  const sv=document.getElementById(`${name}Saved`);
+  if(sv)sv.textContent=s.lastSaved?'Saved '+s.lastSaved.toLocaleTimeString():(s.fileId?'Loaded from Drive':'Not yet saved');
+}
+
+// ── CELL EDITING ────────────────────────────────────────────────
+function startCellEdit(cell){
   if(cell.classList.contains('editing'))return;
+  const name=cell.dataset.sn;
   const rowIdx=parseInt(cell.dataset.r);
   const colIdx=parseInt(cell.dataset.c);
-  if(isNaN(rowIdx)||isNaN(colIdx)||!edRows[rowIdx])return;
-  const prev=edRows[rowIdx][colIdx];
+  const s=sheets[name];
+  if(!s.rows[rowIdx])return;
+  const prev=s.rows[rowIdx][colIdx];
+
   cell.classList.add('editing');
-  cell.textContent='';
+  cell.innerHTML='';
   const inp=document.createElement('input');
   inp.type='text';inp.value=prev;
   cell.appendChild(inp);inp.focus();inp.select();
@@ -1279,163 +721,205 @@ function edStartEdit(cell){
     const nv=inp.value;
     cell.classList.remove('editing');
     if(nv!==prev){
-      edPushHistory();
-      edRows[rowIdx][colIdx]=nv;
-      edModified++;
-      edSyncLive();
-      edScheduleSave();
-      edUpdateStatus();
+      pushHistory(name);
+      s.rows[rowIdx][colIdx]=nv;
+      s.modified++;
+      schedSave(name);
     }
-    cell.textContent=esc(edRows[rowIdx]?.[colIdx]??nv);
+    // Re-render cell value
+    const colorColIdx=s.headers.findIndex(h=>h.toLowerCase()==='color'||h.toLowerCase()==='colour');
+    const val=s.rows[rowIdx]?.[colIdx]??nv;
+    if(colIdx===colorColIdx&&val){
+      cell.innerHTML=`<span class="color-swatch"><span class="color-dot" style="background:${esc(val)}"></span>${esc(val)}</span>`;
+    } else {
+      cell.textContent=val;
+    }
+    updateStatusBar(name);
   };
+
   inp.addEventListener('blur',commit);
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){e.preventDefault();inp.blur();}
     if(e.key==='Tab'){
       e.preventDefault();inp.blur();
-      const all=[...document.querySelectorAll('.ecell')];
+      const all=[...document.querySelectorAll(`.cell[data-sn="${name}"]`)];
       const idx=all.indexOf(cell);
       if(idx>=0&&idx<all.length-1)setTimeout(()=>all[idx+1].click(),0);
     }
-    if(e.key==='Escape'){cell.classList.remove('editing');cell.textContent=esc(prev);}
+    if(e.key==='Escape'){cell.classList.remove('editing');cell.textContent=prev;}
     e.stopPropagation();
   });
 }
 
-function edToggleSel(idx,e){
-  if(e.shiftKey&&_edLastSel!==undefined){
-    const lo=Math.min(idx,_edLastSel),hi=Math.max(idx,_edLastSel);
-    for(let i=lo;i<=hi;i++)edSelectedRows.add(i);
+// ── ROW SELECTION ───────────────────────────────────────────────
+function toggleRowSel(name,idx,e){
+  const s=sheets[name];
+  if(e.shiftKey&&_lastSel!==undefined){
+    const lo=Math.min(idx,_lastSel),hi=Math.max(idx,_lastSel);
+    for(let i=lo;i<=hi;i++) s.selected.add(i);
   } else if(e.ctrlKey||e.metaKey){
-    edSelectedRows.has(idx)?edSelectedRows.delete(idx):edSelectedRows.add(idx);
+    s.selected.has(idx)?s.selected.delete(idx):s.selected.add(idx);
   } else {
-    edSelectedRows.clear();edSelectedRows.add(idx);
+    s.selected.clear();s.selected.add(idx);
   }
-  _edLastSel=idx;
-  document.querySelectorAll('.etable tbody tr').forEach(tr=>{
-    tr.classList.toggle('esel',edSelectedRows.has(+tr.dataset.idx));
-  });
-  document.getElementById('edSSel').textContent=edSelectedRows.size;
+  _lastSel=idx;
+  const wrap=document.getElementById(`${name}TableWrap`);
+  if(wrap) wrap.querySelectorAll('tbody tr').forEach(tr=>tr.classList.toggle('row-sel',s.selected.has(+tr.dataset.idx)));
+  updateStatusBar(name);
 }
 
-function edSelectAll(){edRows.forEach((_,i)=>edSelectedRows.add(i));edRenderTable();}
-function edClearSel(){edSelectedRows.clear();edRenderTable();}
-
-function edAddRow(){
-  edPushHistory();
-  const prefix={teams:'t',matches:'m',scorers:'s',leagues:'l'}[edType]||'r';
-  const newRow=edHeaders.map(h=>{
-    if(h==='team_id'||h==='id')return prefix+Date.now();
-    if(h==='league_id'&&currentLeague)return currentLeague.id;
-    if(h==='color')return'#1a6b3a';
-    if(h==='active')return'1';
+// ── ADD / DELETE ROWS ───────────────────────────────────────────
+function sheetAddRow(name){
+  const s=sheets[name];
+  if(!s.headers.length){
+    s.headers=[...SHEET_DEFAULTS[name]];
+    s.rows=[];
+  }
+  pushHistory(name);
+  const newRow=s.headers.map(h=>{
+    if(h==='id') return name[0]+Date.now();
+    if(h==='color'||h==='colour') return '#1a6b3a';
     return'';
   });
-  edRows.push(newRow);
-  edModified++;edSyncLive();edScheduleSave();edRenderTable();edUpdateStatus();
-  setTimeout(()=>{const w=document.getElementById('edTableWrap');if(w)w.scrollTop=w.scrollHeight;},50);
+  s.rows.push(newRow);
+  s.modified++;
+  schedSave(name);
+  renderTab(name);
+  // Scroll to bottom
+  setTimeout(()=>{const w=document.getElementById(`${name}TableWrap`);if(w)w.scrollTop=w.scrollHeight;},50);
   toast('Row added','success');
 }
 
-function edDeleteSelected(){
-  if(!edSelectedRows.size)return toast('No rows selected','warning');
-  edPushHistory();
-  const del=new Set(edSelectedRows);
-  edRows=edRows.filter((_,i)=>!del.has(i));
-  edSelectedRows.clear();_edLastSel=undefined;
-  edModified+=del.size;edSyncLive();edScheduleSave();edRenderTable();edUpdateStatus();
+function sheetDeleteSel(name){
+  const s=sheets[name];
+  if(!s.selected.size){toast('Select rows first (click the row number)','warning');return;}
+  pushHistory(name);
+  const del=new Set(s.selected);
+  s.rows=s.rows.filter((_,i)=>!del.has(i));
+  s.selected.clear();s.modified+=del.size;_lastSel=undefined;
+  schedSave(name);
+  renderSheetTable(name);
   toast(`Deleted ${del.size} row(s)`,'');
 }
 
-function edPushHistory(){
-  edHistory.push({headers:[...edHeaders],rows:edRows.map(r=>[...r])});
-  if(edHistory.length>50)edHistory.shift();
+// ── UNDO ────────────────────────────────────────────────────────
+function pushHistory(name){
+  const s=sheets[name];
+  s.history.push({headers:[...s.headers],rows:s.rows.map(r=>[...r])});
+  if(s.history.length>50)s.history.shift();
 }
 
-function edUndo(){
-  if(!edHistory.length)return toast('Nothing to undo','warning');
-  const snap=edHistory.pop();
-  edHeaders=snap.headers;edRows=snap.rows;
-  edSyncLive();edRenderTable();edUpdateStatus();
+function sheetUndo(name){
+  const s=sheets[name];
+  if(!s.history.length){toast('Nothing to undo','warning');return;}
+  const snap=s.history.pop();
+  s.headers=snap.headers;s.rows=snap.rows;
+  s.selected.clear();_lastSel=undefined;
+  schedSave(name);
+  renderSheetTable(name);
   toast('Undo applied','');
 }
 
-function edSyncLive(){edSetLive(edToData());}
-
-function edScheduleSave(){
-  clearTimeout(edSaveTimer);
-  edSaveTimer=setTimeout(()=>edForceSave(),1500);
+// ── FIND & REPLACE ───────────────────────────────────────────────
+let frTargetSheet='teams';
+function openFR(name){
+  frTargetSheet=name;
+  const s=sheets[name];
+  const sel=document.getElementById('frCol');
+  sel.innerHTML='<option value="__all__">All columns</option>'+s.headers.map((h,i)=>`<option value="${i}">${esc(h)}</option>`).join('');
+  document.getElementById('frFind').value='';
+  document.getElementById('frReplace').value='';
+  document.getElementById('frModal').classList.add('open');
 }
 
-async function edForceSave(){
-  clearTimeout(edSaveTimer);
-  if(!accessToken)return;
-  await saveCSV(edType);
-  edLastSaved=new Date();
-  const el=document.getElementById('edSSaved');
-  if(el)el.textContent='Saved '+edLastSaved.toLocaleTimeString();
-  edModified=0;
-  edUpdateStatus();
-}
-
-function edUpdateStatus(){
-  const r=document.getElementById('edSRows');if(r)r.textContent=edRows.length;
-  const m=document.getElementById('edSMod');if(m)m.textContent=edModified;
-  const s=document.getElementById('edSSel');if(s)s.textContent=edSelectedRows.size;
-}
-
-function edOpenFR(){
-  const sel=document.getElementById('edFRCol');
-  sel.innerHTML='<option value="__all__">All columns</option>'+
-    edHeaders.map((h,i)=>`<option value="${i}">${esc(h)}</option>`).join('');
-  document.getElementById('edFRFind').value='';
-  document.getElementById('edFRReplace').value='';
-  document.getElementById('edFRModal').classList.add('open');
-}
-
-function edDoFindReplace(){
-  const find=document.getElementById('edFRFind').value;
-  const rep=document.getElementById('edFRReplace').value;
-  const colSel=document.getElementById('edFRCol').value;
-  const ci=document.getElementById('edFRCase').checked;
-  const rx=document.getElementById('edFRRegex').checked;
-  if(!find&&!rx)return toast('Enter a search value','warning');
+function doFindReplace(){
+  const s=sheets[frTargetSheet];
+  const find=document.getElementById('frFind').value;
+  const rep=document.getElementById('frReplace').value;
+  const colSel=document.getElementById('frCol').value;
+  const ci=document.getElementById('frCase').checked;
+  const rx=document.getElementById('frRegex').checked;
+  if(!find&&!rx){toast('Enter a search value','warning');return;}
   let pattern;
   try{pattern=rx?new RegExp(find,ci?'gi':'g'):null;}
-  catch(e){return toast('Invalid regex','error');}
-  edPushHistory();
+  catch(e){toast('Invalid regex','error');return;}
+  pushHistory(frTargetSheet);
   let count=0;
-  edRows.forEach(row=>{
+  s.rows.forEach(row=>{
     const cols=colSel==='__all__'?row.map((_,i)=>i):[parseInt(colSel)];
     cols.forEach(ci2=>{
       const v=row[ci2];let nv;
-      if(rx){nv=v.replace(pattern,rep);}
+      if(rx)nv=v.replace(pattern,rep);
       else{const flags=ci?'gi':'g';const e=find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');nv=v.replace(new RegExp(e,flags),rep);}
       if(nv!==v){row[ci2]=nv;count++;}
     });
   });
-  edModified+=count;edSyncLive();edScheduleSave();edRenderTable();edUpdateStatus();
-  closeModal('edFRModal');
+  s.modified+=count;schedSave(frTargetSheet);
+  renderSheetTable(frTargetSheet);
+  closeModal('frModal');
   toast(`Replaced ${count} cell(s)`,count?'success':'warning');
 }
 
-function edDownloadCSV(){
-  if(!edRows.length)return toast('No data to download','warning');
-  const escape=v=>{v=String(v||'');return(v.includes(',')||v.includes('"')||v.includes('\n'))?`"${v.replace(/"/g,'""')}"`:v;};
-  const csv=[edHeaders.join(','),...edRows.map(r=>r.map(escape).join(','))].join('\r\n');
+// ── DOWNLOAD CSV ─────────────────────────────────────────────────
+function downloadCSV(name){
+  const s=sheets[name];
+  if(!s.rows.length){toast('No data to download','warning');return;}
+  const csv=serializeCSV(s.headers,s.rows);
   const blob=new Blob([csv],{type:'text/csv'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=edType+'.csv';a.click();
+  const a=document.createElement('a');a.href=url;a.download=`${name}.csv`;a.click();
   URL.revokeObjectURL(url);
   toast('Downloaded!','success');
 }
 
+// ── TEAM MODAL (quick add) ──────────────────────────────────────
+// (legacy modal kept for adding a single team without CSV)
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===e.currentTarget)m.classList.remove('open');}));
+
+async function saveTeamModal(){
+  const name=document.getElementById('tName').value.trim();
+  if(!name){alert('Team name is required.');return;}
+  const s=sheets.teams;
+  if(!s.headers.length){
+    s.headers=['id','name','color','stadium','location','foundation'];
+  }
+  pushHistory('teams');
+  const row=s.headers.map(h=>{
+    if(h==='id')return't'+Date.now();
+    if(h==='name')return name;
+    if(h==='color'||h==='colour')return document.getElementById('tColor').value;
+    if(h==='stadium'||h==='stadion')return document.getElementById('tStadion').value;
+    if(h==='location')return document.getElementById('tLocation').value;
+    if(h==='foundation')return document.getElementById('tFoundation').value;
+    return'';
+  });
+  s.rows.push(row);
+  s.modified++;
+  closeModal('teamModal');
+  schedSave('teams');
+  renderTab('teams');
+  toast('Team added','success');
+}
+
+// ── UTILS ────────────────────────────────────────────────────────
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function toast(msg,type=''){
+  const c=document.getElementById('toast-container');
+  const t=document.createElement('div');
+  t.className='toast'+(type?' '+type:'');
+  t.textContent=msg;c.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
+
+// ── KEYBOARD SHORTCUTS ────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();sheetUndo(currentTab);}
+});
+
 // ── INIT ─────────────────────────────────────────────────────────
 window.addEventListener('load',()=>setTimeout(initAuth,300));
-document.addEventListener('keydown',e=>{
-  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&currentPage==='editor'){e.preventDefault();edUndo();}
-});
 </script>
 </body>
 </html>
