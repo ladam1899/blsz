@@ -875,12 +875,12 @@ function renderScorers(){
 // ── TEAMS ───────────────────────────────────────────────────────
 function renderTeams(){
   const lt=teams.filter(t=>t.league_id===currentLeague.id);
-  if(!lt.length)return`<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No teams found for this league.<br>${adminMode?'Click "+ Add Team" to add one.':'Enable admin mode to add teams.'}</div></div>`;
-  const standings=calcStandings();
   let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <div class="section-title" style="margin:0">${esc(currentLeague.name)} — Teams</div>
     ${adminMode?'<button class="mbtn primary" onclick="openAddTeam()">+ Add Team</button>':''}
   </div>`;
+  if(!lt.length)return html+`<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No teams found for this league.<br>${adminMode?'Click "+ Add Team" above to add one.':'Enable admin mode to add teams.'}</div></div>`;
+  const standings=calcStandings();
   lt.forEach(t=>{
     const tid=t.team_id||t.id;
     const tname=t.team_name||t.name||'?';
