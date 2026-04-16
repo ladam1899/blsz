@@ -177,9 +177,11 @@ header{background:var(--green);padding:0 24px;display:flex;align-items:center;ju
 
 <!-- Top Nav -->
 <div class="top-nav">
-  <div class="tnav-tab active" id="tab-teams" onclick="switchTab('teams')">👥 Teams</div>
-  <div class="tnav-tab" id="tab-matches" onclick="switchTab('matches')">📅 Matches</div>
-  <div class="tnav-tab" id="tab-scorers" onclick="switchTab('scorers')">⚽ Top Scorers</div>
+  <div class="tnav-tab active" id="tab-teams"    onclick="switchTab('teams')">👥 Teams</div>
+  <div class="tnav-tab"        id="tab-matches"  onclick="switchTab('matches')">📅 Matches</div>
+  <div class="tnav-tab"        id="tab-scorers"  onclick="switchTab('scorers')">⚽ Top Scorers</div>
+  <div class="tnav-tab"        id="tab-results"  onclick="switchTab('results')">🏆 Results</div>
+  <div class="tnav-tab"        id="tab-calendar" onclick="switchTab('calendar')">📆 Calendar</div>
 </div>
 
 <!-- Main Content -->
@@ -251,13 +253,17 @@ let currentTab  = 'teams';
 const sheets = {
   teams:   newSheet(),
   matches: newSheet(),
-  scorers: newSheet()
+  scorers: newSheet(),
+  results: newSheet(),
+  calendar:newSheet()
 };
 
 const SHEET_DEFAULTS = {
   teams:   ['id','name','color','stadium','location','foundation'],
   matches: ['id','date','round','home','away','home_score','away_score','competition'],
-  scorers: ['id','player','team','competition','goals','assists']
+  scorers: ['id','player','team','competition','goals','assists'],
+  results: ['season','league','place','team_id'],
+  calendar:['game_day','date','league','round']
 };
 
 function newSheet(){
@@ -400,7 +406,7 @@ function serializeCSV(headers,rows){
 async function loadAllSheets(){
   setSyncStatus('busy');
   try{
-    for(const name of ['teams','matches','scorers']){
+    for(const name of ['teams','matches','scorers','results','calendar']){
       const f=await findFile(`${name}.csv`);
       if(f){
         sheets[name].fileId=f.id;
@@ -460,6 +466,8 @@ function loadCSVIntoSheet(name, text, filename){
   s.history=[];s.selected=new Set();s.modified=0;s.sortCol=-1;s.sortDir=1;
   schedSave(name); // auto-save to Drive
   renderTab(name);
+  // If calendar, also refresh the grouped view
+  if(name==='calendar') setTimeout(()=>renderCalendarView(),100);
   toast(`Loaded ${rows.length} rows from ${filename||'CSV'}. Saving to Drive…`,'success');
 }
 
@@ -475,9 +483,11 @@ function switchTab(name){
 function renderTab(name){
   const wrap=document.getElementById('mainWrap');
   wrap.className='main-wrap';
-  if(name==='teams')   renderTeamsSheet(wrap);
-  else if(name==='matches') renderGenericSheet(wrap,'matches','Matches');
-  else if(name==='scorers') renderGenericSheet(wrap,'scorers','Top Scorers');
+  if(name==='teams')         renderTeamsSheet(wrap);
+  else if(name==='matches')  renderGenericSheet(wrap,'matches','Matches');
+  else if(name==='scorers')  renderGenericSheet(wrap,'scorers','Top Scorers');
+  else if(name==='results')  renderResultsSheet(wrap);
+  else if(name==='calendar') renderCalendarSheet(wrap);
 }
 
 // ── TEAMS SHEET ─────────────────────────────────────────────────
@@ -532,23 +542,7 @@ function renderTeamsSheet(wrap){
   </div>`;
 
   wrap.innerHTML=html;
-
-  // Wire up drop zone if present
-  const dz=document.getElementById('teamsDropZone');
-  if(dz){
-    dz.addEventListener('click',()=>{
-      const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
-      fi.onchange=e=>handleFileInput(e,'teams');fi.click();
-    });
-    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
-    dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
-    dz.addEventListener('drop',e=>{
-      e.preventDefault();dz.classList.remove('drag-over');
-      const f=e.dataTransfer.files[0];if(!f)return;
-      const r=new FileReader();r.onload=ev=>loadCSVIntoSheet('teams',ev.target.result,f.name);r.readAsText(f);
-    });
-  }
-
+  wireDrop('teams');
   renderSheetTable('teams');
 }
 
@@ -596,22 +590,7 @@ function renderGenericSheet(wrap, name, title){
   </div>`;
 
   wrap.innerHTML=html;
-
-  const dz=document.getElementById(`${name}DropZone`);
-  if(dz){
-    dz.addEventListener('click',()=>{
-      const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
-      fi.onchange=e=>handleFileInput(e,name);fi.click();
-    });
-    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
-    dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
-    dz.addEventListener('drop',e=>{
-      e.preventDefault();dz.classList.remove('drag-over');
-      const f=e.dataTransfer.files[0];if(!f)return;
-      const r=new FileReader();r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);r.readAsText(f);
-    });
-  }
-
+  wireDrop(name);
   renderSheetTable(name);
 }
 
@@ -900,6 +879,314 @@ async function saveTeamModal(){
   schedSave('teams');
   renderTab('teams');
   toast('Team added','success');
+}
+
+// ── RESULTS SHEET ───────────────────────────────────────────────
+// Columns: season | league | place | team_id
+// Sorted by season desc, league, place asc so you can instantly see
+// who earned promotion / relegation / playoff at end of each season.
+function renderResultsSheet(wrap){
+  const s=sheets.results;
+  let html=`
+  <div class="sheet-header">
+    <div>
+      <div class="sheet-title">🏆 Results</div>
+      <div class="sheet-subtitle">Final standings per season &amp; league — use to determine promotion, relegation &amp; play-offs</div>
+    </div>
+  </div>`;
+
+  if(!s.headers.length){
+    html+=`
+    <div class="drop-zone" id="resultsDropZone">
+      <div class="drop-zone-icon">🏆</div>
+      <p><strong>Drop your results.csv here</strong> or click to browse</p>
+      <p style="margin-top:4px">Columns: <code>season, league, place, team_id</code></p>
+      <p style="margin-top:6px"><small>Or click "+ Add Row" to fill in manually</small></p>
+    </div>`;
+  }
+
+  html+=`
+  <div class="sheet-toolbar">
+    <button class="stbtn primary" onclick="sheetAddRow('results')">➕ Add Row</button>
+    <button class="stbtn danger"  onclick="sheetDeleteSel('results')">🗑 Delete</button>
+    <button class="stbtn"         onclick="sheetUndo('results')">↩ Undo</button>
+    <div class="st-sep"></div>
+    <input class="st-search" id="resultsSearch" placeholder="🔍 Filter…" oninput="renderSheetTable('results')" autocomplete="off">
+    <button class="stbtn" onclick="openFR('results')">Find &amp; Replace</button>
+    <div class="st-sep"></div>
+    <label class="stbtn" style="cursor:pointer">
+      📎 Attach CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'results')">
+    </label>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="stbtn" onclick="downloadCSV('results')">⬇ Download</button>
+      <button class="stbtn primary" onclick="forceSave('results')">☁ Save to Drive</button>
+    </div>
+  </div>`;
+
+  // Promotion summary panel (only when data exists)
+  if(s.rows.length){
+    html+=buildPromotionSummary(s);
+  }
+
+  html+=`<div class="sheet-table-wrap" id="resultsTableWrap"></div>
+  <div class="sheet-statusbar">
+    <span><b id="resultsRows">0</b> rows</span>
+    <span><b id="resultsSel">0</b> selected</span>
+    <span><b id="resultsMod">0</b> unsaved</span>
+    <span style="margin-left:auto" id="resultsSaved"></span>
+  </div>`;
+
+  wrap.innerHTML=html;
+  wireDrop('results');
+  renderSheetTable('results');
+}
+
+function buildPromotionSummary(s){
+  // Find the latest season in results data
+  const seasonIdx=s.headers.indexOf('season');
+  const leagueIdx=s.headers.indexOf('league');
+  const placeIdx =s.headers.indexOf('place');
+  const teamIdx  =s.headers.indexOf('team_id');
+  if(seasonIdx<0||placeIdx<0) return '';
+
+  // Group by season → league → rows sorted by place
+  const seasons={};
+  s.rows.forEach(r=>{
+    const season=r[seasonIdx]||'—';
+    const league=leagueIdx>=0?r[leagueIdx]:'—';
+    if(!seasons[season]) seasons[season]={};
+    if(!seasons[season][league]) seasons[season][league]=[];
+    seasons[season][league].push({place:parseInt(r[placeIdx])||999, team:teamIdx>=0?r[teamIdx]:'?', row:r});
+  });
+
+  const latestSeason=Object.keys(seasons).sort().reverse()[0];
+  if(!latestSeason) return '';
+  const leaguesInSeason=seasons[latestSeason];
+
+  // Build a compact summary card
+  let html=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;margin-bottom:16px;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;margin-bottom:12px;color:var(--green)">
+      📊 Season ${esc(latestSeason)} — Final Standings Summary
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;">`;
+
+  Object.entries(leaguesInSeason).forEach(([league,rows])=>{
+    rows.sort((a,b)=>a.place-b.place);
+    html+=`<div style="min-width:180px;flex:1;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;">${esc(league)}</div>
+      <div style="display:flex;flex-direction:column;gap:4px;">`;
+    rows.forEach(({place,team})=>{
+      const realName=getTeamName(team);
+      const badgeColor=getTeamColor(team);
+      let badge='',labelColor=place===1?'var(--gold)':place<=3?'var(--green)':place>=rows.length-1?'var(--red)':'var(--muted)';
+      if(place===1) badge='🥇';
+      else if(place===2) badge='🥈';
+      else if(place===3) badge='🥉';
+      else if(place>=rows.length) badge='⬇';
+      html+=`<div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+        <span style="width:24px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:${labelColor}">${place}</span>
+        <span style="width:10px;height:10px;border-radius:2px;background:${badgeColor};flex-shrink:0;display:inline-block"></span>
+        <span>${esc(realName)} ${badge}</span>
+      </div>`;
+    });
+    html+=`</div></div>`;
+  });
+
+  html+=`</div></div>`;
+  return html;
+}
+
+function getTeamName(teamId){
+  const s=sheets.teams;
+  const idIdx=s.headers.indexOf('id');
+  const nameIdx=s.headers.findIndex(h=>h==='name'||h==='team_name');
+  if(idIdx<0||nameIdx<0) return teamId;
+  const row=s.rows.find(r=>r[idIdx]===teamId);
+  return row?row[nameIdx]:teamId;
+}
+function getTeamColor(teamId){
+  const s=sheets.teams;
+  const idIdx=s.headers.indexOf('id');
+  const colIdx=s.headers.findIndex(h=>h==='color'||h==='colour');
+  if(idIdx<0||colIdx<0) return '#1a6b3a';
+  const row=s.rows.find(r=>r[idIdx]===teamId);
+  return row?row[colIdx]:'#1a6b3a';
+}
+
+// ── CALENDAR SHEET ───────────────────────────────────────────────
+// Columns: game_day | date | league | round
+// Multiple leagues can share the same game_day date — each gets its own row.
+// The calendar view groups by date and shows which leagues play on each day.
+function renderCalendarSheet(wrap){
+  const s=sheets.calendar;
+  let html=`
+  <div class="sheet-header">
+    <div>
+      <div class="sheet-title">📆 Calendar</div>
+      <div class="sheet-subtitle">Match-day schedule — multiple leagues can share the same game day</div>
+    </div>
+  </div>`;
+
+  if(!s.headers.length){
+    html+=`
+    <div class="drop-zone" id="calendarDropZone">
+      <div class="drop-zone-icon">📆</div>
+      <p><strong>Drop your calendar.csv here</strong> or click to browse</p>
+      <p style="margin-top:4px">Columns: <code>game_day, date, league, round</code></p>
+      <p style="margin-top:6px"><small>Multiple leagues on the same date = multiple rows with the same game_day</small></p>
+    </div>`;
+  }
+
+  html+=`
+  <div class="sheet-toolbar">
+    <button class="stbtn primary" onclick="sheetAddRow('calendar')">➕ Add Row</button>
+    <button class="stbtn danger"  onclick="sheetDeleteSel('calendar')">🗑 Delete</button>
+    <button class="stbtn"         onclick="sheetUndo('calendar')">↩ Undo</button>
+    <div class="st-sep"></div>
+    <input class="st-search" id="calendarSearch" placeholder="🔍 Filter league / date…" oninput="renderCalendarView()" autocomplete="off">
+    <button class="stbtn" onclick="openFR('calendar')">Find &amp; Replace</button>
+    <div class="st-sep"></div>
+    <label class="stbtn" style="cursor:pointer">
+      📎 Attach CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'calendar')">
+    </label>
+    <div class="st-sep"></div>
+    <button class="stbtn" id="calViewToggle" onclick="toggleCalendarView()">📋 Table view</button>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="stbtn" onclick="downloadCSV('calendar')">⬇ Download</button>
+      <button class="stbtn primary" onclick="forceSave('calendar')">☁ Save to Drive</button>
+    </div>
+  </div>
+  <div id="calendarViewArea"></div>
+  <div class="sheet-table-wrap" id="calendarTableWrap" style="display:none"></div>
+  <div class="sheet-statusbar">
+    <span><b id="calendarRows">0</b> rows</span>
+    <span><b id="calendarSel">0</b> selected</span>
+    <span><b id="calendarMod">0</b> unsaved</span>
+    <span style="margin-left:auto" id="calendarSaved"></span>
+  </div>`;
+
+  wrap.innerHTML=html;
+  wireDrop('calendar');
+  renderCalendarView();
+  updateStatusBar('calendar');
+}
+
+let calendarViewMode='grouped'; // 'grouped' or 'table'
+function toggleCalendarView(){
+  calendarViewMode = calendarViewMode==='grouped'?'table':'grouped';
+  const btn=document.getElementById('calViewToggle');
+  if(btn) btn.textContent=calendarViewMode==='grouped'?'📋 Table view':'📅 Grouped view';
+  const ta=document.getElementById('calendarViewArea');
+  const tw=document.getElementById('calendarTableWrap');
+  if(calendarViewMode==='table'){
+    if(ta) ta.style.display='none';
+    if(tw) tw.style.display='';
+    renderSheetTable('calendar');
+  } else {
+    if(ta) ta.style.display='';
+    if(tw) tw.style.display='none';
+    renderCalendarView();
+  }
+}
+
+function renderCalendarView(){
+  const area=document.getElementById('calendarViewArea');
+  if(!area) return;
+  const s=sheets.calendar;
+  if(!s.rows.length){ area.innerHTML=''; return; }
+
+  const q=(document.getElementById('calendarSearch')?.value||'').toLowerCase();
+  const gdIdx  =s.headers.findIndex(h=>h==='game_day');
+  const dateIdx=s.headers.findIndex(h=>h==='date');
+  const lgIdx  =s.headers.findIndex(h=>h==='league');
+  const rnIdx  =s.headers.findIndex(h=>h==='round');
+
+  let rows=s.rows;
+  if(q) rows=rows.filter(r=>r.some(v=>v.toLowerCase().includes(q)));
+
+  // Group by game_day (then by date within)
+  const groups={};
+  rows.forEach(r=>{
+    const gd=gdIdx>=0?r[gdIdx]:'?';
+    const dt=dateIdx>=0?r[dateIdx]:'';
+    const key=`${gd}__${dt}`;
+    if(!groups[key]) groups[key]={game_day:gd,date:dt,leagues:[]};
+    groups[key].leagues.push({
+      league:lgIdx>=0?r[lgIdx]:'',
+      round:rnIdx>=0?r[rnIdx]:''
+    });
+  });
+
+  // Sort by date then game_day
+  const sorted=Object.values(groups).sort((a,b)=>{
+    if(a.date&&b.date) return a.date.localeCompare(b.date);
+    return String(a.game_day).localeCompare(String(b.game_day));
+  });
+
+  // Split upcoming vs past
+  const today=new Date().toISOString().slice(0,10);
+  const upcoming=sorted.filter(g=>!g.date||g.date>=today);
+  const past    =sorted.filter(g=>g.date&&g.date<today).reverse();
+
+  let html='<div style="padding:16px;">';
+
+  if(upcoming.length){
+    html+=`<div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;color:var(--green);margin-bottom:12px;">Upcoming</div>`;
+    html+=renderCalDays(upcoming, false);
+  }
+  if(past.length){
+    html+=`<div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;color:var(--muted);margin:20px 0 12px;">Past Game Days</div>`;
+    html+=renderCalDays(past, true);
+  }
+  if(!upcoming.length&&!past.length){
+    html+=`<div style="text-align:center;padding:40px;color:var(--muted);">No matching rounds found.</div>`;
+  }
+  html+='</div>';
+  area.innerHTML=html;
+}
+
+function renderCalDays(days, isPast){
+  let html='<div style="display:flex;flex-direction:column;gap:8px;">';
+  days.forEach(g=>{
+    const dateLabel=g.date?formatDate(g.date):'No date set';
+    const leagueChips=g.leagues.map(l=>`
+      <span style="display:inline-flex;align-items:center;gap:5px;background:${isPast?'var(--surface2)':'var(--green-light)'};border:1px solid ${isPast?'var(--border)':'#a7d7bb'};border-radius:20px;padding:3px 10px;font-size:12px;color:${isPast?'var(--muted)':'var(--green)'};font-weight:600;">
+        ${esc(l.league)}${l.round?` <span style="font-weight:400;color:var(--muted)">· R${esc(l.round)}</span>`:''}
+      </span>`).join(' ');
+    html+=`<div style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;${isPast?'opacity:.6':''}">
+      <div style="flex-shrink:0;min-width:100px;">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;color:${isPast?'var(--muted)':'var(--text)'}">Day ${esc(g.game_day)}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${dateLabel}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;flex:1">${leagueChips}</div>
+    </div>`;
+  });
+  html+='</div>';
+  return html;
+}
+
+function formatDate(d){
+  try{const dt=new Date(d);return dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});}
+  catch{return d;}
+}
+
+// ── GENERIC DROP ZONE WIRING ─────────────────────────────────────
+function wireDrop(name){
+  const dz=document.getElementById(`${name}DropZone`);
+  if(!dz) return;
+  dz.addEventListener('click',()=>{
+    const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
+    fi.onchange=e=>handleFileInput(e,name);fi.click();
+  });
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+  dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+  dz.addEventListener('drop',e=>{
+    e.preventDefault();dz.classList.remove('drag-over');
+    const f=e.dataTransfer.files[0];if(!f)return;
+    const r=new FileReader();r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);r.readAsText(f);
+  });
 }
 
 // ── UTILS ────────────────────────────────────────────────────────
