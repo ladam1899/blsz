@@ -4,376 +4,509 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>League Manager</title>
+<!--
+  ╔══════════════════════════════════════════════════════════╗
+  ║  PUBLIC FILE — contains zero personal / team data        ║
+  ║  All data is loaded at runtime from Google Drive.        ║
+  ╚══════════════════════════════════════════════════════════╝
+  Drive files expected in folder FOLDER_ID:
+    teams.csv    — id, name, color, stadium, location, foundation
+    matches.csv  — id, game_day, competition, round, home_id, away_id,
+                   home_score, away_score
+    calendar.csv — game_day, date, competition, round
+    results.csv  — season, competition, place, team_id
+-->
 <script src="https://accounts.google.com/gsi/client"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f5f4f0;--surface:#ffffff;--surface2:#f0efe9;--border:#e2e0d8;--border2:#ccc9be;
+  --bg:#f5f4f0;--surface:#fff;--surface2:#f0efe9;--border:#e2e0d8;--border2:#ccc9be;
   --text:#1a1a18;--muted:#888680;--dimmed:#b8b5ac;
-  --green:#1a6b3a;--green-light:#e8f5ee;--green-mid:#2d9653;
-  --red:#c0392b;--red-light:#fdf0ee;
-  --gold:#c8980a;--gold-light:#fdf6e0;
-  --blue:#1a4fa0;--blue-light:#eaf0fb;
+  --green:#1a6b3a;--green-l:#e8f5ee;--green-m:#2d9653;
+  --red:#c0392b;--red-l:#fdf0ee;
+  --gold:#c8980a;--gold-l:#fdf6e0;
+  --blue:#1a4fa0;--blue-l:#eaf0fb;
   --r:8px;--r2:12px;
+  --hdr:56px;--nav:48px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
 
-/* AUTH */
-.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;}
-.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:40px 36px;width:380px;max-width:92vw;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.06);}
-.auth-badge{width:56px;height:56px;background:var(--green-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:24px;}
-.auth-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.04em;color:var(--text);margin-bottom:8px;}
+/* ── AUTH ── */
+.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:300;}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:44px 40px;width:380px;max-width:92vw;text-align:center;box-shadow:0 4px 32px rgba(0,0,0,.08);}
+.auth-icon{font-size:2.8rem;margin-bottom:14px;}
+.auth-title{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:.04em;margin-bottom:8px;}
 .auth-sub{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:28px;}
-.auth-btn{display:inline-flex;align-items:center;gap:10px;padding:12px 24px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;width:100%;justify-content:center;}
+.auth-btn{display:inline-flex;align-items:center;gap:10px;padding:12px 20px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;width:100%;justify-content:center;}
 .auth-btn:hover{background:var(--surface2);border-color:var(--green);}
-.auth-note{font-size:11px;color:var(--dimmed);margin-top:14px;line-height:1.6;}
+.auth-note{font-size:11px;color:var(--dimmed);margin-top:12px;line-height:1.6;}
 
-/* HEADER */
-header{background:var(--green);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:30;}
-.header-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.08em;color:#fff;}
-.header-right{display:flex;align-items:center;gap:8px;}
-.hbtn{font-size:11px;padding:5px 12px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;transition:all .15s;font-family:'JetBrains Mono',monospace;letter-spacing:.04em;white-space:nowrap;}
+/* ── HEADER ── */
+header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.08em;color:#fff;}
+.logo-season{font-size:12px;color:#7dd8a0;margin-left:8px;letter-spacing:.04em;font-family:'JetBrains Mono',monospace;}
+.hdr-right{display:flex;align-items:center;gap:8px;}
+.hbtn{font-size:11px;padding:5px 11px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:transparent;color:rgba(255,255,255,.8);cursor:pointer;transition:all .15s;white-space:nowrap;font-family:'JetBrains Mono',monospace;}
 .hbtn:hover{background:rgba(255,255,255,.12);color:#fff;}
+.hbtn.active{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.5);color:#fff;}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);}
 .sync-dot.ok{background:#7dd8a0;}
-.sync-dot.busy{background:#f59e0b;animation:pulse 1s infinite;}
+.sync-dot.busy{background:#f59e0b;animation:blink 1s infinite;}
 .sync-dot.err{background:#f87171;}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* TOP NAV */
-.top-nav{background:var(--surface);border-bottom:2px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto;scrollbar-width:none;}
-.top-nav::-webkit-scrollbar{display:none;}
-.tnav-tab{font-size:13px;font-weight:600;padding:14px 20px;border-bottom:3px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;margin-bottom:-2px;}
-.tnav-tab:hover{color:var(--text);}
-.tnav-tab.active{color:var(--green);border-bottom-color:var(--green);}
+/* ── NAV ── */
+.nav{background:var(--surface);border-bottom:1px solid var(--border);height:var(--nav);padding:0 20px;display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:var(--hdr);z-index:40;}
+.nav::-webkit-scrollbar{display:none;}
+.ntab{font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
+.ntab:hover{color:var(--text);}
+.ntab.active{background:var(--green);color:#fff;}
+.nav-space{flex:1;}
+.nav-gear{padding:6px 10px;border-radius:6px;color:var(--muted);cursor:pointer;font-size:16px;transition:all .15s;}
+.nav-gear:hover{background:var(--surface2);color:var(--text);}
 
-/* MAIN */
-.main-wrap{max-width:1200px;margin:0 auto;padding:28px 20px;}
-.main-wrap.full{max-width:none;padding:0;margin:0;}
+/* ── MAIN CONTENT ── */
+#app{min-height:calc(100vh - var(--hdr) - var(--nav));}
 
-/* TEAMS SHEET */
-.sheet-header{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
-.sheet-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.06em;color:var(--text);}
-.sheet-subtitle{font-size:12px;color:var(--muted);margin-top:2px;}
+/* ── CALENDAR VIEW ── */
+.cal-wrap{max-width:1100px;margin:0 auto;padding:20px 16px;}
+.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.cal-month{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.06em;}
+.cal-nav-btns{display:flex;gap:6px;}
+.cal-nav-btn{width:34px;height:34px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.cal-nav-btn:hover{background:var(--green);color:#fff;border-color:var(--green);}
 
-/* DROP ZONE */
-.drop-zone{border:2px dashed var(--border2);border-radius:var(--r2);padding:40px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:20px;}
-.drop-zone:hover,.drop-zone.drag-over{border-color:var(--green);background:var(--green-light);}
-.drop-zone-icon{font-size:2.5rem;margin-bottom:10px;}
-.drop-zone p{font-size:14px;color:var(--muted);line-height:1.7;}
-.drop-zone p strong{color:var(--green);}
-.drop-zone small{font-size:11px;color:var(--dimmed);}
+.cal-grid{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface2);border-bottom:1px solid var(--border);}
+.cal-dow-cell{text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 4px;}
+.cal-days{display:grid;grid-template-columns:repeat(7,1fr);}
+.cal-day{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:90px;padding:6px;cursor:default;transition:background .1s;position:relative;}
+.cal-day:nth-child(7n){border-right:none;}
+.cal-day.other-month{background:#faf9f6;}
+.cal-day.other-month .day-num{color:var(--dimmed);}
+.cal-day.today{background:var(--green-l);}
+.cal-day.has-rounds{cursor:pointer;}
+.cal-day.has-rounds:hover{background:var(--blue-l);}
+.day-num{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;font-family:'JetBrains Mono',monospace;}
+.day-num.season-start{color:var(--green);font-weight:700;}
+.day-rounds{display:flex;flex-direction:column;gap:3px;}
+.round-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;transition:opacity .15s;border:none;outline:none;}
+.round-pill:hover{opacity:.85;}
+.round-pill .pill-r{background:rgba(255,255,255,.25);border-radius:8px;padding:0 4px;font-size:9px;}
 
-/* SHEET TOOLBAR */
-.sheet-toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r) var(--r) 0 0;padding:8px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.stbtn{font-size:12px;padding:5px 11px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap;font-weight:500;font-family:'Inter',sans-serif;}
-.stbtn:hover{background:var(--border2);}
-.stbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
-.stbtn.primary:hover{background:var(--green-mid);}
-.stbtn.danger{border-color:#fca5a5;color:var(--red);}
-.stbtn.danger:hover{background:var(--red-light);}
-.st-sep{width:1px;height:20px;background:var(--border);margin:0 2px;flex-shrink:0;}
-.st-search{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;width:160px;font-family:'Inter',sans-serif;}
-.st-search:focus{border-color:var(--green);}
+/* ── ROUND PANEL (side) ── */
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;}
+.panel-overlay.open{display:block;}
+.round-panel{position:fixed;top:0;right:-440px;width:440px;max-width:100vw;height:100vh;background:var(--surface);box-shadow:-4px 0 32px rgba(0,0,0,.15);z-index:101;display:flex;flex-direction:column;transition:right .25s ease;}
+.round-panel.open{right:0;}
+.panel-hdr{padding:20px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0;}
+.panel-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;}
+.panel-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.panel-close{width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;}
+.panel-close:hover{background:var(--red-l);color:var(--red);border-color:#fca5a5;}
+.panel-body{flex:1;overflow-y:auto;padding:16px 20px;}
+.panel-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;}
 
-/* SPREADSHEET TABLE */
-.sheet-table-wrap{border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:auto;max-height:calc(100vh - 240px);background:var(--surface);}
-.sheet-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;}
-.sheet-table thead th{position:sticky;top:0;z-index:2;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;padding:9px 12px;border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
-.sheet-table thead th:hover{color:var(--text);}
-.sheet-table thead th.sort-asc::after{content:' ▲';color:var(--green);font-size:9px;}
-.sheet-table thead th.sort-desc::after{content:' ▼';color:var(--green);font-size:9px;}
-.sheet-table thead th.rn,.sheet-table tbody td.rn{position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--dimmed);font-size:11px;font-family:'JetBrains Mono',monospace;text-align:center;width:40px;min-width:40px;border-right:1px solid var(--border);cursor:pointer;}
-.sheet-table thead th.rn{z-index:3;cursor:default;}
-.sheet-table tbody tr:nth-child(even) td{background:#faf9f6;}
-.sheet-table tbody tr:hover td{background:var(--blue-light) !important;}
-.sheet-table tbody tr.row-sel td{background:#dbeafe !important;}
-.sheet-table tbody tr.row-sel td.rn{background:#bfdbfe !important;}
-.sheet-table tbody tr.row-new td{animation:row-pop .6s ease;}
-@keyframes row-pop{from{background:var(--green-light);}}
-.sheet-table tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle;}
-.sheet-table tbody td.rn{padding:5px 6px;}
+/* Match card in panel */
+.match-item{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;}
+.match-team{font-size:13px;font-weight:500;}
+.match-home{text-align:right;}
+.match-away{text-align:left;}
+.team-dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+.score-area{display:flex;align-items:center;gap:4px;}
+.score-in{width:36px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:4px;font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--text);outline:none;transition:border .15s;}
+.score-in:focus{border-color:var(--green);}
+.score-sep{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--dimmed);}
+.no-matches{text-align:center;padding:32px;color:var(--muted);font-size:13px;}
 
-.cell{padding:6px 12px;min-height:32px;min-width:80px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:border-color .1s;line-height:1.4;}
-.cell:hover{border-color:var(--border2);}
-.cell.editing{padding:0;border-color:var(--green);background:var(--green-light);}
-.cell.editing input{width:100%;min-width:80px;background:transparent;border:none;color:var(--text);padding:6px 10px;font-size:inherit;font-family:inherit;outline:none;}
+/* ── STANDINGS VIEW ── */
+.standings-wrap{max-width:900px;margin:0 auto;padding:20px 16px;}
+.comp-block{margin-bottom:32px;}
+.comp-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.comp-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
+.st-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.st-table th{background:var(--surface2);padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+.st-table th.n{text-align:center;}
+.st-table td{padding:9px 10px;border-bottom:1px solid var(--border);}
+.st-table tr:last-child td{border-bottom:none;}
+.st-table tr:hover td{background:var(--surface2);}
+.st-table td.n{text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
+.st-table td.pts{text-align:center;font-weight:700;font-size:14px;}
+.pos-badge{width:22px;height:22px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;}
+.p1{background:var(--gold-l);color:var(--gold);}
+.p2,.p3{background:var(--blue-l);color:var(--blue);}
+.prel{background:var(--red-l);color:var(--red);}
+.pdef{background:var(--surface2);color:var(--muted);}
+.team-cell{display:flex;align-items:center;gap:7px;}
+.team-badge-sm{width:18px;height:18px;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:#fff;flex-shrink:0;}
 
-/* COLOR CELL */
-.color-swatch{display:inline-flex;align-items:center;gap:6px;}
-.color-dot{width:14px;height:14px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.1);}
+/* ── TEAMS VIEW ── */
+.teams-wrap{max-width:1000px;margin:0 auto;padding:20px 16px;}
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;}
+.team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;transition:border-color .15s;}
+.team-card:hover{border-color:var(--border2);}
+.team-card-badge{width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;}
+.team-card-name{font-weight:600;font-size:14px;margin-bottom:4px;}
+.team-card-meta{font-size:11px;color:var(--muted);line-height:1.6;}
 
-/* SHEET STATUS BAR */
-.sheet-statusbar{display:flex;gap:16px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);}
-.sheet-statusbar b{color:var(--text);}
+/* ── DATA EDITOR (gear panel) ── */
+.editor-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;}
+.editor-overlay.open{display:block;}
+.editor-panel{position:fixed;inset:0;background:var(--bg);z-index:201;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s ease;}
+.editor-panel.open{transform:translateY(0);}
+.editor-top{background:var(--green);padding:0 20px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.editor-top-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.06em;color:#fff;}
+.editor-tabs{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;gap:0;flex-shrink:0;}
+.etab{font-size:12px;font-weight:600;padding:10px 14px;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
+.etab:hover{color:var(--text);}
+.etab.active{color:var(--green);border-bottom-color:var(--green);}
+.editor-toolbar{background:var(--surface);border-bottom:1px solid var(--border);padding:7px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0;}
+.tbtn{font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;white-space:nowrap;font-weight:500;font-family:'Inter',sans-serif;transition:all .15s;}
+.tbtn:hover{background:var(--border2);}
+.tbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
+.tbtn.primary:hover{background:var(--green-m);}
+.tbtn.danger{border-color:#fca5a5;color:var(--red);}
+.tbtn.danger:hover{background:var(--red-l);}
+.tsearch{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;width:150px;font-family:'Inter',sans-serif;}
+.tsearch:focus{border-color:var(--green);}
+.tsep{width:1px;height:18px;background:var(--border);margin:0 2px;flex-shrink:0;}
+.editor-table-wrap{flex:1;overflow:auto;}
+.ed-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;}
+.ed-table thead th{position:sticky;top:0;z-index:2;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
+.ed-table thead th:hover{color:var(--text);}
+.ed-table thead th.rn,.ed-table tbody td.rn{position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--dimmed);font-size:10px;font-family:'JetBrains Mono',monospace;text-align:center;width:36px;min-width:36px;border-right:1px solid var(--border);cursor:pointer;}
+.ed-table thead th.rn{z-index:3;cursor:default;}
+.ed-table tbody tr:nth-child(even) td{background:#faf9f6;}
+.ed-table tbody tr:hover td{background:var(--blue-l) !important;}
+.ed-table tbody tr.sel td{background:#dbeafe !important;}
+.ed-table tbody tr.sel td.rn{background:#bfdbfe !important;}
+.ed-table tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle;}
+.ed-table tbody td.rn{padding:4px 6px;}
+.ecell{padding:6px 10px;min-height:30px;min-width:60px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:border-color .1s;}
+.ecell:hover{border-color:var(--border2);}
+.ecell.editing{padding:0;border-color:var(--green);background:var(--green-l);}
+.ecell.editing input{width:100%;min-width:60px;background:transparent;border:none;color:var(--text);padding:6px 8px;font-size:inherit;font-family:inherit;outline:none;}
+.editor-statusbar{background:var(--surface2);border-top:1px solid var(--border);padding:5px 14px;display:flex;gap:14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
+.editor-statusbar b{color:var(--text);}
 
-/* TEAM MODAL */
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;}
-.modal-bg.open{display:flex;}
-.modal{background:var(--surface);border-radius:var(--r2);padding:28px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.15);}
-.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;margin-bottom:18px;}
-.field-group{margin-bottom:14px;}
-.field-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;display:block;}
-.field-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border .15s;}
-.field-input:focus{border-color:var(--green);}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
-.mbtn{font-size:13px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif;}
-.mbtn:hover{color:var(--text);border-color:var(--border2);}
-.mbtn.primary{background:var(--green);border-color:var(--green);color:#fff;}
-.mbtn.primary:hover{background:var(--green-mid);}
-.mbtn.danger{border-color:#fca5a5;color:var(--red);}
-.mbtn.danger:hover{background:var(--red-light);}
+/* Drop zone */
+.drop-zone{border:2px dashed var(--border2);border-radius:var(--r2);padding:36px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:16px;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--green);background:var(--green-l);}
+.drop-zone p{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7;}
+.drop-zone code{font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:4px;color:var(--text);}
 
-/* FIND & REPLACE MODAL */
-.fr-modal{max-width:400px;}
-
-/* EMPTY / LOADING */
-.empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
-.empty-icon{font-size:3rem;margin-bottom:14px;opacity:.35;}
+/* ── MISC ── */
 .loading{text-align:center;padding:60px;color:var(--muted);}
 .spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
 @keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:50px 20px;color:var(--muted);font-size:14px;}
 
-/* TOAST */
-#toast-container{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999;pointer-events:none;}
-.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green);padding:10px 16px;border-radius:8px;font-size:13px;color:var(--text);animation:toast-in .2s ease;max-width:280px;box-shadow:0 2px 12px rgba(0,0,0,.1);}
-.toast.warning{border-left-color:var(--gold);}
-.toast.error{border-left-color:var(--red);}
-@keyframes toast-in{from{transform:translateX(110%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+/* ── TOAST ── */
+#toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:999;pointer-events:none;}
+.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green);padding:10px 16px;border-radius:8px;font-size:13px;color:var(--text);box-shadow:0 2px 12px rgba(0,0,0,.1);animation:toastin .2s ease;max-width:280px;}
+.toast.warn{border-left-color:var(--gold);}
+.toast.err{border-left-color:var(--red);}
+@keyframes toastin{from{transform:translateX(110%);opacity:0;}to{transform:translateX(0);opacity:1;}}
 
-@media(max-width:680px){
-  .main-wrap{padding:16px 12px;}
-  .sheet-table-wrap{max-height:calc(100vh - 200px);}
+/* ── MODAL ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--surface);border-radius:var(--r2);padding:24px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.15);}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;margin-bottom:16px;}
+.fl{display:flex;flex-direction:column;gap:12px;}
+.fl label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;display:block;}
+.fi{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 11px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border .15s;}
+.fi:focus{border-color:var(--green);}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
+.mbtn{font-size:13px;padding:8px 16px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+.mbtn:hover{color:var(--text);}
+.mbtn.p{background:var(--green);border-color:var(--green);color:#fff;}
+.mbtn.p:hover{background:var(--green-m);}
+
+/* ── RESULTS VIEW ── */
+.results-wrap{max-width:900px;margin:0 auto;padding:20px 16px;}
+.results-season-bar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
+.results-season-bar label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.results-season-sel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-family:'Inter',sans-serif;font-size:13px;color:var(--text);outline:none;cursor:pointer;}
+.results-season-sel:focus{border-color:var(--green);}
+.results-comps{display:flex;flex-direction:column;gap:20px;}
+.results-comp{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.results-comp-title{padding:14px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em;}
+.results-table{width:100%;border-collapse:collapse;}
+.results-table td{padding:9px 14px;font-size:13px;border-bottom:1px solid var(--border);}
+.results-table tr:last-child td{border-bottom:none;}
+.results-table tr:hover td{background:var(--surface2);}
+.rpos{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;width:32px;text-align:center;}
+.rpos-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-size:11px;font-weight:700;}
+.rpos-1{background:#f59e0b;color:#fff;}
+.rpos-2{background:#94a3b8;color:#fff;}
+.rpos-3{background:#b45309;color:#fff;}
+.rpos-up{background:var(--green-l);color:var(--green);}
+.rpos-dn{background:var(--red-l);color:var(--red);}
+.rpos-mid{background:var(--surface2);color:var(--muted);}
+.res-team-cell{display:flex;align-items:center;gap:10px;}
+.res-team-badge{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;}
+.res-no-data{text-align:center;padding:60px 20px;color:var(--muted);font-size:14px;}
+
+@media(max-width:640px){
+  .cal-day{min-height:64px;padding:4px;}
+  .round-pill{font-size:9px;padding:1px 5px;}
+  .round-panel{width:100vw;}
+  .teams-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
 }
 </style>
 </head>
 <body>
 
-<!-- Auth Screen -->
+<!-- Auth -->
 <div class="auth-screen" id="authScreen">
   <div class="auth-card">
-    <div class="auth-badge">⚽</div>
+    <div class="auth-icon">⚽</div>
     <div class="auth-title">League Manager</div>
-    <div class="auth-sub">Sign in with Google to load and save your data in Google Drive.</div>
+    <div class="auth-sub">Sign in to load your private league data from Google Drive. No data is stored in this page.</div>
     <button class="auth-btn" onclick="signIn()">
       <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
       Sign in with Google
     </button>
-    <div class="auth-note">Your data stays in your own Google Drive folder.</div>
+    <div class="auth-note">All team names and data stay private in your own Drive.</div>
   </div>
 </div>
 
 <!-- Header -->
 <header>
-  <div class="header-logo">⚽ League Manager</div>
-  <div class="header-right">
-    <div class="sync-dot" id="syncDot" title="Sync status"></div>
+  <div style="display:flex;align-items:center;gap:0">
+    <div class="logo">⚽ League Manager</div>
+    <span class="logo-season" id="seasonLabel"></span>
+  </div>
+  <div class="hdr-right">
+    <div class="sync-dot" id="syncDot"></div>
     <button class="hbtn" onclick="refreshAll()">↺ Refresh</button>
     <button class="hbtn" onclick="signOut()" id="signOutBtn" style="display:none">Sign out</button>
   </div>
 </header>
 
-<!-- Top Nav -->
-<div class="top-nav">
-  <div class="tnav-tab active" id="tab-teams"    onclick="switchTab('teams')">👥 Teams</div>
-  <div class="tnav-tab"        id="tab-matches"  onclick="switchTab('matches')">📅 Matches</div>
-  <div class="tnav-tab"        id="tab-scorers"  onclick="switchTab('scorers')">⚽ Top Scorers</div>
-  <div class="tnav-tab"        id="tab-results"  onclick="switchTab('results')">🏆 Results</div>
-  <div class="tnav-tab"        id="tab-calendar" onclick="switchTab('calendar')">📆 Calendar</div>
+<!-- Navigation -->
+<div class="nav">
+  <div class="ntab active" id="ntab-calendar" onclick="switchView('calendar')">📆 Calendar</div>
+  <div class="ntab" id="ntab-standings" onclick="switchView('standings')">🏆 Standings</div>
+  <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
+  <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
+  <div class="nav-space"></div>
+  <div class="nav-gear" onclick="openEditor()" title="Data editor">⚙</div>
 </div>
 
-<!-- Main Content -->
-<div class="main-wrap" id="mainWrap">
-  <div class="loading"><div class="spinner"></div>Loading…</div>
+<!-- App content -->
+<div id="app"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+
+<!-- Round side panel -->
+<div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+<div class="round-panel" id="roundPanel">
+  <div class="panel-hdr">
+    <div>
+      <div class="panel-title" id="panelTitle"></div>
+      <div class="panel-sub" id="panelSub"></div>
+    </div>
+    <button class="panel-close" onclick="closePanel()">×</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+  <div class="panel-footer">
+    <button class="tbtn primary" onclick="saveMatchScores()" id="panelSaveBtn">☁ Save scores</button>
+    <button class="tbtn" onclick="closePanel()">Close</button>
+  </div>
 </div>
 
-<!-- Hidden file inputs -->
-<input type="file" id="teamsFileInput" accept=".csv,.txt" style="display:none">
-<input type="file" id="matchesFileInput" accept=".csv,.txt" style="display:none">
-<input type="file" id="scorersFileInput" accept=".csv,.txt" style="display:none">
-
-<!-- Team Modal -->
-<div class="modal-bg" id="teamModal">
-  <div class="modal">
-    <div class="modal-title" id="teamModalTitle">Add Team</div>
-    <div class="field-group"><label class="field-label">Team Name *</label><input class="field-input" type="text" id="tName" placeholder="e.g. Ferencváros TC"></div>
-    <div class="field-group"><label class="field-label">Stadium</label><input class="field-input" type="text" id="tStadion" placeholder="e.g. Groupama Aréna"></div>
-    <div class="field-group"><label class="field-label">Location / City</label><input class="field-input" type="text" id="tLocation" placeholder="e.g. Budapest"></div>
-    <div class="field-group"><label class="field-label">Foundation Year</label><input class="field-input" type="text" id="tFoundation" placeholder="e.g. 1899"></div>
-    <div class="field-group">
-      <label class="field-label">Team Colour</label>
-      <div style="display:flex;align-items:center;gap:10px">
-        <input class="field-input" type="color" id="tColor" value="#1a6b3a" style="width:56px;height:40px;padding:2px;cursor:pointer">
-        <span style="font-size:12px;color:var(--muted)">Used for the team badge</span>
-      </div>
+<!-- Data Editor (full-screen from bottom) -->
+<div class="editor-overlay" id="edOverlay" onclick="closeEditor()"></div>
+<div class="editor-panel" id="edPanel">
+  <div class="editor-top">
+    <div class="editor-top-title">⚙ Data Editor — Google Drive</div>
+    <button class="hbtn" onclick="closeEditor()">✕ Close</button>
+  </div>
+  <div class="editor-tabs">
+    <div class="etab active" id="etab-teams"    onclick="edSwitchTab('teams')">Teams</div>
+    <div class="etab"        id="etab-matches"  onclick="edSwitchTab('matches')">Matches</div>
+    <div class="etab"        id="etab-calendar" onclick="edSwitchTab('calendar')">Calendar</div>
+    <div class="etab"        id="etab-results"  onclick="edSwitchTab('results')">Results</div>
+  </div>
+  <div class="editor-toolbar">
+    <button class="tbtn primary" onclick="edAddRow()">➕ Add Row</button>
+    <button class="tbtn danger"  onclick="edDelSel()">🗑 Delete</button>
+    <button class="tbtn"         onclick="edUndo()">↩ Undo</button>
+    <div class="tsep"></div>
+    <input class="tsearch" id="edSearch" placeholder="Search…" oninput="edRender()" autocomplete="off">
+    <div class="tsep"></div>
+    <label class="tbtn" style="cursor:pointer">
+      📎 Attach CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
+    </label>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
+      <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
     </div>
-    <div class="modal-btns">
-      <button class="mbtn" onclick="closeModal('teamModal')">Cancel</button>
-      <button class="mbtn primary" onclick="saveTeamModal()">Save Team</button>
+  </div>
+  <div class="editor-table-wrap" id="edTableWrap">
+    <div class="drop-zone" id="edDropZone">
+      <p>📂 <strong>Drop a CSV here</strong> or click "Attach CSV" above</p>
+      <p>Expected columns per sheet:</p>
+      <p>
+        <b>Teams:</b> <code>id, name, color, stadium, location, foundation</code><br>
+        <b>Matches:</b> <code>id, game_day, competition, round, home_id, away_id, home_score, away_score</code><br>
+        <b>Calendar:</b> <code>game_day, date, competition, round</code><br>
+        <b>Results:</b> <code>season, competition, place, team_id</code>
+      </p>
     </div>
+  </div>
+  <div class="editor-statusbar">
+    <span><b id="edRows">0</b> rows</span>
+    <span><b id="edSel">0</b> selected</span>
+    <span><b id="edMod">0</b> unsaved</span>
+    <span style="margin-left:auto" id="edSaved"></span>
   </div>
 </div>
 
 <!-- Find & Replace Modal -->
 <div class="modal-bg" id="frModal">
-  <div class="modal fr-modal">
+  <div class="modal">
     <div class="modal-title">Find &amp; Replace</div>
-    <div class="field-group">
-      <label class="field-label">Column</label>
-      <select class="field-input" id="frCol"><option value="__all__">All columns</option></select>
+    <div class="fl">
+      <div><label>Column</label><select class="fi" id="frCol"><option value="__all__">All columns</option></select></div>
+      <div><label>Find</label><input class="fi" type="text" id="frFind" placeholder="value…"></div>
+      <div><label>Replace with</label><input class="fi" type="text" id="frRep" placeholder="new value…"></div>
     </div>
-    <div class="field-group"><label class="field-label">Find</label><input class="field-input" type="text" id="frFind" placeholder="value to find…"></div>
-    <div class="field-group"><label class="field-label">Replace with</label><input class="field-input" type="text" id="frReplace" placeholder="new value…"></div>
-    <div style="display:flex;gap:16px;margin-bottom:4px;font-size:13px;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="frCase"> Case-insensitive</label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="frRegex"> Regex</label>
-    </div>
-    <div class="modal-btns">
+    <div class="mbtns">
       <button class="mbtn" onclick="closeModal('frModal')">Cancel</button>
-      <button class="mbtn primary" onclick="doFindReplace()">Replace All</button>
+      <button class="mbtn p" onclick="doFR()">Replace All</button>
     </div>
   </div>
 </div>
 
-<div id="toast-container"></div>
+<div id="toasts"></div>
 
 <script>
-// ── CONFIG ──────────────────────────────────────────────────────
-const CLIENT_ID = '584383376067-p4oadd30cutenjtahevq2q4tlr33rsft.apps.googleusercontent.com';
-const FOLDER_ID = '16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
-const SCOPES    = 'https://www.googleapis.com/auth/drive.file';
+// ══════════════════════════════════════════════════════════════
+//  CONFIG  (no personal data — set your own Drive folder ID)
+// ══════════════════════════════════════════════════════════════
+const CLIENT_ID   = '584383376067-p4oadd30cutenjtahevq2q4tlr33rsft.apps.googleusercontent.com';
+const FOLDER_ID   = '16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
+const SCOPES      = 'https://www.googleapis.com/auth/drive.file';
+const SEASON_START= '2000-07-15'; // first day of the calendar
 
-// ── STATE ───────────────────────────────────────────────────────
-let accessToken = null, tokenClient = null;
-let currentTab  = 'teams';
+// ── COMPETITION COLOR PALETTE ──
+const PALETTE=['#1a6b3a','#1a4fa0','#c8980a','#c0392b','#6b21a8','#0e7490','#b45309','#155e75'];
+const compColors={};
+function compColor(c){if(!compColors[c])compColors[c]=PALETTE[Object.keys(compColors).length%PALETTE.length];return compColors[c];}
 
-// Per-sheet data: { headers:[], rows:[[]], fileId:null, history:[], modified:0, sortCol:-1, sortDir:1, selected:Set, saveTimer:null }
-const sheets = {
-  teams:   newSheet(),
-  matches: newSheet(),
-  scorers: newSheet(),
-  results: newSheet(),
-  calendar:newSheet()
+// ── DATA STATE ──────────────────────────────────────────────
+const DB={
+  teams:   {h:[],r:[],fid:null},
+  matches: {h:[],r:[],fid:null},
+  calendar:{h:[],r:[],fid:null},
+  results: {h:[],r:[],fid:null}
 };
 
-const SHEET_DEFAULTS = {
+// ── EDITOR STATE ────────────────────────────────────────────
+let edTab='teams',edHistory=[],edSelected=new Set(),edModified=0,edSaveTimer=null,edLastSaved=null;
+let _lastSel=undefined;
+const ED_DEFAULTS={
   teams:   ['id','name','color','stadium','location','foundation'],
-  matches: ['id','date','round','home','away','home_score','away_score','competition'],
-  scorers: ['id','player','team','competition','goals','assists'],
-  results: ['season','league','place','team_id'],
-  calendar:['game_day','date','league','round']
+  matches: ['id','game_day','competition','round','home_id','away_id','home_score','away_score'],
+  calendar:['game_day','date','competition','round'],
+  results: ['season','competition','place','team_id']
 };
 
-function newSheet(){
-  return {headers:[],rows:[],fileId:null,history:[],modified:0,sortCol:-1,sortDir:1,selected:new Set(),saveTimer:null,lastSaved:null};
-}
+// ── VIEW STATE ──────────────────────────────────────────────
+let currentView='calendar';
+let calYear=2000, calMonth=6; // July 2000 (0-indexed month)
+let panelData=null; // { competition, round, game_day }
 
-let editingTeamRowIdx = null; // for modal
-let _lastSel = undefined;
-
-// ── AUTH ────────────────────────────────────────────────────────
+// ── AUTH ─────────────────────────────────────────────────────
+let accessToken=null,tokenClient=null;
 function initAuth(){
   if(typeof google==='undefined'){setTimeout(initAuth,400);return;}
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID, scope:SCOPES, prompt:'',
-    callback:(resp)=>{
+  tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,scope:SCOPES,prompt:'',
+    callback:resp=>{
       if(resp.error){document.getElementById('authScreen').style.display='flex';return;}
-      accessToken = resp.access_token;
-      localStorage.setItem('lm_in','1');
+      accessToken=resp.access_token;
+      localStorage.setItem('lm','1');
       onSignedIn();
     }
   });
-  if(localStorage.getItem('lm_in')==='1'){
+  if(localStorage.getItem('lm')==='1'){
     document.getElementById('authScreen').style.display='none';
-    setSyncStatus('busy');
+    setSS('busy');
     tokenClient.requestAccessToken({prompt:''});
   }
 }
-
-function signIn(){
-  if(!tokenClient){setTimeout(signIn,400);return;}
-  tokenClient.requestAccessToken({prompt:'consent'});
-}
-
+function signIn(){if(!tokenClient){setTimeout(signIn,400);return;}tokenClient.requestAccessToken({prompt:'consent'});}
 function signOut(){
-  if(accessToken) google.accounts.oauth2.revoke(accessToken,()=>{});
-  accessToken=null; localStorage.removeItem('lm_in');
+  if(accessToken)google.accounts.oauth2.revoke(accessToken,()=>{});
+  accessToken=null;localStorage.removeItem('lm');
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('signOutBtn').style.display='none';
-  setSyncStatus('off');
+  setSS('off');
 }
-
 async function onSignedIn(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('signOutBtn').style.display='inline-block';
-  await loadAllSheets();
+  await loadAll();
 }
 
-// ── SYNC STATUS ─────────────────────────────────────────────────
-function setSyncStatus(s){
+// ── SYNC INDICATOR ───────────────────────────────────────────
+function setSS(s){
   const d=document.getElementById('syncDot');
   d.className='sync-dot'+(s==='ok'?' ok':s==='busy'?' busy':s==='err'?' err':'');
-  d.title=s==='ok'?'Synced':s==='busy'?'Saving…':s==='err'?'Error':'Not connected';
 }
 
-// ── DRIVE ───────────────────────────────────────────────────────
-async function driveGet(path,params=''){
-  const r=await fetch(`https://www.googleapis.com/drive/v3/${path}${params}`,{headers:{Authorization:`Bearer ${accessToken}`}});
-  if(!r.ok) throw new Error(`Drive ${r.status}`);
+// ── DRIVE API ─────────────────────────────────────────────────
+async function dGet(path,p=''){
+  const r=await fetch(`https://www.googleapis.com/drive/v3/${path}${p}`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  if(!r.ok)throw new Error(`Drive ${r.status}`);
   return r.json();
 }
-
 async function findFile(name){
   const q=encodeURIComponent(`name='${name}' and '${FOLDER_ID}' in parents and trashed=false`);
-  const d=await driveGet('files',`?q=${q}&fields=files(id,name,mimeType)`);
-  return d.files&&d.files.length ? d.files[0] : null;
+  const d=await dGet('files',`?q=${q}&fields=files(id,name,mimeType)`);
+  return d.files?.length?d.files[0]:null;
 }
-
-async function readFile(fileId, mimeType){
+async function readFile(id,mime){
   let r;
-  if(mimeType==='application/vnd.google-apps.spreadsheet'){
-    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text%2Fcsv`,{headers:{Authorization:`Bearer ${accessToken}`}});
-  } else {
-    r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:`Bearer ${accessToken}`}});
-  }
-  if(!r.ok) throw new Error(`Read failed ${r.status}`);
+  if(mime==='application/vnd.google-apps.spreadsheet')
+    r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=text%2Fcsv`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  else
+    r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  if(!r.ok)throw new Error(`Read ${r.status}`);
   return r.text();
 }
-
-async function writeFileToDrive(name, content, existingId){
-  setSyncStatus('busy');
+async function writeToDrive(name,content,existId){
+  setSS('busy');
   try{
-    if(existingId){
-      const meta = await driveGet(`files/${existingId}`,'?fields=mimeType').catch(()=>null);
-      if(meta && meta.mimeType==='application/vnd.google-apps.spreadsheet'){
-        await fetch(`https://www.googleapis.com/drive/v3/files/${existingId}`,{method:'DELETE',headers:{Authorization:`Bearer ${accessToken}`}});
-        existingId=null;
+    if(existId){
+      const m=await dGet(`files/${existId}`,'?fields=mimeType').catch(()=>null);
+      if(m?.mimeType==='application/vnd.google-apps.spreadsheet'){
+        await fetch(`https://www.googleapis.com/drive/v3/files/${existId}`,{method:'DELETE',headers:{Authorization:`Bearer ${accessToken}`}});
+        existId=null;
       }
     }
-    if(existingId){
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,{
-        method:'PATCH', headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'text/csv'}, body:content
-      });
-      setSyncStatus('ok'); return existingId;
+    if(existId){
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existId}?uploadType=media`,{
+        method:'PATCH',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'text/csv'},body:content});
+      setSS('ok');return existId;
     } else {
       const form=new FormData();
-      form.append('metadata', new Blob([JSON.stringify({name, parents:[FOLDER_ID], mimeType:'text/csv'})],{type:'application/json'}));
-      form.append('file', new Blob([content],{type:'text/csv'}));
-      const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{
-        method:'POST', headers:{Authorization:`Bearer ${accessToken}`}, body:form
-      });
-      const d=await r.json();
-      setSyncStatus('ok'); return d.id;
+      form.append('metadata',new Blob([JSON.stringify({name,parents:[FOLDER_ID],mimeType:'text/csv'})],{type:'application/json'}));
+      form.append('file',new Blob([content],{type:'text/csv'}));
+      const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:`Bearer ${accessToken}`},body:form});
+      const d=await r.json();setSS('ok');return d.id;
     }
-  }catch(e){setSyncStatus('err');toast('Save error: '+e.message,'error');return existingId;}
+  }catch(e){setSS('err');toast(e.message,'err');return existId;}
 }
 
-// ── CSV PARSE / SERIALIZE ───────────────────────────────────────
+// ── CSV ───────────────────────────────────────────────────────
 function parseCSV(text){
-  if(!text||!text.trim()) return {headers:[],rows:[]};
-  // Full quoted-field parser
+  if(!text?.trim())return{h:[],r:[]};
   const lines=[];let inQ=false,cur='',row=[];
   for(let i=0;i<text.length;i++){
     const c=text[i],n=text[i+1];
@@ -381,831 +514,631 @@ function parseCSV(text){
     else if(c===','&&!inQ){row.push(cur);cur='';}
     else if((c==='\n'||c==='\r')&&!inQ){
       row.push(cur);cur='';
-      if(row.some(v=>v!=='')||row.length>1) lines.push(row);
+      if(row.some(v=>v)||row.length>1)lines.push(row);
       row=[];if(c==='\r'&&n==='\n')i++;
     }else cur+=c;
   }
-  row.push(cur);
-  if(row.some(v=>v!=='')||row.length>1) lines.push(row);
-  if(!lines.length) return {headers:[],rows:[]};
-  const headers=lines[0].map(h=>h.trim());
-  const rows=lines.slice(1).map(r=>{
-    const out=r.slice(0,headers.length);
-    while(out.length<headers.length) out.push('');
-    return out;
-  });
-  return {headers,rows};
+  row.push(cur);if(row.some(v=>v)||row.length>1)lines.push(row);
+  if(!lines.length)return{h:[],r:[]};
+  const h=lines[0].map(s=>s.trim());
+  const r=lines.slice(1).map(row=>{const o=row.slice(0,h.length);while(o.length<h.length)o.push('');return o;});
+  return{h,r};
+}
+function serCSV(h,r){
+  const e=v=>{v=String(v??'');return(v.includes(',')||v.includes('"')||v.includes('\n'))?`"${v.replace(/"/g,'""')}"`:v;};
+  return[h.join(','),...r.map(row=>row.map(e).join(','))].join('\r\n');
 }
 
-function serializeCSV(headers,rows){
-  const esc=v=>{v=String(v||'');return(v.includes(',')||v.includes('"')||v.includes('\n'))?`"${v.replace(/"/g,'""')}"`:v;};
-  return [headers.join(','),...rows.map(r=>r.map(esc).join(','))].join('\r\n');
-}
-
-// ── LOAD ALL SHEETS ─────────────────────────────────────────────
-async function loadAllSheets(){
-  setSyncStatus('busy');
+// ── LOAD / SAVE ───────────────────────────────────────────────
+async function loadAll(){
+  setSS('busy');
   try{
-    for(const name of ['teams','matches','scorers','results','calendar']){
+    for(const name of Object.keys(DB)){
       const f=await findFile(`${name}.csv`);
       if(f){
-        sheets[name].fileId=f.id;
-        const text=await readFile(f.id, f.mimeType);
-        const {headers,rows}=parseCSV(text);
-        sheets[name].headers=headers;
-        sheets[name].rows=rows.map(r=>[...r]);
+        DB[name].fid=f.id;
+        const{h,r}=parseCSV(await readFile(f.id,f.mimeType));
+        DB[name].h=h;DB[name].r=r.map(row=>[...row]);
       }
     }
-    setSyncStatus('ok');
-  }catch(e){setSyncStatus('err');toast('Load error: '+e.message,'error');}
-  renderTab(currentTab);
+    setSS('ok');
+    // Detect season from results or calendar
+    detectSeason();
+    renderView();
+  }catch(e){setSS('err');toast('Load error: '+e.message,'err');}
 }
-
 async function refreshAll(){
-  document.getElementById('mainWrap').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
-  await loadAllSheets();
+  document.getElementById('app').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
+  await loadAll();
 }
-
-// ── SAVE SHEET TO DRIVE ─────────────────────────────────────────
 async function saveSheet(name){
-  const s=sheets[name];
-  if(!s.headers.length) return;
-  const csv=serializeCSV(s.headers,s.rows);
-  const newId=await writeFileToDrive(`${name}.csv`,csv,s.fileId);
-  if(newId) s.fileId=newId;
+  const d=DB[name];
+  if(!d.h.length)return;
+  const csv=serCSV(d.h,d.r);
+  const newId=await writeToDrive(`${name}.csv`,csv,d.fid);
+  if(newId)d.fid=newId;
+}
+function detectSeason(){
+  // Try to pick season label from results
+  const res=DB.results;
+  const si=res.h.indexOf('season');
+  if(si>=0&&res.r.length){
+    const seasons=[...new Set(res.r.map(r=>r[si]))].sort().reverse();
+    document.getElementById('seasonLabel').textContent=seasons[0]||'';
+  }
 }
 
-function schedSave(name){
-  const s=sheets[name];
-  clearTimeout(s.saveTimer);
-  s.saveTimer=setTimeout(async()=>{
-    await saveSheet(name);
-    s.lastSaved=new Date();
-    s.modified=0;
-    updateStatusBar(name);
-  },1500);
+// ── HELPERS ───────────────────────────────────────────────────
+function teamById(id){
+  const d=DB.teams;
+  const ii=d.h.indexOf('id'),ni=d.h.findIndex(h=>h==='name'||h==='team_name');
+  if(ii<0)return{name:id,color:'#1a6b3a'};
+  const row=d.r.find(r=>r[ii]===id);
+  const ci=d.h.findIndex(h=>h==='color'||h==='colour');
+  return{name:row?(row[ni]||id):id, color:row&&ci>=0?row[ci]:'#1a6b3a'};
+}
+function objRow(name,row){const h=DB[name].h;const o={};h.forEach((k,i)=>o[k]=row[i]??'');return o;}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg,type=''){
+  const c=document.getElementById('toasts');
+  const t=document.createElement('div');
+  t.className='toast'+(type?' '+type:'');t.textContent=msg;c.appendChild(t);
+  setTimeout(()=>t.remove(),3200);
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+// ══════════════════════════════════════════════════════════════
+//  VIEW ROUTING
+// ══════════════════════════════════════════════════════════════
+function switchView(v){
+  currentView=v;
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('ntab-'+v)?.classList.add('active');
+  renderView();
+}
+function renderView(){
+  if(currentView==='calendar')renderCalendarView();
+  else if(currentView==='standings')renderStandings();
+  else if(currentView==='teams')renderTeamsView();
+  else if(currentView==='results')renderResultsView();
 }
 
-async function forceSave(name){
-  const s=sheets[name];
-  clearTimeout(s.saveTimer);
-  await saveSheet(name);
-  s.lastSaved=new Date();
-  s.modified=0;
-  updateStatusBar(name);
-  toast('Saved to Drive','success');
-}
-
-// ── LOAD FROM CSV STRING (local import) ─────────────────────────
-function loadCSVIntoSheet(name, text, filename){
-  const {headers,rows}=parseCSV(text);
-  if(!headers.length){toast('Empty or invalid CSV','error');return;}
-  const s=sheets[name];
-  s.headers=headers;
-  s.rows=rows.map(r=>[...r]);
-  s.history=[];s.selected=new Set();s.modified=0;s.sortCol=-1;s.sortDir=1;
-  schedSave(name); // auto-save to Drive
-  renderTab(name);
-  // If calendar, also refresh the grouped view
-  if(name==='calendar') setTimeout(()=>renderCalendarView(),100);
-  toast(`Loaded ${rows.length} rows from ${filename||'CSV'}. Saving to Drive…`,'success');
-}
-
-// ── TAB SWITCHING ───────────────────────────────────────────────
-function switchTab(name){
-  currentTab=name;
-  document.querySelectorAll('.tnav-tab').forEach(t=>t.classList.remove('active'));
-  const el=document.getElementById('tab-'+name);
-  if(el)el.classList.add('active');
-  renderTab(name);
-}
-
-function renderTab(name){
-  const wrap=document.getElementById('mainWrap');
-  wrap.className='main-wrap';
-  if(name==='teams')         renderTeamsSheet(wrap);
-  else if(name==='matches')  renderGenericSheet(wrap,'matches','Matches');
-  else if(name==='scorers')  renderGenericSheet(wrap,'scorers','Top Scorers');
-  else if(name==='results')  renderResultsSheet(wrap);
-  else if(name==='calendar') renderCalendarSheet(wrap);
-}
-
-// ── TEAMS SHEET ─────────────────────────────────────────────────
-function renderTeamsSheet(wrap){
-  const s=sheets.teams;
-  let html=`
-  <div class="sheet-header">
-    <div>
-      <div class="sheet-title">Teams</div>
-      <div class="sheet-subtitle">All teams — independent of leagues &amp; competitions</div>
+// ══════════════════════════════════════════════════════════════
+//  CALENDAR VIEW
+// ══════════════════════════════════════════════════════════════
+function renderCalendarView(){
+  const app=document.getElementById('app');
+  app.innerHTML=`<div class="cal-wrap">
+    <div class="cal-header">
+      <div class="cal-month" id="calMonthLabel"></div>
+      <div class="cal-nav-btns">
+        <button class="cal-nav-btn" onclick="calMove(-1)">‹</button>
+        <button class="cal-nav-btn" onclick="calGotoStart()">⌂</button>
+        <button class="cal-nav-btn" onclick="calMove(1)">›</button>
+      </div>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-dow">
+        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="cal-dow-cell">${d}</div>`).join('')}
+      </div>
+      <div class="cal-days" id="calDays"></div>
     </div>
   </div>`;
+  renderCalendarGrid();
+}
 
-  // If no data: show drop zone prominently
-  if(!s.headers.length){
-    html+=`
-    <div class="drop-zone" id="teamsDropZone">
-      <div class="drop-zone-icon">📂</div>
-      <p><strong>Drop your teams.csv here</strong> or click to browse</p>
-      <p style="margin-top:4px">Any CSV with team data works — columns will be detected automatically</p>
-      <p style="margin-top:8px"><small>Or use the "＋ Add Row" button below to build from scratch</small></p>
+function calMove(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;}renderCalendarGrid();}
+function calGotoStart(){const d=new Date(SEASON_START);calYear=d.getFullYear();calMonth=d.getMonth();renderCalendarGrid();}
+
+function renderCalendarGrid(){
+  const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('calMonthLabel').textContent=`${monthNames[calMonth]} ${calYear}`;
+
+  // Build index: date string → [{competition, round, game_day}]
+  const calIdx={};
+  const cd=DB.calendar;
+  const gdi=cd.h.indexOf('game_day'),dti=cd.h.indexOf('date'),cpi=cd.h.indexOf('competition'),rni=cd.h.indexOf('round');
+  cd.r.forEach(row=>{
+    const dt=dti>=0?row[dti]:'';
+    if(!dt)return;
+    if(!calIdx[dt])calIdx[dt]=[];
+    calIdx[dt].push({game_day:gdi>=0?row[gdi]:'',competition:cpi>=0?row[cpi]:'',round:rni>=0?row[rni]:''});
+  });
+
+  const today=new Date().toISOString().slice(0,10);
+  const seasonStart=SEASON_START;
+
+  // First day of month (Mon=0)
+  const first=new Date(calYear,calMonth,1);
+  const startDow=(first.getDay()+6)%7; // 0=Mon
+  const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
+  const prevDays=new Date(calYear,calMonth,0).getDate();
+
+  let html='';
+  let totalCells=Math.ceil((startDow+daysInMonth)/7)*7;
+
+  for(let i=0;i<totalCells;i++){
+    let day,month,year,isOther=false;
+    if(i<startDow){day=prevDays-startDow+i+1;month=calMonth-1;year=calYear;if(month<0){month=11;year--;}isOther=true;}
+    else if(i>=startDow+daysInMonth){day=i-startDow-daysInMonth+1;month=calMonth+1;year=calYear;if(month>11){month=0;year++;}isOther=true;}
+    else{day=i-startDow+1;month=calMonth;year=calYear;}
+
+    const dateStr=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const rounds=calIdx[dateStr]||[];
+    const isToday=dateStr===today;
+    const isSStart=dateStr===seasonStart;
+    const hasRounds=rounds.length>0;
+
+    const pills=rounds.map(r=>{
+      const col=compColor(r.competition);
+      const gdLabel=r.game_day?`GD${esc(r.game_day)}`:`R${esc(r.round)}`;
+      return `<button class="round-pill" style="background:${col}" onclick="openRoundPanel(event,'${esc(r.competition)}','${esc(r.round)}','${esc(r.game_day)}','${esc(dateStr)}')" title="${esc(r.competition)} — Round ${esc(r.round)}${r.game_day?' · Game Day '+esc(r.game_day):''}">
+        ${esc(r.competition)} <span class="pill-r">${gdLabel}</span>
+      </button>`;
+    }).join('');
+
+    html+=`<div class="cal-day${isOther?' other-month':''}${isToday?' today':''}${hasRounds?' has-rounds':''}">
+      <div class="day-num${isSStart?' season-start':''}">${day}${isSStart?' ★':''}</div>
+      <div class="day-rounds">${pills}</div>
     </div>`;
   }
-
-  // Toolbar
-  html+=`
-  <div class="sheet-toolbar">
-    <button class="stbtn primary" onclick="sheetAddRow('teams')">➕ Add Row</button>
-    <button class="stbtn danger" onclick="sheetDeleteSel('teams')">🗑 Delete</button>
-    <button class="stbtn" onclick="sheetUndo('teams')">↩ Undo</button>
-    <div class="st-sep"></div>
-    <input class="st-search" id="teamsSearch" placeholder="🔍 Search…" oninput="renderSheetTable('teams')" autocomplete="off">
-    <button class="stbtn" onclick="openFR('teams')">Find &amp; Replace</button>
-    <div class="st-sep"></div>
-    <label class="stbtn" style="cursor:pointer" title="Import CSV file">
-      📎 Attach CSV
-      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'teams')">
-    </label>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="stbtn" onclick="downloadCSV('teams')">⬇ Download</button>
-      <button class="stbtn primary" onclick="forceSave('teams')">☁ Save to Drive</button>
-    </div>
-  </div>`;
-
-  // Table container
-  html+=`<div class="sheet-table-wrap" id="teamsTableWrap"></div>
-  <div class="sheet-statusbar">
-    <span><b id="tRows">0</b> rows</span>
-    <span><b id="tSel">0</b> selected</span>
-    <span><b id="tMod">0</b> unsaved changes</span>
-    <span style="margin-left:auto" id="tSaved"></span>
-  </div>`;
-
-  wrap.innerHTML=html;
-  wireDrop('teams');
-  renderSheetTable('teams');
+  document.getElementById('calDays').innerHTML=html;
 }
 
-// ── GENERIC SHEET (matches / scorers) ───────────────────────────
-function renderGenericSheet(wrap, name, title){
-  const s=sheets[name];
-  let html=`
-  <div class="sheet-header">
-    <div><div class="sheet-title">${title}</div></div>
-  </div>`;
+// ── ROUND PANEL ───────────────────────────────────────────────
+function openRoundPanel(e,competition,round,game_day,date){
+  e.stopPropagation();
+  panelData={competition,round,game_day,date};
 
-  if(!s.headers.length){
-    html+=`
-    <div class="drop-zone" id="${name}DropZone">
-      <div class="drop-zone-icon">📂</div>
-      <p><strong>Drop your ${name}.csv here</strong> or click to browse</p>
-      <p style="margin-top:4px">Any CSV with ${title.toLowerCase()} data works</p>
-    </div>`;
+  document.getElementById('panelTitle').textContent=`${competition} — Round ${round}`;
+  document.getElementById('panelSub').textContent=formatDate(date)+' · Game day '+game_day;
+
+  // Find matches for this competition + round
+  const md=DB.matches;
+  const ci=md.h.indexOf('competition'),ri=md.h.indexOf('round'),
+        hi=md.h.indexOf('home_id'),ai=md.h.indexOf('away_id'),
+        hsi=md.h.indexOf('home_score'),asi=md.h.indexOf('away_score'),
+        idi=md.h.indexOf('id');
+
+  const matches=md.r.filter(row=>(ci<0||row[ci]===competition)&&(ri<0||row[ri]===round));
+
+  let html='';
+  if(!matches.length){
+    html=`<div class="no-matches">No matches found for this round.<br><small>Add matches via ⚙ Data Editor</small></div>`;
+  } else {
+    matches.forEach((row,idx)=>{
+      const home=teamById(hi>=0?row[hi]:'');
+      const away=teamById(ai>=0?row[ai]:'');
+      const hs=hsi>=0?row[hsi]:'';
+      const as=asi>=0?row[asi]:'';
+      const matchId=idi>=0?row[idi]:'';
+      html+=`<div class="match-item" data-matchid="${esc(matchId)}">
+        <div class="match-home match-team">
+          <span class="team-dot" style="background:${home.color}"></span>${esc(home.name)}
+        </div>
+        <div class="score-area">
+          <input class="score-in" type="number" min="0" value="${esc(hs)}" data-side="home" data-matchid="${esc(matchId)}" placeholder="—">
+          <span class="score-sep">:</span>
+          <input class="score-in" type="number" min="0" value="${esc(as)}" data-side="away" data-matchid="${esc(matchId)}" placeholder="—">
+        </div>
+        <div class="match-away match-team">
+          ${esc(away.name)}<span class="team-dot" style="background:${away.color};margin-left:5px;margin-right:0"></span>
+        </div>
+      </div>`;
+    });
   }
 
-  html+=`
-  <div class="sheet-toolbar">
-    <button class="stbtn primary" onclick="sheetAddRow('${name}')">➕ Add Row</button>
-    <button class="stbtn danger" onclick="sheetDeleteSel('${name}')">🗑 Delete</button>
-    <button class="stbtn" onclick="sheetUndo('${name}')">↩ Undo</button>
-    <div class="st-sep"></div>
-    <input class="st-search" id="${name}Search" placeholder="🔍 Search…" oninput="renderSheetTable('${name}')" autocomplete="off">
-    <button class="stbtn" onclick="openFR('${name}')">Find &amp; Replace</button>
-    <div class="st-sep"></div>
-    <label class="stbtn" style="cursor:pointer">
-      📎 Attach CSV
-      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'${name}')">
-    </label>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="stbtn" onclick="downloadCSV('${name}')">⬇ Download</button>
-      <button class="stbtn primary" onclick="forceSave('${name}')">☁ Save to Drive</button>
-    </div>
-  </div>
-  <div class="sheet-table-wrap" id="${name}TableWrap"></div>
-  <div class="sheet-statusbar">
-    <span><b id="${name}Rows">0</b> rows</span>
-    <span><b id="${name}Sel">0</b> selected</span>
-    <span><b id="${name}Mod">0</b> unsaved</span>
-    <span style="margin-left:auto" id="${name}Saved"></span>
-  </div>`;
-
-  wrap.innerHTML=html;
-  wireDrop(name);
-  renderSheetTable(name);
+  document.getElementById('panelBody').innerHTML=html;
+  document.getElementById('panelOverlay').classList.add('open');
+  document.getElementById('roundPanel').classList.add('open');
 }
 
-// ── FILE INPUT HANDLER ──────────────────────────────────────────
-function handleFileInput(e, name){
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);
-  r.readAsText(f);
-  e.target.value='';
+function closePanel(){
+  document.getElementById('panelOverlay').classList.remove('open');
+  document.getElementById('roundPanel').classList.remove('open');
+  panelData=null;
 }
 
-// ── RENDER SHEET TABLE ──────────────────────────────────────────
-function renderSheetTable(name){
-  const s=sheets[name];
-  const wrap=document.getElementById(`${name}TableWrap`);
-  if(!wrap)return;
+async function saveMatchScores(){
+  if(!panelData)return;
+  const md=DB.matches;
+  const idi=md.h.indexOf('id'),hsi=md.h.indexOf('home_score'),asi=md.h.indexOf('away_score');
+  if(hsi<0||asi<0){toast('matches.csv has no score columns','warn');return;}
 
-  if(!s.headers.length){
-    wrap.innerHTML='';
-    updateStatusBar(name);
+  document.querySelectorAll('#panelBody .match-item').forEach(item=>{
+    const matchId=item.dataset.matchid;
+    const hs=item.querySelector('[data-side="home"]')?.value??'';
+    const as=item.querySelector('[data-side="away"]')?.value??'';
+    const row=idi>=0?md.r.find(r=>r[idi]===matchId):null;
+    if(row){row[hsi]=hs;row[asi]=as;}
+  });
+
+  await saveSheet('matches');
+  toast('Scores saved to Drive','');
+  closePanel();
+  if(currentView==='standings')renderStandings();
+}
+
+function formatDate(d){
+  try{return new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
+  catch{return d;}
+}
+
+// ══════════════════════════════════════════════════════════════
+//  STANDINGS
+// ══════════════════════════════════════════════════════════════
+function renderStandings(){
+  const md=DB.matches;
+  const ci=md.h.indexOf('competition'),hii=md.h.indexOf('home_id'),aii=md.h.indexOf('away_id'),
+        hsi=md.h.indexOf('home_score'),asi=md.h.indexOf('away_score');
+
+  // Get distinct competitions
+  const comps=[...new Set(md.r.map(r=>ci>=0?r[ci]:'')).values()].filter(Boolean);
+
+  const app=document.getElementById('app');
+  if(!comps.length){app.innerHTML='<div class="empty">No match data yet. Add matches via ⚙ Data Editor.</div>';return;}
+
+  let html='<div class="standings-wrap">';
+  comps.forEach(comp=>{
+    const rows=md.r.filter(r=>ci>=0&&r[ci]===comp);
+    const table=computeTable(rows,hii,aii,hsi,asi);
+    if(!table.length)return;
+    const col=compColor(comp);
+    html+=`<div class="comp-block">
+      <div class="comp-title"><span class="comp-dot" style="background:${col}"></span>${esc(comp)}</div>
+      <table class="st-table">
+        <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GF</th><th class="n">GA</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+        <tbody>`;
+    table.forEach((t,i)=>{
+      const pos=i+1,total=table.length;
+      const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
+      const gd=(t.gd>0?'+':'')+t.gd;
+      html+=`<tr>
+        <td><span class="pos-badge ${pc}">${pos}</span></td>
+        <td><div class="team-cell"><div class="team-badge-sm" style="background:${t.color}">${t.name.slice(0,3).toUpperCase()}</div>${esc(t.name)}</div></td>
+        <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
+        <td class="n">${t.gf}</td><td class="n">${t.ga}</td><td class="n">${gd}</td><td class="pts">${t.pts}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div>`;
+  });
+  html+='</div>';
+  app.innerHTML=html;
+}
+
+function computeTable(matchRows,hii,aii,hsi,asi){
+  const stats={};
+  matchRows.forEach(row=>{
+    const h=hii>=0?row[hii]:'',a=aii>=0?row[aii]:'';
+    if(!h||!a)return;
+    [h,a].forEach(id=>{if(!stats[id]){const t=teamById(id);stats[id]={id,name:t.name,color:t.color,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
+    const hs=parseInt(hsi>=0?row[hsi]:''),as=parseInt(asi>=0?row[asi]:'');
+    if(isNaN(hs)||isNaN(as))return;
+    stats[h].p++;stats[a].p++;stats[h].gf+=hs;stats[h].ga+=as;stats[a].gf+=as;stats[a].ga+=hs;
+    if(hs>as){stats[h].w++;stats[h].pts+=3;stats[a].l++;}
+    else if(hs<as){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
+    else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
+  });
+  return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  RESULTS VIEW
+// ══════════════════════════════════════════════════════════════
+let _resultsSeason=null; // currently selected season
+
+function renderResultsView(){
+  const rd=DB.results;
+  const app=document.getElementById('app');
+
+  if(!rd.r.length){
+    app.innerHTML=`<div class="results-wrap"><div class="res-no-data">
+      No results yet.<br><small>Add season data via ⚙ Data Editor → Results tab.</small>
+      <br><small>Columns: <code>season, competition, place, team_id</code></small>
+    </div></div>`;
     return;
   }
 
-  const q=(document.getElementById(`${name}Search`)?.value||'').toLowerCase();
-  let vis=s.rows.map((r,i)=>({r,i}));
-  if(q) vis=vis.filter(({r})=>r.some(v=>v.toLowerCase().includes(q)));
-  if(s.sortCol>=0){
-    vis.sort((a,b)=>{
-      const av=a.r[s.sortCol],bv=b.r[s.sortCol];
-      const an=parseFloat(av),bn=parseFloat(bv);
-      if(!isNaN(an)&&!isNaN(bn))return(an-bn)*s.sortDir;
-      return av.localeCompare(bv)*s.sortDir;
+  const si=rd.h.indexOf('season'),compi=rd.h.indexOf('competition'),
+        pli=rd.h.indexOf('place'),tidi=rd.h.indexOf('team_id');
+
+  // Gather all seasons sorted descending
+  const allSeasons=[...new Set(rd.r.map(r=>si>=0?r[si]:''))].filter(Boolean).sort().reverse();
+  if(!_resultsSeason||!allSeasons.includes(_resultsSeason))_resultsSeason=allSeasons[0];
+
+  // Filter rows for selected season
+  const seasonRows=rd.r.filter(r=>si<0||r[si]===_resultsSeason);
+
+  // Group by competition
+  const byComp={};
+  seasonRows.forEach(row=>{
+    const comp=compi>=0?row[compi]:'Unknown';
+    if(!byComp[comp])byComp[comp]=[];
+    byComp[comp].push(row);
+  });
+
+  // Sort each competition by place (numeric)
+  Object.keys(byComp).forEach(c=>byComp[c].sort((a,b)=>{
+    const pa=parseInt(pli>=0?a[pli]:0)||0, pb=parseInt(pli>=0?b[pli]:0)||0;
+    return pa-pb;
+  }));
+
+  const seasonOpts=allSeasons.map(s=>`<option value="${esc(s)}"${s===_resultsSeason?' selected':''}>${esc(s)}</option>`).join('');
+
+  let html=`<div class="results-wrap">
+    <div class="results-season-bar">
+      <label>Season</label>
+      <select class="results-season-sel" onchange="selectResultsSeason(this.value)">${seasonOpts}</select>
+    </div>
+    <div class="results-comps">`;
+
+  const totalPerComp={};
+  Object.entries(byComp).forEach(([comp])=>{totalPerComp[comp]=byComp[comp].length;});
+
+  Object.entries(byComp).forEach(([comp,rows])=>{
+    const col=compColor(comp);
+    const total=totalPerComp[comp];
+    html+=`<div class="results-comp">
+      <div class="results-comp-title"><span class="comp-dot" style="background:${col}"></span>${esc(comp)}</div>
+      <table class="results-table"><tbody>`;
+
+    rows.forEach(row=>{
+      const place=parseInt(pli>=0?row[pli]:0)||0;
+      const teamId=tidi>=0?row[tidi]:'';
+      const team=teamById(teamId);
+
+      // Position badge style
+      let badgeCls='rpos-mid';
+      if(place===1)badgeCls='rpos-1';
+      else if(place===2)badgeCls='rpos-2';
+      else if(place===3)badgeCls='rpos-3';
+      else if(place<=Math.ceil(total*0.25))badgeCls='rpos-up'; // top 25% = promotion zone
+      else if(place>=total-1)badgeCls='rpos-dn'; // bottom 2 = relegation zone
+
+      html+=`<tr>
+        <td class="rpos"><span class="rpos-badge ${badgeCls}">${place||'—'}</span></td>
+        <td>
+          <div class="res-team-cell">
+            <div class="res-team-badge" style="background:${esc(team.color)}">${esc(team.name.slice(0,3).toUpperCase())}</div>
+            ${esc(team.name)}
+          </div>
+        </td>
+      </tr>`;
     });
+
+    html+=`</tbody></table></div>`;
+  });
+
+  html+='</div></div>';
+  app.innerHTML=html;
+}
+
+function selectResultsSeason(season){
+  _resultsSeason=season;
+  renderResultsView();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TEAMS VIEW
+// ══════════════════════════════════════════════════════════════
+function renderTeamsView(){
+  const d=DB.teams;
+  const app=document.getElementById('app');
+  if(!d.r.length){
+    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
+  }
+  const ni=d.h.findIndex(h=>h==='name'||h==='team_name');
+  const ci=d.h.findIndex(h=>h==='color'||h==='colour');
+  const sti=d.h.findIndex(h=>h==='stadium'||h==='stadion');
+  const li=d.h.indexOf('location');
+  const fi=d.h.indexOf('foundation');
+  let html='<div class="teams-wrap"><div class="teams-grid">';
+  d.r.forEach(row=>{
+    const name=ni>=0?row[ni]:'?';
+    const color=ci>=0&&row[ci]?row[ci]:'#1a6b3a';
+    const stadium=sti>=0?row[sti]:'';
+    const loc=li>=0?row[li]:'';
+    const found=fi>=0?row[fi]:'';
+    html+=`<div class="team-card">
+      <div class="team-card-badge" style="background:${esc(color)}">${esc(name.slice(0,3).toUpperCase())}</div>
+      <div class="team-card-name">${esc(name)}</div>
+      <div class="team-card-meta">
+        ${stadium?`🏟 ${esc(stadium)}<br>`:''}
+        ${loc?`📍 ${esc(loc)}<br>`:''}
+        ${found?`📅 Est. ${esc(found)}`:''}
+      </div>
+    </div>`;
+  });
+  html+='</div></div>';
+  app.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  DATA EDITOR
+// ══════════════════════════════════════════════════════════════
+function openEditor(){
+  document.getElementById('edOverlay').classList.add('open');
+  document.getElementById('edPanel').classList.add('open');
+  edRender();
+}
+function closeEditor(){
+  document.getElementById('edOverlay').classList.remove('open');
+  document.getElementById('edPanel').classList.remove('open');
+  renderView(); // refresh main view in case data changed
+}
+
+function edSwitchTab(tab){
+  edTab=tab;edSelected=new Set();_lastSel=undefined;
+  document.querySelectorAll('.etab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('etab-'+tab)?.classList.add('active');
+  edRender();
+}
+
+function edRender(){
+  const d=DB[edTab];
+  const wrap=document.getElementById('edTableWrap');
+  const q=(document.getElementById('edSearch')?.value||'').toLowerCase();
+
+  if(!d.h.length){
+    wrap.innerHTML=`<div class="drop-zone" id="edDropZone" onclick="document.querySelector('#edPanel input[type=file]').click()">
+      <p>📂 <strong>Drop a ${edTab}.csv here</strong> or click "Attach CSV"</p>
+      <p>Expected columns: <code>${ED_DEFAULTS[edTab].join(', ')}</code></p>
+    </div>`;
+    wireDrop('edDropZone',edTab);
+    edUpdateSB();return;
   }
 
-  // Detect color column index
-  const colorColIdx=s.headers.findIndex(h=>h.toLowerCase()==='color'||h.toLowerCase()==='colour');
+  let vis=d.r.map((r,i)=>({r,i}));
+  if(q)vis=vis.filter(({r})=>r.some(v=>v.toLowerCase().includes(q)));
 
-  let thead=`<thead><tr><th class="rn">#</th>`;
-  s.headers.forEach((h,i)=>{
-    const sc=s.sortCol===i?(s.sortDir===1?' sort-asc':' sort-desc'):'';
-    thead+=`<th class="${sc}" data-ci="${i}">${esc(h)}</th>`;
+  let th=`<thead><tr><th class="rn">#</th>${d.h.map((h,i)=>`<th data-ci="${i}">${esc(h)}</th>`).join('')}</tr></thead>`;
+  let tb='<tbody>';
+  vis.forEach(({r,i})=>{
+    const sel=edSelected.has(i);
+    tb+=`<tr data-idx="${i}"${sel?' class="sel"':''}><td class="rn" data-ri="${i}">${i+1}</td>`;
+    r.forEach((v,ci)=>tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}">${esc(v)}</div></td>`);
+    tb+='</tr>';
   });
-  thead+=`</tr></thead>`;
+  tb+='</tbody>';
 
-  let tbody='<tbody>';
-  vis.forEach(({r,i:origIdx})=>{
-    const sel=s.selected.has(origIdx);
-    tbody+=`<tr data-idx="${origIdx}"${sel?' class="row-sel"':''}>`;
-    tbody+=`<td class="rn" data-ridx="${origIdx}">${origIdx+1}</td>`;
-    r.forEach((val,ci)=>{
-      let display=esc(val);
-      if(ci===colorColIdx&&val){
-        display=`<span class="color-swatch"><span class="color-dot" style="background:${esc(val)}"></span>${esc(val)}</span>`;
-      }
-      tbody+=`<td><div class="cell" data-r="${origIdx}" data-c="${ci}" data-sn="${name}">${display}</div></td>`;
-    });
-    tbody+='</tr>';
-  });
-  tbody+='</tbody>';
+  wrap.innerHTML=`<table class="ed-table">${th}${tb}</table>`;
 
-  wrap.innerHTML=`<table class="sheet-table">${thead}${tbody}</table>`;
-
-  // Sort
-  wrap.querySelectorAll('thead th[data-ci]').forEach(th=>{
-    th.addEventListener('click',()=>{
-      const ci=parseInt(th.dataset.ci);
-      s.sortCol===ci ? s.sortDir*=-1 : (s.sortCol=ci, s.sortDir=1);
-      renderSheetTable(name);
-    });
-  });
-  // Cell edit
-  wrap.querySelectorAll('.cell').forEach(cell=>cell.addEventListener('click',()=>startCellEdit(cell)));
-  // Row select
-  wrap.querySelectorAll('td.rn[data-ridx]').forEach(td=>td.addEventListener('click',e=>toggleRowSel(name,parseInt(td.dataset.ridx),e)));
-
-  updateStatusBar(name, vis.length);
+  wrap.querySelectorAll('.ecell').forEach(c=>c.addEventListener('click',()=>edStartEdit(c)));
+  wrap.querySelectorAll('td.rn[data-ri]').forEach(td=>td.addEventListener('click',e=>edToggleSel(parseInt(td.dataset.ri),e)));
+  edUpdateSB();
 }
 
-function updateStatusBar(name, visCount){
-  const s=sheets[name];
-  const r=document.getElementById(`${name}Rows`);if(r)r.textContent=s.rows.length;
-  const sel=document.getElementById(`${name}Sel`);if(sel)sel.textContent=s.selected.size;
-  const m=document.getElementById(`${name}Mod`);if(m)m.textContent=s.modified;
-  const sv=document.getElementById(`${name}Saved`);
-  if(sv)sv.textContent=s.lastSaved?'Saved '+s.lastSaved.toLocaleTimeString():(s.fileId?'Loaded from Drive':'Not yet saved');
-}
-
-// ── CELL EDITING ────────────────────────────────────────────────
-function startCellEdit(cell){
+function edStartEdit(cell){
   if(cell.classList.contains('editing'))return;
-  const name=cell.dataset.sn;
-  const rowIdx=parseInt(cell.dataset.r);
-  const colIdx=parseInt(cell.dataset.c);
-  const s=sheets[name];
-  if(!s.rows[rowIdx])return;
-  const prev=s.rows[rowIdx][colIdx];
-
-  cell.classList.add('editing');
-  cell.innerHTML='';
-  const inp=document.createElement('input');
-  inp.type='text';inp.value=prev;
+  const ri=parseInt(cell.dataset.r),ci=parseInt(cell.dataset.c);
+  const d=DB[edTab];if(!d.r[ri])return;
+  const prev=d.r[ri][ci];
+  cell.classList.add('editing');cell.innerHTML='';
+  const inp=document.createElement('input');inp.type='text';inp.value=prev;
   cell.appendChild(inp);inp.focus();inp.select();
-
   const commit=()=>{
-    const nv=inp.value;
-    cell.classList.remove('editing');
-    if(nv!==prev){
-      pushHistory(name);
-      s.rows[rowIdx][colIdx]=nv;
-      s.modified++;
-      schedSave(name);
-    }
-    // Re-render cell value
-    const colorColIdx=s.headers.findIndex(h=>h.toLowerCase()==='color'||h.toLowerCase()==='colour');
-    const val=s.rows[rowIdx]?.[colIdx]??nv;
-    if(colIdx===colorColIdx&&val){
-      cell.innerHTML=`<span class="color-swatch"><span class="color-dot" style="background:${esc(val)}"></span>${esc(val)}</span>`;
-    } else {
-      cell.textContent=val;
-    }
-    updateStatusBar(name);
+    const nv=inp.value;cell.classList.remove('editing');
+    if(nv!==prev){edPushH();d.r[ri][ci]=nv;edModified++;edSchedSave();}
+    cell.textContent=d.r[ri]?.[ci]??nv;edUpdateSB();
   };
-
   inp.addEventListener('blur',commit);
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){e.preventDefault();inp.blur();}
-    if(e.key==='Tab'){
-      e.preventDefault();inp.blur();
-      const all=[...document.querySelectorAll(`.cell[data-sn="${name}"]`)];
-      const idx=all.indexOf(cell);
-      if(idx>=0&&idx<all.length-1)setTimeout(()=>all[idx+1].click(),0);
-    }
+    if(e.key==='Tab'){e.preventDefault();inp.blur();const all=[...document.querySelectorAll('.ecell')];const idx=all.indexOf(cell);if(idx<all.length-1)setTimeout(()=>all[idx+1].click(),0);}
     if(e.key==='Escape'){cell.classList.remove('editing');cell.textContent=prev;}
     e.stopPropagation();
   });
 }
 
-// ── ROW SELECTION ───────────────────────────────────────────────
-function toggleRowSel(name,idx,e){
-  const s=sheets[name];
-  if(e.shiftKey&&_lastSel!==undefined){
-    const lo=Math.min(idx,_lastSel),hi=Math.max(idx,_lastSel);
-    for(let i=lo;i<=hi;i++) s.selected.add(i);
-  } else if(e.ctrlKey||e.metaKey){
-    s.selected.has(idx)?s.selected.delete(idx):s.selected.add(idx);
-  } else {
-    s.selected.clear();s.selected.add(idx);
-  }
+function edToggleSel(idx,e){
+  if(e.shiftKey&&_lastSel!==undefined){const lo=Math.min(idx,_lastSel),hi=Math.max(idx,_lastSel);for(let i=lo;i<=hi;i++)edSelected.add(i);}
+  else if(e.ctrlKey||e.metaKey){edSelected.has(idx)?edSelected.delete(idx):edSelected.add(idx);}
+  else{edSelected.clear();edSelected.add(idx);}
   _lastSel=idx;
-  const wrap=document.getElementById(`${name}TableWrap`);
-  if(wrap) wrap.querySelectorAll('tbody tr').forEach(tr=>tr.classList.toggle('row-sel',s.selected.has(+tr.dataset.idx)));
-  updateStatusBar(name);
+  document.querySelectorAll('#edTableWrap tbody tr').forEach(tr=>tr.classList.toggle('sel',edSelected.has(+tr.dataset.idx)));
+  edUpdateSB();
 }
 
-// ── ADD / DELETE ROWS ───────────────────────────────────────────
-function sheetAddRow(name){
-  const s=sheets[name];
-  if(!s.headers.length){
-    s.headers=[...SHEET_DEFAULTS[name]];
-    s.rows=[];
-  }
-  pushHistory(name);
-  const newRow=s.headers.map(h=>{
-    if(h==='id') return name[0]+Date.now();
-    if(h==='color'||h==='colour') return '#1a6b3a';
-    return'';
-  });
-  s.rows.push(newRow);
-  s.modified++;
-  schedSave(name);
-  renderTab(name);
-  // Scroll to bottom
-  setTimeout(()=>{const w=document.getElementById(`${name}TableWrap`);if(w)w.scrollTop=w.scrollHeight;},50);
-  toast('Row added','success');
+function edAddRow(){
+  const d=DB[edTab];
+  if(!d.h.length)d.h=[...ED_DEFAULTS[edTab]];
+  edPushH();
+  const pref={teams:'t',matches:'m',calendar:'c',results:'r'}[edTab];
+  const row=d.h.map(h=>{if(h==='id')return pref+Date.now();if(h==='color')return'#1a6b3a';return'';});
+  d.r.push(row);edModified++;edSchedSave();edRender();
+  setTimeout(()=>{const w=document.getElementById('edTableWrap');if(w)w.scrollTop=w.scrollHeight;},50);
 }
 
-function sheetDeleteSel(name){
-  const s=sheets[name];
-  if(!s.selected.size){toast('Select rows first (click the row number)','warning');return;}
-  pushHistory(name);
-  const del=new Set(s.selected);
-  s.rows=s.rows.filter((_,i)=>!del.has(i));
-  s.selected.clear();s.modified+=del.size;_lastSel=undefined;
-  schedSave(name);
-  renderSheetTable(name);
-  toast(`Deleted ${del.size} row(s)`,'');
+function edDelSel(){
+  if(!edSelected.size){toast('Select rows first','warn');return;}
+  edPushH();const del=new Set(edSelected);
+  DB[edTab].r=DB[edTab].r.filter((_,i)=>!del.has(i));
+  edSelected.clear();_lastSel=undefined;edModified+=del.size;edSchedSave();edRender();
 }
 
-// ── UNDO ────────────────────────────────────────────────────────
-function pushHistory(name){
-  const s=sheets[name];
-  s.history.push({headers:[...s.headers],rows:s.rows.map(r=>[...r])});
-  if(s.history.length>50)s.history.shift();
+function edPushH(){edHistory.push({tab:edTab,h:[...DB[edTab].h],r:DB[edTab].r.map(r=>[...r])});if(edHistory.length>50)edHistory.shift();}
+function edUndo(){
+  if(!edHistory.length){toast('Nothing to undo','warn');return;}
+  const s=edHistory.pop();
+  if(s.tab!==edTab){edTab=s.tab;edSwitchTab(s.tab);}
+  DB[s.tab].h=s.h;DB[s.tab].r=s.r;
+  edSelected.clear();edSchedSave();edRender();toast('Undo applied','');
 }
 
-function sheetUndo(name){
-  const s=sheets[name];
-  if(!s.history.length){toast('Nothing to undo','warning');return;}
-  const snap=s.history.pop();
-  s.headers=snap.headers;s.rows=snap.rows;
-  s.selected.clear();_lastSel=undefined;
-  schedSave(name);
-  renderSheetTable(name);
-  toast('Undo applied','');
+function edSchedSave(){clearTimeout(edSaveTimer);edSaveTimer=setTimeout(()=>edForceSave(),1500);}
+async function edForceSave(){
+  clearTimeout(edSaveTimer);
+  await saveSheet(edTab);
+  edLastSaved=new Date();edModified=0;edUpdateSB();
+  toast('Saved to Drive','');
 }
 
-// ── FIND & REPLACE ───────────────────────────────────────────────
-let frTargetSheet='teams';
-function openFR(name){
-  frTargetSheet=name;
-  const s=sheets[name];
-  const sel=document.getElementById('frCol');
-  sel.innerHTML='<option value="__all__">All columns</option>'+s.headers.map((h,i)=>`<option value="${i}">${esc(h)}</option>`).join('');
-  document.getElementById('frFind').value='';
-  document.getElementById('frReplace').value='';
-  document.getElementById('frModal').classList.add('open');
+function edUpdateSB(){
+  const d=DB[edTab];
+  document.getElementById('edRows').textContent=d.r.length;
+  document.getElementById('edSel').textContent=edSelected.size;
+  document.getElementById('edMod').textContent=edModified;
+  document.getElementById('edSaved').textContent=edLastSaved?'Saved '+edLastSaved.toLocaleTimeString():'';
 }
 
-function doFindReplace(){
-  const s=sheets[frTargetSheet];
-  const find=document.getElementById('frFind').value;
-  const rep=document.getElementById('frReplace').value;
-  const colSel=document.getElementById('frCol').value;
-  const ci=document.getElementById('frCase').checked;
-  const rx=document.getElementById('frRegex').checked;
-  if(!find&&!rx){toast('Enter a search value','warning');return;}
-  let pattern;
-  try{pattern=rx?new RegExp(find,ci?'gi':'g'):null;}
-  catch(e){toast('Invalid regex','error');return;}
-  pushHistory(frTargetSheet);
-  let count=0;
-  s.rows.forEach(row=>{
-    const cols=colSel==='__all__'?row.map((_,i)=>i):[parseInt(colSel)];
-    cols.forEach(ci2=>{
-      const v=row[ci2];let nv;
-      if(rx)nv=v.replace(pattern,rep);
-      else{const flags=ci?'gi':'g';const e=find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');nv=v.replace(new RegExp(e,flags),rep);}
-      if(nv!==v){row[ci2]=nv;count++;}
-    });
-  });
-  s.modified+=count;schedSave(frTargetSheet);
-  renderSheetTable(frTargetSheet);
-  closeModal('frModal');
-  toast(`Replaced ${count} cell(s)`,count?'success':'warning');
+function edImportCSV(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    const{h,r}=parseCSV(ev.target.result);
+    if(!h.length){toast('Empty or invalid CSV','err');return;}
+    edPushH();DB[edTab].h=h;DB[edTab].r=r.map(row=>[...row]);
+    edSelected.clear();edModified++;edSchedSave();edRender();
+    toast(`Loaded ${r.length} rows from ${f.name}`,'');
+  };
+  r.readAsText(f);e.target.value='';
 }
 
-// ── DOWNLOAD CSV ─────────────────────────────────────────────────
-function downloadCSV(name){
-  const s=sheets[name];
-  if(!s.rows.length){toast('No data to download','warning');return;}
-  const csv=serializeCSV(s.headers,s.rows);
-  const blob=new Blob([csv],{type:'text/csv'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download=`${name}.csv`;a.click();
-  URL.revokeObjectURL(url);
-  toast('Downloaded!','success');
+function edDownload(){
+  const d=DB[edTab];if(!d.r.length){toast('No data','warn');return;}
+  const blob=new Blob([serCSV(d.h,d.r)],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');
+  a.href=url;a.download=`${edTab}.csv`;a.click();URL.revokeObjectURL(url);
 }
 
-// ── TEAM MODAL (quick add) ──────────────────────────────────────
-// (legacy modal kept for adding a single team without CSV)
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===e.currentTarget)m.classList.remove('open');}));
-
-async function saveTeamModal(){
-  const name=document.getElementById('tName').value.trim();
-  if(!name){alert('Team name is required.');return;}
-  const s=sheets.teams;
-  if(!s.headers.length){
-    s.headers=['id','name','color','stadium','location','foundation'];
-  }
-  pushHistory('teams');
-  const row=s.headers.map(h=>{
-    if(h==='id')return't'+Date.now();
-    if(h==='name')return name;
-    if(h==='color'||h==='colour')return document.getElementById('tColor').value;
-    if(h==='stadium'||h==='stadion')return document.getElementById('tStadion').value;
-    if(h==='location')return document.getElementById('tLocation').value;
-    if(h==='foundation')return document.getElementById('tFoundation').value;
-    return'';
-  });
-  s.rows.push(row);
-  s.modified++;
-  closeModal('teamModal');
-  schedSave('teams');
-  renderTab('teams');
-  toast('Team added','success');
-}
-
-// ── RESULTS SHEET ───────────────────────────────────────────────
-// Columns: season | league | place | team_id
-// Sorted by season desc, league, place asc so you can instantly see
-// who earned promotion / relegation / playoff at end of each season.
-function renderResultsSheet(wrap){
-  const s=sheets.results;
-  let html=`
-  <div class="sheet-header">
-    <div>
-      <div class="sheet-title">🏆 Results</div>
-      <div class="sheet-subtitle">Final standings per season &amp; league — use to determine promotion, relegation &amp; play-offs</div>
-    </div>
-  </div>`;
-
-  if(!s.headers.length){
-    html+=`
-    <div class="drop-zone" id="resultsDropZone">
-      <div class="drop-zone-icon">🏆</div>
-      <p><strong>Drop your results.csv here</strong> or click to browse</p>
-      <p style="margin-top:4px">Columns: <code>season, league, place, team_id</code></p>
-      <p style="margin-top:6px"><small>Or click "+ Add Row" to fill in manually</small></p>
-    </div>`;
-  }
-
-  html+=`
-  <div class="sheet-toolbar">
-    <button class="stbtn primary" onclick="sheetAddRow('results')">➕ Add Row</button>
-    <button class="stbtn danger"  onclick="sheetDeleteSel('results')">🗑 Delete</button>
-    <button class="stbtn"         onclick="sheetUndo('results')">↩ Undo</button>
-    <div class="st-sep"></div>
-    <input class="st-search" id="resultsSearch" placeholder="🔍 Filter…" oninput="renderSheetTable('results')" autocomplete="off">
-    <button class="stbtn" onclick="openFR('results')">Find &amp; Replace</button>
-    <div class="st-sep"></div>
-    <label class="stbtn" style="cursor:pointer">
-      📎 Attach CSV
-      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'results')">
-    </label>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="stbtn" onclick="downloadCSV('results')">⬇ Download</button>
-      <button class="stbtn primary" onclick="forceSave('results')">☁ Save to Drive</button>
-    </div>
-  </div>`;
-
-  // Promotion summary panel (only when data exists)
-  if(s.rows.length){
-    html+=buildPromotionSummary(s);
-  }
-
-  html+=`<div class="sheet-table-wrap" id="resultsTableWrap"></div>
-  <div class="sheet-statusbar">
-    <span><b id="resultsRows">0</b> rows</span>
-    <span><b id="resultsSel">0</b> selected</span>
-    <span><b id="resultsMod">0</b> unsaved</span>
-    <span style="margin-left:auto" id="resultsSaved"></span>
-  </div>`;
-
-  wrap.innerHTML=html;
-  wireDrop('results');
-  renderSheetTable('results');
-}
-
-function buildPromotionSummary(s){
-  // Find the latest season in results data
-  const seasonIdx=s.headers.indexOf('season');
-  const leagueIdx=s.headers.indexOf('league');
-  const placeIdx =s.headers.indexOf('place');
-  const teamIdx  =s.headers.indexOf('team_id');
-  if(seasonIdx<0||placeIdx<0) return '';
-
-  // Group by season → league → rows sorted by place
-  const seasons={};
-  s.rows.forEach(r=>{
-    const season=r[seasonIdx]||'—';
-    const league=leagueIdx>=0?r[leagueIdx]:'—';
-    if(!seasons[season]) seasons[season]={};
-    if(!seasons[season][league]) seasons[season][league]=[];
-    seasons[season][league].push({place:parseInt(r[placeIdx])||999, team:teamIdx>=0?r[teamIdx]:'?', row:r});
-  });
-
-  const latestSeason=Object.keys(seasons).sort().reverse()[0];
-  if(!latestSeason) return '';
-  const leaguesInSeason=seasons[latestSeason];
-
-  // Build a compact summary card
-  let html=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;margin-bottom:16px;">
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;margin-bottom:12px;color:var(--green)">
-      📊 Season ${esc(latestSeason)} — Final Standings Summary
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:16px;">`;
-
-  Object.entries(leaguesInSeason).forEach(([league,rows])=>{
-    rows.sort((a,b)=>a.place-b.place);
-    html+=`<div style="min-width:180px;flex:1;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;">${esc(league)}</div>
-      <div style="display:flex;flex-direction:column;gap:4px;">`;
-    rows.forEach(({place,team})=>{
-      const realName=getTeamName(team);
-      const badgeColor=getTeamColor(team);
-      let badge='',labelColor=place===1?'var(--gold)':place<=3?'var(--green)':place>=rows.length-1?'var(--red)':'var(--muted)';
-      if(place===1) badge='🥇';
-      else if(place===2) badge='🥈';
-      else if(place===3) badge='🥉';
-      else if(place>=rows.length) badge='⬇';
-      html+=`<div style="display:flex;align-items:center;gap:8px;font-size:12px;">
-        <span style="width:24px;text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:${labelColor}">${place}</span>
-        <span style="width:10px;height:10px;border-radius:2px;background:${badgeColor};flex-shrink:0;display:inline-block"></span>
-        <span>${esc(realName)} ${badge}</span>
-      </div>`;
-    });
-    html+=`</div></div>`;
-  });
-
-  html+=`</div></div>`;
-  return html;
-}
-
-function getTeamName(teamId){
-  const s=sheets.teams;
-  const idIdx=s.headers.indexOf('id');
-  const nameIdx=s.headers.findIndex(h=>h==='name'||h==='team_name');
-  if(idIdx<0||nameIdx<0) return teamId;
-  const row=s.rows.find(r=>r[idIdx]===teamId);
-  return row?row[nameIdx]:teamId;
-}
-function getTeamColor(teamId){
-  const s=sheets.teams;
-  const idIdx=s.headers.indexOf('id');
-  const colIdx=s.headers.findIndex(h=>h==='color'||h==='colour');
-  if(idIdx<0||colIdx<0) return '#1a6b3a';
-  const row=s.rows.find(r=>r[idIdx]===teamId);
-  return row?row[colIdx]:'#1a6b3a';
-}
-
-// ── CALENDAR SHEET ───────────────────────────────────────────────
-// Columns: game_day | date | league | round
-// Multiple leagues can share the same game_day date — each gets its own row.
-// The calendar view groups by date and shows which leagues play on each day.
-function renderCalendarSheet(wrap){
-  const s=sheets.calendar;
-  let html=`
-  <div class="sheet-header">
-    <div>
-      <div class="sheet-title">📆 Calendar</div>
-      <div class="sheet-subtitle">Match-day schedule — multiple leagues can share the same game day</div>
-    </div>
-  </div>`;
-
-  if(!s.headers.length){
-    html+=`
-    <div class="drop-zone" id="calendarDropZone">
-      <div class="drop-zone-icon">📆</div>
-      <p><strong>Drop your calendar.csv here</strong> or click to browse</p>
-      <p style="margin-top:4px">Columns: <code>game_day, date, league, round</code></p>
-      <p style="margin-top:6px"><small>Multiple leagues on the same date = multiple rows with the same game_day</small></p>
-    </div>`;
-  }
-
-  html+=`
-  <div class="sheet-toolbar">
-    <button class="stbtn primary" onclick="sheetAddRow('calendar')">➕ Add Row</button>
-    <button class="stbtn danger"  onclick="sheetDeleteSel('calendar')">🗑 Delete</button>
-    <button class="stbtn"         onclick="sheetUndo('calendar')">↩ Undo</button>
-    <div class="st-sep"></div>
-    <input class="st-search" id="calendarSearch" placeholder="🔍 Filter league / date…" oninput="renderCalendarView()" autocomplete="off">
-    <button class="stbtn" onclick="openFR('calendar')">Find &amp; Replace</button>
-    <div class="st-sep"></div>
-    <label class="stbtn" style="cursor:pointer">
-      📎 Attach CSV
-      <input type="file" accept=".csv,.txt" style="display:none" onchange="handleFileInput(event,'calendar')">
-    </label>
-    <div class="st-sep"></div>
-    <button class="stbtn" id="calViewToggle" onclick="toggleCalendarView()">📋 Table view</button>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="stbtn" onclick="downloadCSV('calendar')">⬇ Download</button>
-      <button class="stbtn primary" onclick="forceSave('calendar')">☁ Save to Drive</button>
-    </div>
-  </div>
-  <div id="calendarViewArea"></div>
-  <div class="sheet-table-wrap" id="calendarTableWrap" style="display:none"></div>
-  <div class="sheet-statusbar">
-    <span><b id="calendarRows">0</b> rows</span>
-    <span><b id="calendarSel">0</b> selected</span>
-    <span><b id="calendarMod">0</b> unsaved</span>
-    <span style="margin-left:auto" id="calendarSaved"></span>
-  </div>`;
-
-  wrap.innerHTML=html;
-  wireDrop('calendar');
-  renderCalendarView();
-  updateStatusBar('calendar');
-}
-
-let calendarViewMode='grouped'; // 'grouped' or 'table'
-function toggleCalendarView(){
-  calendarViewMode = calendarViewMode==='grouped'?'table':'grouped';
-  const btn=document.getElementById('calViewToggle');
-  if(btn) btn.textContent=calendarViewMode==='grouped'?'📋 Table view':'📅 Grouped view';
-  const ta=document.getElementById('calendarViewArea');
-  const tw=document.getElementById('calendarTableWrap');
-  if(calendarViewMode==='table'){
-    if(ta) ta.style.display='none';
-    if(tw) tw.style.display='';
-    renderSheetTable('calendar');
-  } else {
-    if(ta) ta.style.display='';
-    if(tw) tw.style.display='none';
-    renderCalendarView();
-  }
-}
-
-function renderCalendarView(){
-  const area=document.getElementById('calendarViewArea');
-  if(!area) return;
-  const s=sheets.calendar;
-  if(!s.rows.length){ area.innerHTML=''; return; }
-
-  const q=(document.getElementById('calendarSearch')?.value||'').toLowerCase();
-  const gdIdx  =s.headers.findIndex(h=>h==='game_day');
-  const dateIdx=s.headers.findIndex(h=>h==='date');
-  const lgIdx  =s.headers.findIndex(h=>h==='league');
-  const rnIdx  =s.headers.findIndex(h=>h==='round');
-
-  let rows=s.rows;
-  if(q) rows=rows.filter(r=>r.some(v=>v.toLowerCase().includes(q)));
-
-  // Group by game_day (then by date within)
-  const groups={};
-  rows.forEach(r=>{
-    const gd=gdIdx>=0?r[gdIdx]:'?';
-    const dt=dateIdx>=0?r[dateIdx]:'';
-    const key=`${gd}__${dt}`;
-    if(!groups[key]) groups[key]={game_day:gd,date:dt,leagues:[]};
-    groups[key].leagues.push({
-      league:lgIdx>=0?r[lgIdx]:'',
-      round:rnIdx>=0?r[rnIdx]:''
-    });
-  });
-
-  // Sort by date then game_day
-  const sorted=Object.values(groups).sort((a,b)=>{
-    if(a.date&&b.date) return a.date.localeCompare(b.date);
-    return String(a.game_day).localeCompare(String(b.game_day));
-  });
-
-  // Split upcoming vs past
-  const today=new Date().toISOString().slice(0,10);
-  const upcoming=sorted.filter(g=>!g.date||g.date>=today);
-  const past    =sorted.filter(g=>g.date&&g.date<today).reverse();
-
-  let html='<div style="padding:16px;">';
-
-  if(upcoming.length){
-    html+=`<div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;color:var(--green);margin-bottom:12px;">Upcoming</div>`;
-    html+=renderCalDays(upcoming, false);
-  }
-  if(past.length){
-    html+=`<div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.06em;color:var(--muted);margin:20px 0 12px;">Past Game Days</div>`;
-    html+=renderCalDays(past, true);
-  }
-  if(!upcoming.length&&!past.length){
-    html+=`<div style="text-align:center;padding:40px;color:var(--muted);">No matching rounds found.</div>`;
-  }
-  html+='</div>';
-  area.innerHTML=html;
-}
-
-function renderCalDays(days, isPast){
-  let html='<div style="display:flex;flex-direction:column;gap:8px;">';
-  days.forEach(g=>{
-    const dateLabel=g.date?formatDate(g.date):'No date set';
-    const leagueChips=g.leagues.map(l=>`
-      <span style="display:inline-flex;align-items:center;gap:5px;background:${isPast?'var(--surface2)':'var(--green-light)'};border:1px solid ${isPast?'var(--border)':'#a7d7bb'};border-radius:20px;padding:3px 10px;font-size:12px;color:${isPast?'var(--muted)':'var(--green)'};font-weight:600;">
-        ${esc(l.league)}${l.round?` <span style="font-weight:400;color:var(--muted)">· R${esc(l.round)}</span>`:''}
-      </span>`).join(' ');
-    html+=`<div style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;${isPast?'opacity:.6':''}">
-      <div style="flex-shrink:0;min-width:100px;">
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;color:${isPast?'var(--muted)':'var(--text)'}">Day ${esc(g.game_day)}</div>
-        <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${dateLabel}</div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;flex:1">${leagueChips}</div>
-    </div>`;
-  });
-  html+='</div>';
-  return html;
-}
-
-function formatDate(d){
-  try{const dt=new Date(d);return dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});}
-  catch{return d;}
-}
-
-// ── GENERIC DROP ZONE WIRING ─────────────────────────────────────
-function wireDrop(name){
-  const dz=document.getElementById(`${name}DropZone`);
-  if(!dz) return;
-  dz.addEventListener('click',()=>{
-    const fi=document.createElement('input');fi.type='file';fi.accept='.csv,.txt';
-    fi.onchange=e=>handleFileInput(e,name);fi.click();
-  });
+function wireDrop(id,sheetName){
+  const dz=document.getElementById(id);if(!dz)return;
   dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
   dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
   dz.addEventListener('drop',e=>{
     e.preventDefault();dz.classList.remove('drag-over');
     const f=e.dataTransfer.files[0];if(!f)return;
-    const r=new FileReader();r.onload=ev=>loadCSVIntoSheet(name,ev.target.result,f.name);r.readAsText(f);
+    const r=new FileReader();r.onload=ev=>{
+      const{h,r}=parseCSV(ev.target.result);if(!h.length)return;
+      edPushH();DB[sheetName].h=h;DB[sheetName].r=r.map(row=>[...row]);
+      edModified++;edSchedSave();edRender();toast(`Loaded ${r.length} rows`,'');
+    };r.readAsText(f);
   });
 }
 
-// ── UTILS ────────────────────────────────────────────────────────
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-
-function toast(msg,type=''){
-  const c=document.getElementById('toast-container');
-  const t=document.createElement('div');
-  t.className='toast'+(type?' '+type:'');
-  t.textContent=msg;c.appendChild(t);
-  setTimeout(()=>t.remove(),3000);
+// Find & Replace (editor)
+function doFR(){
+  const find=document.getElementById('frFind').value;
+  const rep=document.getElementById('frRep').value;
+  const col=document.getElementById('frCol').value;
+  if(!find){toast('Enter a search value','warn');return;}
+  edPushH();let count=0;const d=DB[edTab];
+  d.r.forEach(row=>{
+    const cols=col==='__all__'?row.map((_,i)=>i):[parseInt(col)];
+    cols.forEach(ci=>{const nv=row[ci].replaceAll(find,rep);if(nv!==row[ci]){row[ci]=nv;count++;}});
+  });
+  edModified+=count;edSchedSave();edRender();closeModal('frModal');
+  toast(`Replaced ${count} cell(s)`,count?'':'warn');
 }
 
-// ── KEYBOARD SHORTCUTS ────────────────────────────────────────────
+// ── KEYBOARD SHORTCUTS ────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();sheetUndo(currentTab);}
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&document.getElementById('edPanel').classList.contains('open')){e.preventDefault();edUndo();}
+  if(e.key==='Escape'){closePanel();closeEditor();}
 });
 
-// ── INIT ─────────────────────────────────────────────────────────
+// ── INIT ─────────────────────────────────────────────────────
 window.addEventListener('load',()=>setTimeout(initAuth,300));
 </script>
 </body>
