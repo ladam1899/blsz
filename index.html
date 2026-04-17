@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.5</title>
+<title>League Manager v2026.04.17.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -195,7 +195,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 /* TEAMS VIEW */
 .teams-wrap{max-width:1100px;margin:0 auto;padding:20px 16px;}
-.teams-search{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.teams-search{display:flex;align-items:center;gap:10px;margin:0 -16px 14px;padding:12px 16px;position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--border);backdrop-filter:blur(6px);}
 .teams-search-input{flex:1;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--r2);background:var(--surface);color:var(--text);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
 .teams-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,107,58,.18);}
 .teams-search-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
@@ -335,7 +335,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
