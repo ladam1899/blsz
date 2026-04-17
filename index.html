@@ -271,8 +271,20 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .ecell-swatch{width:16px;height:16px;border-radius:3px;border:1px solid var(--border);flex-shrink:0;cursor:pointer;}
 .ecell-swatch.default{border:1px dashed var(--muted);opacity:.75;}
 .ecell-swatch.default:hover{opacity:1;}
+.ecell-swatch.empty{background:#fff;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%),linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%);background-size:8px 8px;background-position:0 0,4px 4px;border:1px dashed var(--muted);}
 .ecell-default{font-style:italic;color:var(--muted);font-size:11px;}
 .ecell-swatch input{position:absolute;opacity:0;pointer-events:none;}
+.color-palette{position:absolute;z-index:1000;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px;min-width:232px;font-family:inherit;}
+.cp-header{font-size:10px;color:var(--muted);margin-bottom:8px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;}
+.cp-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-bottom:10px;}
+.cp-swatch{width:22px;height:22px;border-radius:4px;border:1px solid rgba(0,0,0,.15);cursor:pointer;padding:0;transition:transform .08s;}
+.cp-swatch:hover{transform:scale(1.18);box-shadow:0 2px 6px rgba(0,0,0,.25);}
+.cp-row{display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;}
+.cp-custom-wrap{display:flex;align-items:center;gap:6px;flex:1;cursor:pointer;color:var(--muted);}
+.cp-custom-wrap:hover{color:var(--text);}
+.cp-custom{width:28px;height:24px;border:1px solid var(--border);border-radius:4px;padding:0;cursor:pointer;background:none;}
+.cp-clear{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;color:var(--muted);}
+.cp-clear:hover{color:var(--text);border-color:var(--border2);}
 .editor-statusbar{background:var(--surface2);border-top:1px solid var(--border);padding:5px 14px;display:flex;gap:14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
 .editor-statusbar b{color:var(--text);}
 .drop-zone{border:2px dashed var(--border2);border-radius:var(--r2);padding:36px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin:16px;}
@@ -410,6 +422,9 @@ const FOLDER_ID   = '16nrjJNIq2OE9KlJE4WX1C2Gb6nBV2Iyo';
 const SCOPES      = 'https://www.googleapis.com/auth/drive.file';
 const SEASON_START= '2000-07-15';
 const LOGOS_FOLDER= 'logos';
+// Optional: paste a specific Drive folder ID here to bypass name-based lookup.
+// Leave empty ('') to let the app find a `logos/` subfolder inside FOLDER_ID.
+const LOGOS_FOLDER_ID = '';
 
 const PALETTE=['#1a6b3a','#1a4fa0','#c8980a','#c0392b','#6b21a8','#0e7490','#b45309','#155e75'];
 const compColors={};
@@ -639,8 +654,19 @@ function setState(key,value,persist=true){
 function currentDate(){return getState('current_date')||SEASON_START;}
 
 // ── LOGOS ─────────────────────────────────────────────────────
+// The app does NOT create a new `logos/` folder — it only uses an existing one.
+// Priority: 1) LOGOS_FOLDER_ID constant if set, 2) a subfolder named `logos` inside FOLDER_ID
+// that the app can see under the current OAuth scope (`drive.file` = files the app created or
+// that were explicitly opened via the Google Picker).
 async function ensureLogosFolder(){
-  logosFolderId=await findOrCreateSubfolder(LOGOS_FOLDER,FOLDER_ID).catch(()=>null);
+  if(LOGOS_FOLDER_ID){logosFolderId=LOGOS_FOLDER_ID;return;}
+  const found=await findFile(LOGOS_FOLDER,FOLDER_ID).catch(()=>null);
+  logosFolderId=found?found.id:null;
+  if(!logosFolderId){
+    console.warn('[logos] No accessible `logos/` subfolder under the data folder. '+
+      'The app will not auto-create one. If you already have a logos folder filled with PNGs, '+
+      'either paste its Drive ID into LOGOS_FOLDER_ID in index.html or upload the logos via the app.');
+  }
 }
 async function loadLogos(){
   if(!logosFolderId)return;
@@ -678,14 +704,13 @@ function safeColor(v,fallback='#1a6b3a'){return/^#[0-9a-f]{3,8}$/i.test(String(v
 // Same team_id always yields the same triad; different teams get visibly different hues.
 function hashSeed(s){let h=2166136261>>>0;s=String(s||'');for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
 function hslToHex(h,s,l){s/=100;l/=100;const a=s*Math.min(l,1-l);const f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)))).toString(16).padStart(2,'0');};return`#${f(0)}${f(8)}${f(4)}`;}
-// slot: 0=primary (deep), 1=secondary (mid), 2=tertiary (light accent)
+// slot: 0=primary (auto from team_id), 1=secondary (white by default), 2=tertiary (optional, no default)
 function defaultColorFor(seed,slot=0){
-  if(!seed)return['#1a6b3a','#4a8f6a','#9fd0b4'][slot]||'#1a6b3a';
+  if(slot===1)return'#ffffff';          // secondary defaults to white (jersey trim / away kit)
+  if(slot===2)return'';                 // tertiary is optional — no default
+  if(!seed)return'#1a6b3a';
   const base=hashSeed(seed+':c')%360;
-  const hue=(base+slot*137)%360; // 137° separation = pleasing triad
-  const sat=slot===0?62:slot===1?52:42;
-  const lit=slot===0?42:slot===1?52:62;
-  return hslToHex(hue,sat,lit);
+  return hslToHex(base,62,42);
 }
 // Resolve a color from cell → default → fallback chain
 function resolveColor(cellVal,seed,slot){
@@ -1586,10 +1611,16 @@ function edRender(){
       if(isColorColumn(colName)){
         const isStored=/^#[0-9a-f]{3,8}$/i.test(v);
         const slot=colorSlotFromName(colName);
-        const hex=isStored?v:defaultColorFor(rowSeed,slot);
-        const cls=isStored?'ecell-swatch':'ecell-swatch default';
-        const label=isStored?esc(v):`<span class="ecell-default">auto ${esc(hex)}</span>`;
-        tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}"><span class="${cls}" style="background:${safeColor(hex,'#cccccc')}" onclick="edColorPick(event,${i},${ci})"></span>${label}</div></td>`;
+        const auto=defaultColorFor(rowSeed,slot);
+        let swatchCls='ecell-swatch',swatchStyle='',cellLabel;
+        if(isStored){
+          swatchCls='ecell-swatch';swatchStyle=`background:${safeColor(v,'#cccccc')}`;cellLabel=esc(v);
+        } else if(auto){
+          swatchCls='ecell-swatch default';swatchStyle=`background:${safeColor(auto,'#cccccc')}`;cellLabel=`<span class="ecell-default">auto ${esc(auto)}</span>`;
+        } else {
+          swatchCls='ecell-swatch empty';swatchStyle='';cellLabel=`<span class="ecell-default">none</span>`;
+        }
+        tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}"><span class="${swatchCls}" style="${swatchStyle}" onclick="edColorPick(event,${i},${ci})"></span>${cellLabel}</div></td>`;
       } else {
         tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}">${esc(v)}</div></td>`;
       }
@@ -1603,27 +1634,63 @@ function edRender(){
   edUpdateSB();
 }
 
+// Curated palette for the dropdown (name + hex). "Custom…" and "Clear" live in a footer row.
+const COLOR_PALETTE=[
+  {n:'White',   h:'#ffffff'},{n:'Silver',   h:'#c0c0c0'},{n:'Grey',    h:'#8a8a8a'},{n:'Black',    h:'#000000'},
+  {n:'Red',     h:'#e11d3e'},{n:'Dark Red', h:'#7a0e1f'},{n:'Orange',  h:'#ff6b1a'},{n:'Yellow',   h:'#ffc915'},
+  {n:'Gold',    h:'#d4a017'},{n:'Lime',     h:'#7acc1a'},{n:'Green',   h:'#1a7a3a'},{n:'Dark Green',h:'#0f4a22'},
+  {n:'Teal',    h:'#119e92'},{n:'Sky Blue', h:'#1fb0e0'},{n:'Blue',    h:'#1e5fcc'},{n:'Navy',     h:'#0e2a5e'},
+  {n:'Purple',  h:'#6e2ca5'},{n:'Pink',     h:'#e91e63'},{n:'Brown',   h:'#6b4423'},{n:'Cream',    h:'#f1e6c8'}
+];
+
 function edColorPick(e,ri,ci){
   e.stopPropagation();
+  // Close any previously-open palette
+  document.querySelectorAll('.color-palette').forEach(el=>el.remove());
   const d=DB[edTab];
-  // Seed the picker with the stored value if present, otherwise the auto-default for this team.
   const stored=d.r[ri][ci];
-  let cur;
-  if(/^#[0-9a-f]{3,8}$/i.test(stored)){
-    cur=stored;
-  } else {
-    const teamIdCol=edTab==='teams'?d.h.findIndex(h=>h==='id'||h==='team_id'):-1;
-    const seed=teamIdCol>=0?d.r[ri][teamIdCol]:'';
-    cur=defaultColorFor(seed,colorSlotFromName(d.h[ci]||''));
-  }
-  const inp=document.createElement('input');inp.type='color';inp.value=cur;
-  inp.style.position='fixed';inp.style.left='-9999px';document.body.appendChild(inp);
-  inp.addEventListener('change',()=>{
-    edPushH();d.r[ri][ci]=inp.value;edModified++;edSchedSave();edRender();
-    inp.remove();
-  });
-  inp.addEventListener('blur',()=>setTimeout(()=>inp.remove(),200));
-  inp.click();
+  const teamIdCol=edTab==='teams'?d.h.findIndex(h=>h==='id'||h==='team_id'):-1;
+  const seed=teamIdCol>=0?d.r[ri][teamIdCol]:'';
+  const slot=colorSlotFromName(d.h[ci]||'');
+  const auto=defaultColorFor(seed,slot);
+  const cur=/^#[0-9a-f]{3,8}$/i.test(stored)?stored:(auto||'#1a6b3a');
+
+  const pop=document.createElement('div');
+  pop.className='color-palette';
+  const swatches=COLOR_PALETTE.map(p=>
+    `<button class="cp-swatch" style="background:${p.h}" title="${p.n} ${p.h}" data-hex="${p.h}"></button>`
+  ).join('');
+  pop.innerHTML=`
+    <div class="cp-header">Pick colour</div>
+    <div class="cp-grid">${swatches}</div>
+    <div class="cp-row">
+      <label class="cp-custom-wrap" title="Custom colour">
+        <input type="color" value="${safeColor(cur,'#1a6b3a')}" class="cp-custom">
+        <span>Custom…</span>
+      </label>
+      <button class="cp-clear" type="button">Clear</button>
+    </div>`;
+  document.body.appendChild(pop);
+
+  // Position below the clicked swatch, flip if offscreen
+  const rect=e.target.getBoundingClientRect();
+  pop.style.top=(rect.bottom+4+window.scrollY)+'px';
+  pop.style.left=(rect.left+window.scrollX)+'px';
+  const pr=pop.getBoundingClientRect();
+  if(pr.right>window.innerWidth-6)pop.style.left=(window.innerWidth-pr.width-8+window.scrollX)+'px';
+  if(pr.bottom>window.innerHeight-6)pop.style.top=(rect.top+window.scrollY-pr.height-4)+'px';
+
+  const commit=hex=>{
+    edPushH();d.r[ri][ci]=hex;edModified++;edSchedSave();
+    document.removeEventListener('mousedown',outside,true);
+    pop.remove();edRender();
+  };
+  const outside=ev=>{if(!pop.contains(ev.target)){document.removeEventListener('mousedown',outside,true);pop.remove();}};
+
+  pop.querySelectorAll('.cp-swatch').forEach(b=>b.addEventListener('click',()=>commit(b.dataset.hex)));
+  pop.querySelector('.cp-custom').addEventListener('change',ev=>commit(ev.target.value));
+  pop.querySelector('.cp-clear').addEventListener('click',()=>commit(''));
+  setTimeout(()=>document.addEventListener('mousedown',outside,true),0);
 }
 
 function edStartEdit(cell){
