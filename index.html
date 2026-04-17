@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.9</title>
+<title>League Manager v2026.04.17.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -243,6 +243,21 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .play-result-periods{margin-top:14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.04em;}
 .play-result-winner{margin-top:14px;text-align:center;font-size:13px;color:var(--muted);}
 .play-empty{color:var(--muted);text-align:center;padding:24px;font-size:13px;}
+.play-stadium-row{display:flex;align-items:center;justify-content:center;gap:8px;flex-basis:100%;margin-top:8px;font-size:12px;color:var(--muted);}
+.play-stadium-sel{padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:13px;outline:none;min-width:220px;}
+.play-stadium-sel:focus{border-color:var(--green);}
+.play-stage-bar{display:flex;gap:6px;justify-content:center;margin:0 0 14px;flex-wrap:wrap;}
+.play-stage-pill{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:var(--surface);border:1px solid var(--border2);color:var(--muted);}
+.play-stage-pill.done{background:var(--green);color:#fff;border-color:var(--green);}
+.play-stage-pill.active{background:#fff;color:var(--green);border-color:var(--green);}
+.play-btn-row{display:flex;gap:10px;justify-content:center;margin:0 auto 20px;flex-wrap:wrap;}
+.play-secondary{padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border2);border-radius:var(--r);font-size:13px;cursor:pointer;transition:filter .15s;}
+.play-secondary:hover{background:var(--border);}
+.play-secondary:disabled{opacity:.45;cursor:not-allowed;}
+.play-calc{background:rgba(0,0,0,.12);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7;color:var(--muted);overflow-x:auto;}
+.play-calc-title{font-family:inherit;font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.play-calc-line{white-space:pre;}
+.play-calc-line b{color:var(--text);font-weight:700;}
 @media(max-width:600px){
   .play-teams{grid-template-columns:1fr;gap:8px;}
   .play-vs{display:none;}
@@ -373,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -484,7 +499,7 @@ const DB={
 };
 const ED_DEFAULTS={
   teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation'],
-  matches:    ['id','game_day','competition','round','season','match_type','home_id','away_id','home_score','away_score','home_1h','away_1h','home_2h','away_2h','home_et','away_et','home_pen','away_pen'],
+  matches:    ['date','rounds','level','match_number','stadion_name','home_id','home_place','away_id','away_place','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
@@ -914,6 +929,28 @@ function simulatePenalties(homeSk,awaySk,neutral=false){
   const hp=homeSk.skills+(neutral?0:homeSk.home)+homeSk.penelties+rnd100();
   const ap=awaySk.skills+awaySk.penelties+rnd100();
   return hp>=ap?{hpen:1,apen:0}:{hpen:0,apen:1};
+}
+
+// ── DETAILED VARIANTS USED BY THE PLAY VIEW ─────────────────
+// These return the exact rand(0..100) values consumed by each term of the
+// formula so the caller can (a) persist them into matches.csv for statistical
+// analysis later and (b) render a formula breakdown to the user. The formula
+// is identical to simPeriod/simulatePenalties — just with the draws exposed.
+function simPeriodDetailed(h,a,hAtt,hDef,aAtt,aDef){
+  const hAttRnd=rnd100(); // consumed in HOME's goal calc (home attack side)
+  const aDefRnd=rnd100(); // consumed in HOME's goal calc (away defence side)
+  const aAttRnd=rnd100(); // consumed in AWAY's goal calc (away attack side)
+  const hDefRnd=rnd100(); // consumed in AWAY's goal calc (home defence side)
+  const homeG=Math.max(0,Math.floor((h+hAtt+hAttRnd-a-aDef-aDefRnd)/20));
+  const awayG=Math.max(0,Math.floor((a+aAtt+aAttRnd-h-hDef-hDefRnd)/20));
+  return{homeG,awayG,hAttRnd,aDefRnd,aAttRnd,hDefRnd,h,a,hAtt,hDef,aAtt,aDef};
+}
+function simPenaltiesDetailed(homeSk,awaySk,neutral=false){
+  const hRnd=rnd100(),aRnd=rnd100();
+  const hp=homeSk.skills+(neutral?0:homeSk.home)+homeSk.penelties+hRnd;
+  const ap=awaySk.skills+awaySk.penelties+aRnd;
+  const homeWins=hp>=ap;
+  return{hpen:homeWins?1:0,apen:homeWins?0:1,hRnd,aRnd,hp,ap};
 }
 
 // Column helpers for matches
@@ -1545,20 +1582,95 @@ function renderTeamsView(){
 }
 
 // ══════════════════════════════════════════════════════════════
-//  PLAY VIEW — head-to-head match player
+//  PLAY VIEW — sequential head-to-head match player
 // ══════════════════════════════════════════════════════════════
 // Pick a home and away team, choose League (no ET/pen) or Cup (ET+pen on ties),
-// then either enter scores manually or run the deterministic simulation using
-// the team_skills rows for the current half-season.
-// State:
-//   _playHome / _playAway  → selected team_ids
-//   _playType              → 0 (League) | 1 (Cup)
-//   _playMode              → 'sim' | 'manual'
-//   _playResult            → last computed result (null until played)
-let _playHome='',_playAway='',_playType=0,_playMode='sim',_playResult=null;
-let _playNeutral=false; // neutral venue → home-bonus not applied to home team
+// then either run a randomised simulation one period at a time or enter scores
+// manually. When a full-time (or AET/PEN) score is reached the row is written
+// to matches.csv using the new 28-column schema, persisting every rand(0..100)
+// draw actually consumed — this is essential for downstream statistics because
+// if we rerolled the rnd values they wouldn't match the score they produced.
+//
+// Stages (sim mode only — manual mode always jumps straight to the final stage):
+//   'ready'   → press Play → runs 1H → 'h1done'
+//   'h1done'  → press Play → runs 2H → 'h2done'
+//   'h2done'  → (league OR cup-decided) Save  |  (cup-tied) runs ET → 'etdone'
+//   'etdone'  → (decided) Save               |  (tied) runs PEN → 'pendone'
+//   'pendone' → Save → 'saved' (row persisted to matches.csv)
+let _playHome='',_playAway='',_playType=0,_playMode='sim';
+let _playNeutral=false;        // neutral venue → home-bonus not applied
+let _playNeutralStadium='';    // stadium name chosen from dropdown when neutral
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
+let _playStage='ready';
+// Accumulates scores + every rand draw so we can render a calculation breakdown
+// and persist the exact numbers into matches.csv later.
+let _playData=null;
 
+function _emptyPlayData(){
+  return{
+    h1:null,a1:null,h2:null,a2:null,het:null,aet:null,hpen:null,apen:null,
+    // rand(0..100) values actually consumed by the scoring formula:
+    first_home_att:'',first_home_def:'',
+    second_home_att:'',second_home_def:'',
+    extra_home_att:'',extra_home_def:'',
+    pen_home:'',
+    first_away_att:'',first_away_def:'',
+    second_away_att:'',second_away_def:'',
+    extra_away_att:'',extra_away_def:'',
+    pen_away:'',
+    calcLog:[]   // formula breakdown lines for the UI
+  };
+}
+
+// ── Stadium helpers (for the neutral-venue dropdown and for filling stadion_name) ──
+function _playHomeStadium(){
+  const d=DB.teams;
+  const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
+  const si=d.h.findIndex(h=>h==='stadium'||h==='stadion');
+  if(ii<0||si<0)return'';
+  const row=d.r.find(r=>r[ii]===_playHome);
+  return row?String(row[si]||'').trim():'';
+}
+function _playUniqueStadiums(){
+  const d=DB.teams;
+  const si=d.h.findIndex(h=>h==='stadium'||h==='stadion');
+  if(si<0)return[];
+  const set=new Set();
+  d.r.forEach(r=>{const s=String(r[si]||'').trim();if(s)set.add(s);});
+  return[...set].sort((a,b)=>a.localeCompare(b));
+}
+
+// ── Stage helpers ─────────────────────────────────────────────
+// Decide which stage is reachable next given the accumulated _playData.
+function _playIsCupTiedAt2H(){return _playType===1&&(_playData.h1+_playData.h2)===(_playData.a1+_playData.a2);}
+function _playIsETTied(){return _playData.het===_playData.aet;}
+function _playIsFinalStage(){
+  if(_playStage==='ready'||_playStage==='h1done')return false;
+  if(_playStage==='saved')return true;
+  if(_playStage==='h2done')return!_playIsCupTiedAt2H();    // league, or cup decided
+  if(_playStage==='etdone')return!_playIsETTied();         // ET settled it
+  if(_playStage==='pendone')return true;
+  return false;
+}
+function _playNextLabel(){
+  if(_playMode==='manual'){
+    if(_playStage==='ready')return'✓ Record result';
+    if(_playStage==='saved')return'✓ Saved';
+    return'💾 Save to matches.csv';
+  }
+  // sim mode
+  switch(_playStage){
+    case'ready':return'▶ Play 1st Half';
+    case'h1done':return'▶ Play 2nd Half';
+    case'h2done':return _playIsCupTiedAt2H()?'▶ Play Extra Time':'💾 Save to matches.csv';
+    case'etdone':return _playIsETTied()?'▶ Play Penalties':'💾 Save to matches.csv';
+    case'pendone':return'💾 Save to matches.csv';
+    case'saved':return'✓ Saved';
+  }
+  return'▶ Play';
+}
+
+// ── Main render ───────────────────────────────────────────────
 function renderPlayView(){
   const app=document.getElementById('app');
   if(!_teamMap)rebuildTeamMap();
@@ -1568,28 +1680,35 @@ function renderPlayView(){
   }
   if(!_playHome)_playHome=list[0].id;
   if(!_playAway)_playAway=list[list.length>1?1:0].id;
+  if(!_playData)_playData=_emptyPlayData();
   const opt=(selId)=>list.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
   const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
   const hLogo=logoFor(_playHome,null),aLogo=logoFor(_playAway,null);
   const canPlay=_playHome&&_playAway&&_playHome!==_playAway;
+
+  // Lock team / type / mode / venue after the first period is played so a
+  // mid-match change can't produce an internally inconsistent row.
+  const locked=_playStage!=='ready';
+
   app.innerHTML=`
     <div class="play-wrap">
       <div class="play-title">⚽ Play a Match</div>
+      ${_playStageBarHTML()}
       <div class="play-teams">
         <div class="play-team-box">
           <div class="play-team-label">Home</div>
           <div class="play-team-badge" style="background:${hLogo?'#fff':safeColor(hTeam.color)}">${hLogo?`<img src="${hLogo}" alt="">`:esc(_playHome.slice(0,3).toUpperCase())}</div>
-          <select class="play-team-sel" onchange="_playSetHome(this.value)">${opt(_playHome)}</select>
+          <select class="play-team-sel" onchange="_playSetHome(this.value)" ${locked?'disabled':''}>${opt(_playHome)}</select>
           <div class="play-team-name">${esc(hTeam.name||'')}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;">
           <div class="play-vs">vs</div>
-          <button class="play-swap" onclick="_playSwap()" title="Swap home and away">⇄</button>
+          <button class="play-swap" onclick="_playSwap()" title="Swap home and away" ${locked?'disabled':''}>⇄</button>
         </div>
         <div class="play-team-box">
           <div class="play-team-label">Away</div>
           <div class="play-team-badge" style="background:${aLogo?'#fff':safeColor(aTeam.color)}">${aLogo?`<img src="${aLogo}" alt="">`:esc(_playAway.slice(0,3).toUpperCase())}</div>
-          <select class="play-team-sel" onchange="_playSetAway(this.value)">${opt(_playAway)}</select>
+          <select class="play-team-sel" onchange="_playSetAway(this.value)" ${locked?'disabled':''}>${opt(_playAway)}</select>
           <div class="play-team-name">${esc(aTeam.name||'')}</div>
         </div>
       </div>
@@ -1597,29 +1716,70 @@ function renderPlayView(){
         <div class="play-opt-group">
           <div class="play-opt-label">Match type</div>
           <div class="play-opt-buttons">
-            <button class="play-opt-btn ${_playType===0?'active':''}" onclick="_playSetType(0)">🏆 League</button>
-            <button class="play-opt-btn ${_playType===1?'active':''}" onclick="_playSetType(1)">🏅 Cup</button>
+            <button class="play-opt-btn ${_playType===0?'active':''}" onclick="_playSetType(0)" ${locked?'disabled':''}>🏆 League</button>
+            <button class="play-opt-btn ${_playType===1?'active':''}" onclick="_playSetType(1)" ${locked?'disabled':''}>🏅 Cup</button>
           </div>
         </div>
         <div class="play-opt-group">
           <div class="play-opt-label">Scoring</div>
           <div class="play-opt-buttons">
-            <button class="play-opt-btn ${_playMode==='sim'?'active':''}" onclick="_playSetMode('sim')">🎲 Simulate</button>
-            <button class="play-opt-btn ${_playMode==='manual'?'active':''}" onclick="_playSetMode('manual')">✎ Manual</button>
+            <button class="play-opt-btn ${_playMode==='sim'?'active':''}" onclick="_playSetMode('sim')" ${locked?'disabled':''}>🎲 Simulate</button>
+            <button class="play-opt-btn ${_playMode==='manual'?'active':''}" onclick="_playSetMode('manual')" ${locked?'disabled':''}>✎ Manual</button>
           </div>
         </div>
         <div class="play-opt-group">
           <div class="play-opt-label">Venue</div>
           <div class="play-opt-buttons">
-            <button class="play-opt-btn ${!_playNeutral?'active':''}" onclick="_playSetNeutral(false)" title="Home-side gets the home-support bonus">🏟 Home</button>
-            <button class="play-opt-btn ${_playNeutral?'active':''}" onclick="_playSetNeutral(true)" title="No home-support bonus applied">⚖ Neutral</button>
+            <button class="play-opt-btn ${!_playNeutral?'active':''}" onclick="_playSetNeutral(false)" title="Home-side gets the home-support bonus" ${locked?'disabled':''}>🏟 Home</button>
+            <button class="play-opt-btn ${_playNeutral?'active':''}" onclick="_playSetNeutral(true)" title="No home-support bonus applied" ${locked?'disabled':''}>⚖ Neutral</button>
           </div>
         </div>
+        ${_playNeutral?_playStadiumPickerHTML(locked):''}
       </div>
       ${_playMode==='manual'?_playManualHTML():''}
-      <button class="play-go" onclick="_playGo()" ${canPlay?'':'disabled'}>${_playMode==='sim'?'▶ Play match':'✓ Record result'}</button>
-      <div id="playResult">${_playResult?_playResultHTML():'<div class="play-empty">Pick two teams and press Play.</div>'}</div>
+      <div class="play-btn-row">
+        <button class="play-go" onclick="_playNextStep()" ${canPlay&&_playStage!=='saved'?'':'disabled'}>${_playNextLabel()}</button>
+        ${_playStage!=='ready'?`<button class="play-secondary" onclick="_playReset()">↺ New match</button>`:''}
+      </div>
+      <div id="playResult">${_playData&&_playData.h1!==null?_playResultHTML():'<div class="play-empty">Pick two teams and press Play 1st Half.</div>'}</div>
     </div>`;
+}
+
+function _playStageBarHTML(){
+  const cup=_playType===1;
+  const st=_playStage;
+  const cls=(isDone,isActive)=>'play-stage-pill'+(isDone?' done':'')+(isActive?' active':'');
+  const done={h1:['h1done','h2done','etdone','pendone','saved'].includes(st),
+              h2:['h2done','etdone','pendone','saved'].includes(st),
+              et:['etdone','pendone','saved'].includes(st),
+              pen:['pendone','saved'].includes(st),
+              save:st==='saved'};
+  const active={h1:st==='ready',h2:st==='h1done',
+                et:st==='h2done'&&cup&&_playData&&_playIsCupTiedAt2H(),
+                pen:st==='etdone'&&cup&&_playData&&_playIsETTied(),
+                save:_playIsFinalStage()&&st!=='saved'};
+  let html='<div class="play-stage-bar">';
+  html+=`<span class="${cls(done.h1,active.h1)}">1H</span>`;
+  html+=`<span class="${cls(done.h2,active.h2)}">2H</span>`;
+  if(cup){
+    html+=`<span class="${cls(done.et,active.et)}">ET</span>`;
+    html+=`<span class="${cls(done.pen,active.pen)}">PEN</span>`;
+  }
+  html+=`<span class="${cls(done.save,active.save)}">💾</span>`;
+  html+='</div>';
+  return html;
+}
+
+function _playStadiumPickerHTML(locked){
+  const stadiums=_playUniqueStadiums();
+  if(!_playNeutralStadium&&stadiums.length)_playNeutralStadium=stadiums[0];
+  const opts=stadiums.map(s=>`<option value="${esc(s)}" ${s===_playNeutralStadium?'selected':''}>${esc(s)}</option>`).join('');
+  return`<div class="play-stadium-row">
+    <label>Neutral stadium:</label>
+    <select class="play-stadium-sel" onchange="_playSetNeutralStadium(this.value)" ${locked?'disabled':''}>
+      ${stadiums.length?opts:`<option value="">— no stadiums in teams.csv —</option>`}
+    </select>
+  </div>`;
 }
 
 function _playManualHTML(){
@@ -1639,63 +1799,230 @@ function _playManualHTML(){
 }
 
 function _playResultHTML(){
-  const r=_playResult;if(!r)return'';
-  const hTeam=teamById(r.home),aTeam=teamById(r.away);
+  const d=_playData;if(!d)return'';
+  const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
+  const homeScore=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
+  const awayScore=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
   const periods=[];
-  if(r.h1!==null)periods.push(`1H ${r.h1}:${r.a1}`);
-  if(r.h2!==null)periods.push(`2H ${r.h2}:${r.a2}`);
-  if(r.het!==null)periods.push(`ET ${r.het}:${r.aet}`);
-  if(r.hpen!==null)periods.push(`PEN ${r.hpen}:${r.apen}`);
-  const winner=r.homeScore>r.awayScore?hTeam.name:(r.awayScore>r.homeScore?aTeam.name:null);
+  if(d.h1!==null)periods.push(`1H ${d.h1}:${d.a1}`);
+  if(d.h2!==null)periods.push(`2H ${d.h2}:${d.a2}`);
+  if(d.het!==null)periods.push(`ET ${d.het}:${d.aet}`);
+  if(d.hpen!==null)periods.push(`PEN ${d.hpen}:${d.apen}`);
+  const winnerName=homeScore>awayScore?hTeam.name:(awayScore>homeScore?aTeam.name:null);
+  const calcHtml=d.calcLog.length?`
+    <div class="play-calc">
+      <div class="play-calc-title">How the scores were computed</div>
+      ${d.calcLog.map(l=>`<div class="play-calc-line">${l}</div>`).join('')}
+    </div>`:'';
   return`<div class="play-result">
     <div class="play-result-score">
       <span>${esc(hTeam.name||hTeam.id)}</span>
-      <span>${r.homeScore} – ${r.awayScore}</span>
+      <span>${homeScore} – ${awayScore}</span>
       <span>${esc(aTeam.name||aTeam.id)}</span>
     </div>
     ${periods.length?`<div class="play-result-periods">${periods.join('  ·  ')}</div>`:''}
-    <div class="play-result-winner">${winner?`🏆 ${esc(winner)} wins`:'Draw'}</div>
+    <div class="play-result-winner">${_playStage==='saved'?'✅ Saved to matches.csv':(winnerName?`🏆 ${esc(winnerName)} wins`:(_playIsFinalStage()?'Draw':'…in progress'))}</div>
+    ${calcHtml}
   </div>`;
 }
 
-function _playSetHome(v){_playHome=v;_playResult=null;renderPlayView();}
-function _playSetAway(v){_playAway=v;_playResult=null;renderPlayView();}
-function _playSwap(){const t=_playHome;_playHome=_playAway;_playAway=t;_playResult=null;renderPlayView();}
-function _playSetType(t){_playType=t;_playResult=null;renderPlayView();}
-function _playSetMode(m){_playMode=m;_playResult=null;renderPlayView();}
-function _playSetNeutral(n){_playNeutral=!!n;_playResult=null;renderPlayView();}
+function _playSetHome(v){if(_playStage!=='ready')return;_playHome=v;_playReset();}
+function _playSetAway(v){if(_playStage!=='ready')return;_playAway=v;_playReset();}
+function _playSwap(){if(_playStage!=='ready')return;const t=_playHome;_playHome=_playAway;_playAway=t;_playReset();}
+function _playSetType(t){if(_playStage!=='ready')return;_playType=t;_playReset();}
+function _playSetMode(m){if(_playStage!=='ready')return;_playMode=m;_playReset();}
+function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;renderPlayView();}
+function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;}
+function _playReset(){_playStage='ready';_playData=_emptyPlayData();_playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};renderPlayView();}
 
 // Zero-pads an unset manual input so the result is always a valid integer.
 function _playManualInt(k){const v=parseInt(_playManual[k]);return isNaN(v)||v<0?0:v;}
 
-function _playGo(){
+// ── Sequential state-machine driver ───────────────────────────
+function _playNextStep(){
   if(!_playHome||!_playAway||_playHome===_playAway)return;
+  if(_playStage==='saved')return;
+
+  // MANUAL MODE — collect all inputs at once then jump straight to the save step.
+  if(_playMode==='manual'){
+    if(_playStage==='ready'){
+      _playData=_emptyPlayData();
+      _playData.h1=_playManualInt('h1');_playData.a1=_playManualInt('a1');
+      _playData.h2=_playManualInt('h2');_playData.a2=_playManualInt('a2');
+      _playData.calcLog.push(`<b>Manual entry</b> · 1H ${_playData.h1}–${_playData.a1} · 2H ${_playData.h2}–${_playData.a2}`);
+      if(_playType===1){
+        const het=_playManualInt('het'),aet=_playManualInt('aet');
+        const hpen=_playManualInt('hpen'),apen=_playManualInt('apen');
+        const ftTied=(_playData.h1+_playData.h2)===(_playData.a1+_playData.a2);
+        if(ftTied){
+          _playData.het=het;_playData.aet=aet;
+          _playData.calcLog.push(`Manual ET ${het}–${aet}`);
+          if(het===aet){
+            _playData.hpen=hpen;_playData.apen=apen;
+            _playData.calcLog.push(`Manual PEN ${hpen}–${apen}`);
+            _playStage='pendone';
+          } else _playStage='etdone';
+        } else _playStage='h2done';
+      } else _playStage='h2done';
+      renderPlayView();
+      return;
+    }
+    // already recorded → pressing again means "save"
+    _playSaveToMatches();
+    return;
+  }
+
+  // SIMULATE MODE — run exactly one period per press, or save when final.
   const halfS=halfSeasonFor(currentDate());
   const hSk=teamSkillsFor(_playHome,halfS);
   const aSk=teamSkillsFor(_playAway,halfS);
-  let h1=null,a1=null,h2=null,a2=null,het=null,aet=null,hpen=null,apen=null;
-  if(_playMode==='sim'){
-    ({h1,a1,h2,a2}=simulateHalves(hSk,aSk,_playNeutral));
-    if(_playType===1&&(h1+h2)===(a1+a2)){
-      ({het,aet}=simulateExtraTime(hSk,aSk,_playNeutral));
-      if(het===aet)({hpen,apen}=simulatePenalties(hSk,aSk,_playNeutral));
-    }
-  } else {
-    h1=_playManualInt('h1');a1=_playManualInt('a1');
-    h2=_playManualInt('h2');a2=_playManualInt('a2');
-    if(_playType===1){
-      het=_playManualInt('het');aet=_playManualInt('aet');
-      hpen=_playManualInt('hpen');apen=_playManualInt('apen');
-      if(het===0&&aet===0&&(h1+h2)!==(a1+a2)){het=null;aet=null;}
-      if(hpen===0&&apen===0)if(het===null||het!==aet){hpen=null;apen=null;}
-    }
+  const H=hSk.skills+(_playNeutral?0:hSk.home);
+  const A=aSk.skills;
+
+  const runPeriod=(label,hAtt,hDef,aAtt,aDef)=>{
+    const r=simPeriodDetailed(H,A,hAtt,hDef,aAtt,aDef);
+    const bonusTxt=_playNeutral?'':`+home_bonus(${hSk.home})`;
+    _playData.calcLog.push(
+      `<b>${label}</b>  H=skills(${hSk.skills})${bonusTxt}=${H}  A=skills(${aSk.skills})=${A}`
+    );
+    _playData.calcLog.push(
+      `  home_g = max(0, floor((${H} + att(${hAtt}) + rnd(${r.hAttRnd}) − ${A} − def(${aDef}) − rnd(${r.aDefRnd})) / 20)) = <b>${r.homeG}</b>`
+    );
+    _playData.calcLog.push(
+      `  away_g = max(0, floor((${A} + att(${aAtt}) + rnd(${r.aAttRnd}) − ${H} − def(${hDef}) − rnd(${r.hDefRnd})) / 20)) = <b>${r.awayG}</b>`
+    );
+    return r;
+  };
+
+  if(_playStage==='ready'){
+    _playData=_emptyPlayData();
+    const r=runPeriod('1st Half',hSk.attack_1h,hSk.defence_1h,aSk.attack_1h,aSk.defence_1h);
+    _playData.h1=r.homeG;_playData.a1=r.awayG;
+    _playData.first_home_att=r.hAttRnd;
+    _playData.first_home_def=r.hDefRnd;
+    _playData.first_away_att=r.aAttRnd;
+    _playData.first_away_def=r.aDefRnd;
+    _playStage='h1done';
+  } else if(_playStage==='h1done'){
+    const r=runPeriod('2nd Half',hSk.attack_2h,hSk.defence_2h,aSk.attack_2h,aSk.defence_2h);
+    _playData.h2=r.homeG;_playData.a2=r.awayG;
+    _playData.second_home_att=r.hAttRnd;
+    _playData.second_home_def=r.hDefRnd;
+    _playData.second_away_att=r.aAttRnd;
+    _playData.second_away_def=r.aDefRnd;
+    _playStage='h2done';
+  } else if(_playStage==='h2done'){
+    if(_playIsCupTiedAt2H()){
+      const r=runPeriod('Extra Time',hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
+      _playData.het=r.homeG;_playData.aet=r.awayG;
+      _playData.extra_home_att=r.hAttRnd;
+      _playData.extra_home_def=r.hDefRnd;
+      _playData.extra_away_att=r.aAttRnd;
+      _playData.extra_away_def=r.aDefRnd;
+      _playStage='etdone';
+    } else { _playSaveToMatches();return; }
+  } else if(_playStage==='etdone'){
+    if(_playIsETTied()){
+      const r=simPenaltiesDetailed(hSk,aSk,_playNeutral);
+      _playData.hpen=r.hpen;_playData.apen=r.apen;
+      _playData.pen_home=r.hRnd;
+      _playData.pen_away=r.aRnd;
+      const bonusTxt=_playNeutral?'':`+home_bonus(${hSk.home})`;
+      _playData.calcLog.push(
+        `<b>Penalties</b>  home = skills(${hSk.skills})${bonusTxt}+pen(${hSk.penelties})+rnd(${r.hRnd}) = ${r.hp}`
+      );
+      _playData.calcLog.push(
+        `              away = skills(${aSk.skills})+pen(${aSk.penelties})+rnd(${r.aRnd}) = ${r.ap}`
+      );
+      _playData.calcLog.push(
+        `              winner = ${r.hp>=r.ap?'HOME':'AWAY'} → stored as ${r.hpen}:${r.apen}`
+      );
+      _playStage='pendone';
+    } else { _playSaveToMatches();return; }
+  } else if(_playStage==='pendone'){
+    _playSaveToMatches();return;
   }
-  const homeScore=(h1||0)+(h2||0)+(het||0)+(hpen||0);
-  const awayScore=(a1||0)+(a2||0)+(het!==null?aet||0:0)+(apen||0);
-  _playResult={home:_playHome,away:_playAway,h1,a1,h2,a2,het,aet,hpen,apen,homeScore,awayScore,type:_playType};
-  // Swap just the result area — keeps input focus if user was tabbing through manuals
-  const box=document.getElementById('playResult');
-  if(box)box.innerHTML=_playResultHTML();else renderPlayView();
+  renderPlayView();
+}
+
+// ── Compose notes + next match_number + write row to matches.csv ──
+function _playNotes(){
+  const d=_playData;if(!d)return'';
+  const homeScore=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
+  const awayScore=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
+  const parts=[];
+  parts.push(`1H ${d.h1}-${d.a1}`);
+  parts.push(`HT ${d.h1}-${d.a1}`);
+  parts.push(`2H ${d.h2}-${d.a2}`);
+  const regHome=(d.h1||0)+(d.h2||0), regAway=(d.a1||0)+(d.a2||0);
+  parts.push(`FT ${regHome}-${regAway}`);
+  if(d.het!==null&&d.het!==undefined){
+    parts.push(`ET ${d.het}-${d.aet}`);
+    parts.push(`AET ${regHome+d.het}-${regAway+d.aet}`);
+  }
+  if(d.hpen!==null&&d.hpen!==undefined){
+    parts.push(`PEN ${d.hpen}-${d.apen}`);
+    parts.push(`agg ${homeScore}-${awayScore}`);
+  }
+  return parts.join('; ');
+}
+function _playNextMatchNumber(){
+  const d=DB.matches;
+  const mi=d.h.indexOf('match_number');
+  if(mi<0)return 1;
+  let max=0;
+  d.r.forEach(r=>{const v=parseInt(r[mi]);if(!isNaN(v)&&v>max)max=v;});
+  return max+1;
+}
+async function _playSaveToMatches(){
+  if(_playStage==='saved')return;
+  ensureMatchCols(); // make sure DB.matches.h has every column from ED_DEFAULTS.matches
+  const d=_playData;if(!d)return;
+  const homeTot=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
+  const awayTot=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
+  const stadium=_playNeutral?_playNeutralStadium:_playHomeStadium();
+  const rowObj={
+    date:currentDate(),
+    rounds:'FRIENDLY',
+    level:'',
+    match_number:String(_playNextMatchNumber()),
+    stadion_name:stadium||'',
+    home_id:_playHome,
+    home_place:'',
+    away_id:_playAway,
+    away_place:'',
+    home_score_full_time:String(homeTot),
+    away_score_full_time:String(awayTot),
+    home_score_first_half:String(d.h1!=null?d.h1:''),
+    away_score_first_half:String(d.a1!=null?d.a1:''),
+    notes:_playNotes(),
+    first_home_att:String(d.first_home_att),
+    first_home_def:String(d.first_home_def),
+    second_home_att:String(d.second_home_att),
+    second_home_def:String(d.second_home_def),
+    extra_home_att:String(d.extra_home_att),
+    extra_home_def:String(d.extra_home_def),
+    pen_home:String(d.pen_home),
+    first_away_att:String(d.first_away_att),
+    first_away_def:String(d.first_away_def),
+    second_away_att:String(d.second_away_att),
+    second_away_def:String(d.second_away_def),
+    extra_away_att:String(d.extra_away_att),
+    extra_away_def:String(d.extra_away_def),
+    pen_away:String(d.pen_away)
+  };
+  // Build the row array in the order of DB.matches.h — unknown cols default to ''.
+  const newRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
+  DB.matches.r.push(newRow);
+  _playStage='saved';
+  _playData.calcLog.push(`<b>Saved row #${rowObj.match_number}</b> (rounds=FRIENDLY, stadium=${esc(stadium||'—')})`);
+  renderPlayView();
+  try{
+    await saveSheet('matches');
+    if(typeof toast==='function')toast('✅ Match saved to matches.csv');
+  }catch(e){
+    if(typeof toast==='function')toast('⚠ Save failed: '+(e.message||e));
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
