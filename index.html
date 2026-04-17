@@ -269,6 +269,9 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .ecell.editing{padding:0;border-color:var(--green);background:var(--green-l);}
 .ecell.editing input{width:100%;min-width:60px;background:transparent;border:none;color:var(--text);padding:6px 8px;font-size:inherit;font-family:inherit;outline:none;}
 .ecell-swatch{width:16px;height:16px;border-radius:3px;border:1px solid var(--border);flex-shrink:0;cursor:pointer;}
+.ecell-swatch.default{border:1px dashed var(--muted);opacity:.75;}
+.ecell-swatch.default:hover{opacity:1;}
+.ecell-default{font-style:italic;color:var(--muted);font-size:11px;}
 .ecell-swatch input{position:absolute;opacity:0;pointer-events:none;}
 .editor-statusbar{background:var(--surface2);border-top:1px solid var(--border);padding:5px 14px;display:flex;gap:14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;flex-shrink:0;}
 .editor-statusbar b{color:var(--text);}
@@ -422,7 +425,7 @@ const DB={
   state:      {h:[],r:[],fid:null}
 };
 const ED_DEFAULTS={
-  teams:      ['id','name','color','color2','color3','stadium','location','foundation'],
+  teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation'],
   matches:    ['id','game_day','competition','round','season','match_type','home_id','away_id','home_score','away_score','home_1h','away_1h','home_2h','away_2h','home_et','away_et','home_pen','away_pen'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
@@ -671,11 +674,38 @@ function logoFor(teamId,season){
 // — anything else is rejected to prevent CSS injection via team-color CSV cells.
 function safeColor(v,fallback='#1a6b3a'){return/^#[0-9a-f]{3,8}$/i.test(String(v||''))?v:fallback;}
 
+// Deterministic default color palette per team (used when a color cell is empty).
+// Same team_id always yields the same triad; different teams get visibly different hues.
+function hashSeed(s){let h=2166136261>>>0;s=String(s||'');for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function hslToHex(h,s,l){s/=100;l/=100;const a=s*Math.min(l,1-l);const f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)))).toString(16).padStart(2,'0');};return`#${f(0)}${f(8)}${f(4)}`;}
+// slot: 0=primary (deep), 1=secondary (mid), 2=tertiary (light accent)
+function defaultColorFor(seed,slot=0){
+  if(!seed)return['#1a6b3a','#4a8f6a','#9fd0b4'][slot]||'#1a6b3a';
+  const base=hashSeed(seed+':c')%360;
+  const hue=(base+slot*137)%360; // 137° separation = pleasing triad
+  const sat=slot===0?62:slot===1?52:42;
+  const lit=slot===0?42:slot===1?52:62;
+  return hslToHex(hue,sat,lit);
+}
+// Resolve a color from cell → default → fallback chain
+function resolveColor(cellVal,seed,slot){
+  const v=safeColor(cellVal,'');
+  return v||defaultColorFor(seed,slot);
+}
+function colorSlotFromName(name){
+  const m=String(name||'').match(/^colou?r(\d*)$/i);
+  if(!m)return 0;
+  const n=parseInt(m[1])||1;
+  return Math.max(0,n-1);
+}
+
 let _teamMap=null; // id -> {id,name,color,color2,color3}
 function rebuildTeamMap(){
   _teamMap=new Map();
   const d=DB.teams;
-  const ii=d.h.indexOf('id'),ni=d.h.findIndex(h=>h==='name'||h==='team_name');
+  const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
+  const ni=d.h.findIndex(h=>h==='name'||h==='team_name'||h==='team_names'||h==='full_name');
+  const lni=d.h.indexOf('long_name');
   const ci=d.h.findIndex(h=>h==='color'||h==='colour');
   const c2=d.h.indexOf('color2'),c3=d.h.indexOf('color3');
   if(ii<0)return;
@@ -683,10 +713,11 @@ function rebuildTeamMap(){
     const id=row[ii];if(!id)return;
     _teamMap.set(id,{
       id,
-      name:(ni>=0&&row[ni])||id,
-      color:safeColor(ci>=0?row[ci]:''),
-      color2:safeColor(c2>=0?row[c2]:'',''),
-      color3:safeColor(c3>=0?row[c3]:'','')
+      name:(ni>=0&&row[ni])||(lni>=0&&row[lni])||id,
+      long_name:(lni>=0&&row[lni])||'',
+      color:resolveColor(ci>=0?row[ci]:'',id,0),
+      color2:resolveColor(c2>=0?row[c2]:'',id,1),
+      color3:resolveColor(c3>=0?row[c3]:'',id,2)
     });
   });
 }
@@ -1334,8 +1365,9 @@ function renderTeamsView(){
   if(!d.r.length){
     app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
   }
-  const ii=d.h.indexOf('id');
-  const ni=d.h.findIndex(h=>h==='name'||h==='team_name');
+  const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
+  const ni=d.h.findIndex(h=>h==='name'||h==='team_name'||h==='team_names'||h==='full_name');
+  const lni=d.h.indexOf('long_name');
   const ci=d.h.findIndex(h=>h==='color'||h==='colour');
   const c2=d.h.indexOf('color2'),c3=d.h.indexOf('color3');
   const sti=d.h.findIndex(h=>h==='stadium'||h==='stadion');
@@ -1344,10 +1376,11 @@ function renderTeamsView(){
   let html='<div class="teams-wrap"><div class="teams-grid">';
   d.r.forEach(row=>{
     const id=ii>=0?row[ii]:'';
-    const name=ni>=0?row[ni]:(id||'?');
-    const color=ci>=0&&row[ci]?row[ci]:'#1a6b3a';
-    const color2=c2>=0?row[c2]:'';
-    const color3=c3>=0?row[c3]:'';
+    const name=(ni>=0&&row[ni])||(lni>=0&&row[lni])||id||'?';
+    const longName=lni>=0?row[lni]:'';
+    const color=resolveColor(ci>=0?row[ci]:'',id,0);
+    const color2=resolveColor(c2>=0?row[c2]:'',id,1);
+    const color3=resolveColor(c3>=0?row[c3]:'',id,2);
     const stadium=sti>=0?row[sti]:'';
     const loc=li>=0?row[li]:'';
     const found=fi>=0?row[fi]:'';
@@ -1355,7 +1388,7 @@ function renderTeamsView(){
     html+=`<div class="team-card">
       <div class="team-card-logo" style="background:${safeColor(color)}">${logo?`<img src="${logo}" alt="">`:esc((name||id).slice(0,3).toUpperCase())}</div>
       <div class="team-card-name">${esc(name)}</div>
-      <div class="team-card-id">${esc(id)}</div>
+      <div class="team-card-id">${esc(longName&&longName!==name?longName:id)}</div>
       <div class="team-card-meta">
         ${stadium?`🏟 ${esc(stadium)}<br>`:''}
         ${loc?`📍 ${esc(loc)}<br>`:''}
@@ -1541,15 +1574,22 @@ function edRender(){
   let vis=d.r.map((r,i)=>({r,i}));
   if(q)vis=vis.filter(({r})=>r.some(v=>String(v).toLowerCase().includes(q)));
   const th=`<thead><tr><th class="rn">#</th>${d.h.map((h,i)=>`<th data-ci="${i}">${esc(h)}</th>`).join('')}</tr></thead>`;
+  // For the teams sheet, locate the id column once so we can seed default colors per row.
+  const teamIdCol=edTab==='teams'?d.h.findIndex(h=>h==='id'||h==='team_id'):-1;
   let tb='<tbody>';
   vis.forEach(({r,i})=>{
     const sel=edSelected.has(i);
+    const rowSeed=teamIdCol>=0?r[teamIdCol]:'';
     tb+=`<tr data-idx="${i}"${sel?' class="sel"':''}><td class="rn" data-ri="${i}">${i+1}</td>`;
     r.forEach((v,ci)=>{
       const colName=d.h[ci]||'';
       if(isColorColumn(colName)){
-        const hex=/^#[0-9a-f]{3,8}$/i.test(v)?v:'#cccccc';
-        tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}"><span class="ecell-swatch" style="background:${safeColor(hex,'#cccccc')}" onclick="edColorPick(event,${i},${ci})"></span>${esc(v)}</div></td>`;
+        const isStored=/^#[0-9a-f]{3,8}$/i.test(v);
+        const slot=colorSlotFromName(colName);
+        const hex=isStored?v:defaultColorFor(rowSeed,slot);
+        const cls=isStored?'ecell-swatch':'ecell-swatch default';
+        const label=isStored?esc(v):`<span class="ecell-default">auto ${esc(hex)}</span>`;
+        tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}"><span class="${cls}" style="background:${safeColor(hex,'#cccccc')}" onclick="edColorPick(event,${i},${ci})"></span>${label}</div></td>`;
       } else {
         tb+=`<td><div class="ecell" data-r="${i}" data-c="${ci}">${esc(v)}</div></td>`;
       }
@@ -1566,7 +1606,16 @@ function edRender(){
 function edColorPick(e,ri,ci){
   e.stopPropagation();
   const d=DB[edTab];
-  const cur=/^#[0-9a-f]{3,8}$/i.test(d.r[ri][ci])?d.r[ri][ci]:'#1a6b3a';
+  // Seed the picker with the stored value if present, otherwise the auto-default for this team.
+  const stored=d.r[ri][ci];
+  let cur;
+  if(/^#[0-9a-f]{3,8}$/i.test(stored)){
+    cur=stored;
+  } else {
+    const teamIdCol=edTab==='teams'?d.h.findIndex(h=>h==='id'||h==='team_id'):-1;
+    const seed=teamIdCol>=0?d.r[ri][teamIdCol]:'';
+    cur=defaultColorFor(seed,colorSlotFromName(d.h[ci]||''));
+  }
   const inp=document.createElement('input');inp.type='color';inp.value=cur;
   inp.style.position='fixed';inp.style.left='-9999px';document.body.appendChild(inp);
   inp.addEventListener('change',()=>{
