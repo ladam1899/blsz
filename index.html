@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.7</title>
+<title>League Manager v2026.04.17.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -210,6 +210,44 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .team-card-colors{display:flex;gap:3px;margin-top:10px;}
 .tcc-dot{width:18px;height:18px;border-radius:4px;border:1px solid var(--border);}
 
+/* PLAY VIEW */
+.play-wrap{max-width:760px;margin:0 auto;padding:24px 16px;}
+.play-title{font-size:20px;font-weight:700;margin-bottom:18px;text-align:center;}
+.play-teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:20px;}
+.play-team-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;display:flex;flex-direction:column;gap:10px;align-items:center;}
+.play-team-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+.play-team-sel{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:14px;outline:none;cursor:pointer;}
+.play-team-sel:focus{border-color:var(--green);}
+.play-team-badge{width:64px;height:64px;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:'Bebas Neue',sans-serif;font-size:22px;font-weight:700;color:#fff;}
+.play-team-badge img{width:100%;height:100%;object-fit:contain;}
+.play-team-name{font-weight:600;font-size:14px;text-align:center;min-height:18px;}
+.play-vs{font-size:24px;font-weight:700;color:var(--muted);padding:0 6px;user-select:none;}
+.play-swap{background:var(--surface);border:1px solid var(--border2);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;margin-top:6px;}
+.play-swap:hover{background:var(--green);color:#fff;border-color:var(--green);}
+.play-opts{display:flex;flex-wrap:wrap;gap:18px;justify-content:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:18px;}
+.play-opt-group{display:flex;flex-direction:column;gap:6px;}
+.play-opt-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.play-opt-buttons{display:flex;gap:4px;}
+.play-opt-btn{padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;transition:all .15s;}
+.play-opt-btn.active{background:var(--green);color:#fff;border-color:var(--green);}
+.play-go{display:block;margin:0 auto 20px;padding:10px 28px;background:var(--green);color:#fff;border:none;border-radius:var(--r2);font-size:15px;font-weight:600;cursor:pointer;transition:filter .15s;}
+.play-go:hover{filter:brightness(1.1);}
+.play-go:disabled{opacity:.45;cursor:not-allowed;}
+.play-manual{display:grid;grid-template-columns:auto 1fr auto 1fr auto;gap:8px 14px;align-items:center;max-width:420px;margin:0 auto 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;}
+.play-manual-lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.play-manual input{width:60px;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:14px;text-align:center;outline:none;}
+.play-manual input:focus{border-color:var(--green);}
+.play-manual .dash{color:var(--muted);font-weight:600;}
+.play-result{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-top:12px;}
+.play-result-score{display:flex;align-items:center;justify-content:center;gap:16px;font-family:'Bebas Neue',sans-serif;font-size:40px;letter-spacing:.05em;}
+.play-result-periods{margin-top:14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.04em;}
+.play-result-winner{margin-top:14px;text-align:center;font-size:13px;color:var(--muted);}
+.play-empty{color:var(--muted);text-align:center;padding:24px;font-size:13px;}
+@media(max-width:600px){
+  .play-teams{grid-template-columns:1fr;gap:8px;}
+  .play-vs{display:none;}
+}
+
 /* RESULTS VIEW */
 .results-wrap{max-width:900px;margin:0 auto;padding:20px 16px;}
 .results-season-bar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
@@ -335,7 +373,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -347,10 +385,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 <!-- Navigation -->
 <div class="nav">
-  <div class="ntab active" id="ntab-league" onclick="switchView('league')">🏠 League</div>
+  <div class="ntab" id="ntab-league" onclick="switchView('league')">🏠 League</div>
   <div class="ntab" id="ntab-calendar" onclick="switchView('calendar')">📆 Calendar</div>
   <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
   <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
+  <div class="ntab active" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
   <div class="nav-space"></div>
   <div class="nav-gear" onclick="openEditor()" title="Data editor">⚙</div>
 </div>
@@ -457,7 +496,7 @@ let edTab='teams',edHistory=[],edSelected=new Set(),edModified=0,edSaveTimer=nul
 let _lastSel=undefined;
 
 // ── VIEW STATE ──────────────────────────────────────────────
-let currentView='teams';
+let currentView='play';
 let calYear=2000, calMonth=6;
 let panelData=null;
 let logosFolderId=null;
@@ -925,6 +964,7 @@ function renderView(){
   else if(currentView==='calendar')renderCalendarView();
   else if(currentView==='teams')renderTeamsView();
   else if(currentView==='results')renderResultsView();
+  else if(currentView==='play')renderPlayView();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1500,6 +1540,151 @@ function renderTeamsView(){
   // Auto-focus so the user can start typing immediately; place cursor at end if there is an existing query.
   const inp=document.getElementById('teamsSearchInput');
   if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
+}
+
+// ══════════════════════════════════════════════════════════════
+//  PLAY VIEW — head-to-head match player
+// ══════════════════════════════════════════════════════════════
+// Pick a home and away team, choose League (no ET/pen) or Cup (ET+pen on ties),
+// then either enter scores manually or run the deterministic simulation using
+// the team_skills rows for the current half-season.
+// State:
+//   _playHome / _playAway  → selected team_ids
+//   _playType              → 0 (League) | 1 (Cup)
+//   _playMode              → 'sim' | 'manual'
+//   _playResult            → last computed result (null until played)
+let _playHome='',_playAway='',_playType=0,_playMode='sim',_playResult=null;
+let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
+
+function renderPlayView(){
+  const app=document.getElementById('app');
+  if(!_teamMap)rebuildTeamMap();
+  const list=[..._teamMap.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!list.length){
+    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
+  }
+  if(!_playHome)_playHome=list[0].id;
+  if(!_playAway)_playAway=list[list.length>1?1:0].id;
+  const opt=(selId)=>list.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
+  const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
+  const hLogo=logoFor(_playHome,null),aLogo=logoFor(_playAway,null);
+  const canPlay=_playHome&&_playAway&&_playHome!==_playAway;
+  app.innerHTML=`
+    <div class="play-wrap">
+      <div class="play-title">⚽ Play a Match</div>
+      <div class="play-teams">
+        <div class="play-team-box">
+          <div class="play-team-label">Home</div>
+          <div class="play-team-badge" style="background:${hLogo?'#fff':safeColor(hTeam.color)}">${hLogo?`<img src="${hLogo}" alt="">`:esc(_playHome.slice(0,3).toUpperCase())}</div>
+          <select class="play-team-sel" onchange="_playSetHome(this.value)">${opt(_playHome)}</select>
+          <div class="play-team-name">${esc(hTeam.name||'')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <div class="play-vs">vs</div>
+          <button class="play-swap" onclick="_playSwap()" title="Swap home and away">⇄</button>
+        </div>
+        <div class="play-team-box">
+          <div class="play-team-label">Away</div>
+          <div class="play-team-badge" style="background:${aLogo?'#fff':safeColor(aTeam.color)}">${aLogo?`<img src="${aLogo}" alt="">`:esc(_playAway.slice(0,3).toUpperCase())}</div>
+          <select class="play-team-sel" onchange="_playSetAway(this.value)">${opt(_playAway)}</select>
+          <div class="play-team-name">${esc(aTeam.name||'')}</div>
+        </div>
+      </div>
+      <div class="play-opts">
+        <div class="play-opt-group">
+          <div class="play-opt-label">Match type</div>
+          <div class="play-opt-buttons">
+            <button class="play-opt-btn ${_playType===0?'active':''}" onclick="_playSetType(0)">🏆 League</button>
+            <button class="play-opt-btn ${_playType===1?'active':''}" onclick="_playSetType(1)">🏅 Cup</button>
+          </div>
+        </div>
+        <div class="play-opt-group">
+          <div class="play-opt-label">Scoring</div>
+          <div class="play-opt-buttons">
+            <button class="play-opt-btn ${_playMode==='sim'?'active':''}" onclick="_playSetMode('sim')">🎲 Simulate</button>
+            <button class="play-opt-btn ${_playMode==='manual'?'active':''}" onclick="_playSetMode('manual')">✎ Manual</button>
+          </div>
+        </div>
+      </div>
+      ${_playMode==='manual'?_playManualHTML():''}
+      <button class="play-go" onclick="_playGo()" ${canPlay?'':'disabled'}>${_playMode==='sim'?'▶ Play match':'✓ Record result'}</button>
+      <div id="playResult">${_playResult?_playResultHTML():'<div class="play-empty">Pick two teams and press Play.</div>'}</div>
+    </div>`;
+}
+
+function _playManualHTML(){
+  const cup=_playType===1;
+  const r=(lbl,keyH,keyA)=>`
+    <span class="play-manual-lbl">${lbl}</span>
+    <input type="number" min="0" value="${esc(_playManual[keyH])}" oninput="_playManual.${keyH}=this.value" placeholder="0">
+    <span class="dash">–</span>
+    <input type="number" min="0" value="${esc(_playManual[keyA])}" oninput="_playManual.${keyA}=this.value" placeholder="0">
+    <span></span>`;
+  return`<div class="play-manual">
+    ${r('1H','h1','a1')}
+    ${r('2H','h2','a2')}
+    ${cup?r('ET','het','aet'):''}
+    ${cup?r('PEN','hpen','apen'):''}
+  </div>`;
+}
+
+function _playResultHTML(){
+  const r=_playResult;if(!r)return'';
+  const hTeam=teamById(r.home),aTeam=teamById(r.away);
+  const periods=[];
+  if(r.h1!==null)periods.push(`1H ${r.h1}:${r.a1}`);
+  if(r.h2!==null)periods.push(`2H ${r.h2}:${r.a2}`);
+  if(r.het!==null)periods.push(`ET ${r.het}:${r.aet}`);
+  if(r.hpen!==null)periods.push(`PEN ${r.hpen}:${r.apen}`);
+  const winner=r.homeScore>r.awayScore?hTeam.name:(r.awayScore>r.homeScore?aTeam.name:null);
+  return`<div class="play-result">
+    <div class="play-result-score">
+      <span>${esc(hTeam.name||hTeam.id)}</span>
+      <span>${r.homeScore} – ${r.awayScore}</span>
+      <span>${esc(aTeam.name||aTeam.id)}</span>
+    </div>
+    ${periods.length?`<div class="play-result-periods">${periods.join('  ·  ')}</div>`:''}
+    <div class="play-result-winner">${winner?`🏆 ${esc(winner)} wins`:'Draw'}</div>
+  </div>`;
+}
+
+function _playSetHome(v){_playHome=v;_playResult=null;renderPlayView();}
+function _playSetAway(v){_playAway=v;_playResult=null;renderPlayView();}
+function _playSwap(){const t=_playHome;_playHome=_playAway;_playAway=t;_playResult=null;renderPlayView();}
+function _playSetType(t){_playType=t;_playResult=null;renderPlayView();}
+function _playSetMode(m){_playMode=m;_playResult=null;renderPlayView();}
+
+// Zero-pads an unset manual input so the result is always a valid integer.
+function _playManualInt(k){const v=parseInt(_playManual[k]);return isNaN(v)||v<0?0:v;}
+
+function _playGo(){
+  if(!_playHome||!_playAway||_playHome===_playAway)return;
+  const halfS=halfSeasonFor(currentDate());
+  const hSk=teamSkillsFor(_playHome,halfS);
+  const aSk=teamSkillsFor(_playAway,halfS);
+  let h1=null,a1=null,h2=null,a2=null,het=null,aet=null,hpen=null,apen=null;
+  if(_playMode==='sim'){
+    ({h1,a1,h2,a2}=simulateHalves(hSk,aSk));
+    if(_playType===1&&(h1+h2)===(a1+a2)){
+      ({het,aet}=simulateExtraTime(hSk,aSk));
+      if(het===aet)({hpen,apen}=simulatePenalties(hSk,aSk));
+    }
+  } else {
+    h1=_playManualInt('h1');a1=_playManualInt('a1');
+    h2=_playManualInt('h2');a2=_playManualInt('a2');
+    if(_playType===1){
+      het=_playManualInt('het');aet=_playManualInt('aet');
+      hpen=_playManualInt('hpen');apen=_playManualInt('apen');
+      if(het===0&&aet===0&&(h1+h2)!==(a1+a2)){het=null;aet=null;}
+      if(hpen===0&&apen===0)if(het===null||het!==aet){hpen=null;apen=null;}
+    }
+  }
+  const homeScore=(h1||0)+(h2||0)+(het||0)+(hpen||0);
+  const awayScore=(a1||0)+(a2||0)+(het!==null?aet||0:0)+(apen||0);
+  _playResult={home:_playHome,away:_playAway,h1,a1,h2,a2,het,aet,hpen,apen,homeScore,awayScore,type:_playType};
+  // Swap just the result area — keeps input focus if user was tabbing through manuals
+  const box=document.getElementById('playResult');
+  if(box)box.innerHTML=_playResultHTML();else renderPlayView();
 }
 
 // ══════════════════════════════════════════════════════════════
