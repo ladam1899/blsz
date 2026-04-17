@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.8</title>
+<title>League Manager v2026.04.17.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -373,7 +373,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -882,35 +882,37 @@ function teamSkillsFor(teamId,halfSeason){
 function defaultSkills(){return{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};}
 
 // ── SIMULATION ────────────────────────────────────────────────
-// Deterministic match simulation (no randomness). Per user's Python spec:
-//   h = home.skills + home.home     (home side includes home-support bonus)
-//   a = away.skills
-// For each period P (1h, 2h, et):
-//   home_goals_P = max(0, floor((h + home.attack_P  - a - away.defence_P) / 20))
-//   away_goals_P = max(0, floor((a + away.attack_P  - h - home.defence_P) / 20))
+// Randomized match simulation (each run can produce a different score).
+//   H = home.skills + (neutral ? 0 : home.home)   // home-side base
+//   A = away.skills                               // away-side base
+// For each period P (1h, 2h, et), with rnd() = a fresh integer in [0..100]:
+//   home_goals_P = max(0, floor((H + home.attack_P + rnd() - A - away.defence_P - rnd()) / 20))
+//   away_goals_P = max(0, floor((A + away.attack_P + rnd() - H - home.defence_P - rnd()) / 20))
 // League matches (match_type=0) only play 1h + 2h.
 // Cup matches (match_type=1): ET runs only if 1h+2h is tied; penalties run only
-// if ET is still tied, with winner = higher (base + penelties) scoring 1-0.
+// if ET is still tied, with winner = higher (base + penelties + rnd()) scoring 1-0.
+// The `neutral` flag removes the home-support bonus for neutral-venue matches.
+function rnd100(){return Math.floor(Math.random()*101);} // integer 0..100 inclusive
 function simPeriod(h,a,hAtt,hDef,aAtt,aDef){
-  const homeG=Math.max(0,Math.floor((h+hAtt-a-aDef)/20));
-  const awayG=Math.max(0,Math.floor((a+aAtt-h-hDef)/20));
+  const homeG=Math.max(0,Math.floor((h+hAtt+rnd100()-a-aDef-rnd100())/20));
+  const awayG=Math.max(0,Math.floor((a+aAtt+rnd100()-h-hDef-rnd100())/20));
   return[homeG,awayG];
 }
-function simulateHalves(homeSk,awaySk){
-  const h=homeSk.skills+homeSk.home;
+function simulateHalves(homeSk,awaySk,neutral=false){
+  const h=homeSk.skills+(neutral?0:homeSk.home);
   const a=awaySk.skills;
   const[h1,a1]=simPeriod(h,a,homeSk.attack_1h,homeSk.defence_1h,awaySk.attack_1h,awaySk.defence_1h);
   const[h2,a2]=simPeriod(h,a,homeSk.attack_2h,homeSk.defence_2h,awaySk.attack_2h,awaySk.defence_2h);
   return{h1,a1,h2,a2};
 }
-function simulateExtraTime(homeSk,awaySk){
-  const h=homeSk.skills+homeSk.home;const a=awaySk.skills;
+function simulateExtraTime(homeSk,awaySk,neutral=false){
+  const h=homeSk.skills+(neutral?0:homeSk.home);const a=awaySk.skills;
   const[het,aet]=simPeriod(h,a,homeSk.attack_et,homeSk.defence_et,awaySk.attack_et,awaySk.defence_et);
   return{het,aet};
 }
-function simulatePenalties(homeSk,awaySk){
-  const hp=homeSk.skills+homeSk.home+homeSk.penelties;
-  const ap=awaySk.skills+awaySk.penelties;
+function simulatePenalties(homeSk,awaySk,neutral=false){
+  const hp=homeSk.skills+(neutral?0:homeSk.home)+homeSk.penelties+rnd100();
+  const ap=awaySk.skills+awaySk.penelties+rnd100();
   return hp>=ap?{hpen:1,apen:0}:{hpen:0,apen:1};
 }
 
@@ -1554,6 +1556,7 @@ function renderTeamsView(){
 //   _playMode              → 'sim' | 'manual'
 //   _playResult            → last computed result (null until played)
 let _playHome='',_playAway='',_playType=0,_playMode='sim',_playResult=null;
+let _playNeutral=false; // neutral venue → home-bonus not applied to home team
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
 
 function renderPlayView(){
@@ -1605,6 +1608,13 @@ function renderPlayView(){
             <button class="play-opt-btn ${_playMode==='manual'?'active':''}" onclick="_playSetMode('manual')">✎ Manual</button>
           </div>
         </div>
+        <div class="play-opt-group">
+          <div class="play-opt-label">Venue</div>
+          <div class="play-opt-buttons">
+            <button class="play-opt-btn ${!_playNeutral?'active':''}" onclick="_playSetNeutral(false)" title="Home-side gets the home-support bonus">🏟 Home</button>
+            <button class="play-opt-btn ${_playNeutral?'active':''}" onclick="_playSetNeutral(true)" title="No home-support bonus applied">⚖ Neutral</button>
+          </div>
+        </div>
       </div>
       ${_playMode==='manual'?_playManualHTML():''}
       <button class="play-go" onclick="_playGo()" ${canPlay?'':'disabled'}>${_playMode==='sim'?'▶ Play match':'✓ Record result'}</button>
@@ -1653,6 +1663,7 @@ function _playSetAway(v){_playAway=v;_playResult=null;renderPlayView();}
 function _playSwap(){const t=_playHome;_playHome=_playAway;_playAway=t;_playResult=null;renderPlayView();}
 function _playSetType(t){_playType=t;_playResult=null;renderPlayView();}
 function _playSetMode(m){_playMode=m;_playResult=null;renderPlayView();}
+function _playSetNeutral(n){_playNeutral=!!n;_playResult=null;renderPlayView();}
 
 // Zero-pads an unset manual input so the result is always a valid integer.
 function _playManualInt(k){const v=parseInt(_playManual[k]);return isNaN(v)||v<0?0:v;}
@@ -1664,10 +1675,10 @@ function _playGo(){
   const aSk=teamSkillsFor(_playAway,halfS);
   let h1=null,a1=null,h2=null,a2=null,het=null,aet=null,hpen=null,apen=null;
   if(_playMode==='sim'){
-    ({h1,a1,h2,a2}=simulateHalves(hSk,aSk));
+    ({h1,a1,h2,a2}=simulateHalves(hSk,aSk,_playNeutral));
     if(_playType===1&&(h1+h2)===(a1+a2)){
-      ({het,aet}=simulateExtraTime(hSk,aSk));
-      if(het===aet)({hpen,apen}=simulatePenalties(hSk,aSk));
+      ({het,aet}=simulateExtraTime(hSk,aSk,_playNeutral));
+      if(het===aet)({hpen,apen}=simulatePenalties(hSk,aSk,_playNeutral));
     }
   } else {
     h1=_playManualInt('h1');a1=_playManualInt('a1');
