@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.3</title>
+<title>League Manager v2026.04.17.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -331,7 +331,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -897,6 +897,10 @@ function switchView(v){
   renderView();
 }
 function renderView(){
+  // Keep the nav pill highlight in sync with currentView (handles the initial
+  // render where the HTML has a hardcoded `active` class that may not match).
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('ntab-'+currentView)?.classList.add('active');
   if(currentView==='league')renderLeagueView();
   else if(currentView==='calendar')renderCalendarView();
   else if(currentView==='teams')renderTeamsView();
@@ -1080,13 +1084,13 @@ function matchRowHTML(row,c,season){
     <div class="m-row">
       <div class="m-side home">
         <span class="m-name">${esc(home.name)}</span>
-        ${hl?`<div class="m-logo"><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}">${esc(home.id.slice(0,2).toUpperCase())}</div>`}
+        ${hl?`<div class="m-logo" style="background:#fff"><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}">${esc(home.id.slice(0,2).toUpperCase())}</div>`}
       </div>
       <div class="m-stripe" style="background:${safeColor(home.color)}"></div>
       <div class="${scoreCls}">${esc(scoreTxt)}</div>
       <div class="m-stripe" style="background:${safeColor(away.color)}"></div>
       <div class="m-side away">
-        ${al?`<div class="m-logo"><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}">${esc(away.id.slice(0,2).toUpperCase())}</div>`}
+        ${al?`<div class="m-logo" style="background:#fff"><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}">${esc(away.id.slice(0,2).toUpperCase())}</div>`}
         <span class="m-name">${esc(away.name)}</span>
       </div>
     </div>
@@ -1274,7 +1278,7 @@ function renderLeagueStandings(info){
       const logo=logoFor(t.id,currentInfo?.season||seasonFor(currentInfo?.date||''));
       html+=`<tr>
         <td><span class="pos-badge ${pc}">${pos}</span></td>
-        <td><div class="team-cell"><div class="team-badge-sm" style="background:${safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
+        <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
         <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
         <td class="n">${t.gf}</td><td class="n">${t.ga}</td><td class="n">${gd}</td><td class="pts">${t.pts}</td>
       </tr>`;
@@ -1411,7 +1415,7 @@ function renderTeamsView(){
     const found=fi>=0?row[fi]:'';
     const logo=logoFor(id,null);
     html+=`<div class="team-card">
-      <div class="team-card-logo" style="background:${safeColor(color)}">${logo?`<img src="${logo}" alt="">`:esc((name||id).slice(0,3).toUpperCase())}</div>
+      <div class="team-card-logo" style="background:${logo?'#fff':safeColor(color)}">${logo?`<img src="${logo}" alt="">`:esc((name||id).slice(0,3).toUpperCase())}</div>
       <div class="team-card-name">${esc(name)}</div>
       <div class="team-card-id">${esc(longName&&longName!==name?longName:id)}</div>
       <div class="team-card-meta">
@@ -1485,7 +1489,7 @@ function renderResultsView(){
         <td class="rpos"><span class="rpos-badge ${badgeCls}">${place||'—'}</span></td>
         <td>
           <div class="res-team-cell">
-            <div class="res-team-badge" style="background:${safeColor(team.color)}">${logo?`<img src="${logo}" alt="">`:esc((team.name||teamId).slice(0,3).toUpperCase())}</div>
+            <div class="res-team-badge" style="background:${logo?'#fff':safeColor(team.color)}">${logo?`<img src="${logo}" alt="">`:esc((team.name||teamId).slice(0,3).toUpperCase())}</div>
             ${esc(team.name)}
           </div>
         </td>
