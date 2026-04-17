@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.6</title>
+<title>League Manager v2026.04.17.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -195,7 +195,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 /* TEAMS VIEW */
 .teams-wrap{max-width:1100px;margin:0 auto;padding:20px 16px;}
-.teams-search{display:flex;align-items:center;gap:10px;margin:0 -16px 14px;padding:12px 16px;position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--border);backdrop-filter:blur(6px);}
+.teams-search{display:flex;align-items:center;gap:10px;margin:0 -16px 14px;padding:12px 16px;position:sticky;top:calc(var(--hdr) + var(--nav));z-index:30;background:var(--bg);border-bottom:1px solid var(--border);}
 .teams-search-input{flex:1;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--r2);background:var(--surface);color:var(--text);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
 .teams-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,107,58,.18);}
 .teams-search-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
@@ -335,7 +335,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -740,19 +740,31 @@ function rebuildTeamMap(){
   if(ii<0)return;
   d.r.forEach(row=>{
     const id=row[ii];if(!id)return;
-    const fullName=(ni>=0&&row[ni])||'';
-    const longName=(lni>=0&&row[lni])||'';
+    const rawFull=(ni>=0&&row[ni])||'';
+    const rawLong=(lni>=0&&row[lni])||'';
+    const {full,long}=splitTeamNames(rawFull,rawLong);
     _teamMap.set(id,{
       id,
-      full_name:fullName,
-      long_name:longName,
+      full_name:full,
+      long_name:long,
       // `name` is what non-Teams views display: prefer long_name, fall back to full_name, then id
-      name:longName||fullName||id,
+      name:long||full||id,
       color:resolveColor(ci>=0?row[ci]:'',id,0),
       color2:resolveColor(c2>=0?row[c2]:'',id,1),
       color3:resolveColor(c3>=0?row[c3]:'',id,2)
     });
   });
+}
+// The full_name column may hold "Short, Long Official Name" — first part is the
+// short/full name, second part is the long name. If long_name column is filled
+// separately, that takes precedence and no split happens.
+function splitTeamNames(rawFull,rawLong){
+  const long=String(rawLong||'').trim();
+  const s=String(rawFull||'').trim();
+  if(long)return{full:s,long};
+  const idx=s.indexOf(',');
+  if(idx>0)return{full:s.slice(0,idx).trim(),long:s.slice(idx+1).trim()};
+  return{full:s,long:''};
 }
 function teamById(id){
   if(!_teamMap)rebuildTeamMap();
@@ -1417,9 +1429,11 @@ function _collectTeamCards(){
   const fi=d.h.indexOf('foundation');
   return d.r.map(row=>{
     const id=ii>=0?row[ii]:'';
-    const fullName=(ni>=0&&row[ni])||'';
-    const longName=lni>=0?row[lni]:'';
-    const displayName=fullName||longName||id||'?';
+    const rawFull=(ni>=0&&row[ni])||'';
+    const rawLong=lni>=0?row[lni]:'';
+    // Split "Short, Long" inside full_name cell, unless long_name column is separately filled.
+    const {full,long}=splitTeamNames(rawFull,rawLong);
+    const displayName=full||long||id||'?';
     const color=resolveColor(ci>=0?row[ci]:'',id,0);
     const color2=resolveColor(c2>=0?row[c2]:'',id,1);
     const color3=resolveColor(c3>=0?row[c3]:'',id,2);
@@ -1428,7 +1442,7 @@ function _collectTeamCards(){
     const found=fi>=0?row[fi]:'';
     const logo=logoFor(id,null);
     // Blob of searchable text — lowercased once so filtering stays cheap per keystroke.
-    const searchBlob=[id,fullName,longName,stadium,loc,found].join(' ').toLowerCase();
+    const searchBlob=[id,full,long,stadium,loc,found].join(' ').toLowerCase();
     return {id,displayName,color,color2,color3,stadium,loc,found,logo,searchBlob};
   });
 }
