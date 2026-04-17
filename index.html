@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.4</title>
+<title>League Manager v2026.04.17.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -195,6 +195,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 /* TEAMS VIEW */
 .teams-wrap{max-width:1100px;margin:0 auto;padding:20px 16px;}
+.teams-search{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.teams-search-input{flex:1;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--r2);background:var(--surface);color:var(--text);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
+.teams-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,107,58,.18);}
+.teams-search-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
 .teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;transition:border-color .15s;position:relative;}
 .team-card:hover{border-color:var(--border2);}
@@ -331,7 +335,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -736,10 +740,14 @@ function rebuildTeamMap(){
   if(ii<0)return;
   d.r.forEach(row=>{
     const id=row[ii];if(!id)return;
+    const fullName=(ni>=0&&row[ni])||'';
+    const longName=(lni>=0&&row[lni])||'';
     _teamMap.set(id,{
       id,
-      name:(ni>=0&&row[ni])||(lni>=0&&row[lni])||id,
-      long_name:(lni>=0&&row[lni])||'',
+      full_name:fullName,
+      long_name:longName,
+      // `name` is what non-Teams views display: prefer long_name, fall back to full_name, then id
+      name:longName||fullName||id,
       color:resolveColor(ci>=0?row[ci]:'',id,0),
       color2:resolveColor(c2>=0?row[c2]:'',id,1),
       color3:resolveColor(c3>=0?row[c3]:'',id,2)
@@ -748,7 +756,7 @@ function rebuildTeamMap(){
 }
 function teamById(id){
   if(!_teamMap)rebuildTeamMap();
-  return _teamMap.get(id)||{id,name:id,color:'#1a6b3a',color2:'',color3:''};
+  return _teamMap.get(id)||{id,name:id,full_name:'',long_name:'',color:'#1a6b3a',color2:'',color3:''};
 }
 function objRow(name,row){const h=DB[name].h;const o={};h.forEach((k,i)=>o[k]=row[i]??'');return o;}
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1388,12 +1396,17 @@ function renderCalendarGrid(){
 // ══════════════════════════════════════════════════════════════
 //  TEAMS VIEW
 // ══════════════════════════════════════════════════════════════
-function renderTeamsView(){
+// The Teams page shows the short `full_name` on each card (no long_name here).
+// Other views — League, Calendar, Results, match rows — display long_name via
+// teamById().name. The page also has a live search box that filters cards on
+// every keystroke across id / full_name / long_name / stadium / location /
+// foundation. Re-rendering is split in two so typing never loses focus:
+//   renderTeamsView()       → paints search bar + empty grid container
+//   _renderTeamsGrid()      → fills the grid (called on keystrokes too)
+let _teamsQuery='';
+
+function _collectTeamCards(){
   const d=DB.teams;
-  const app=document.getElementById('app');
-  if(!d.r.length){
-    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
-  }
   const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
   const ni=d.h.findIndex(h=>h==='name'||h==='team_name'||h==='team_names'||h==='full_name');
   const lni=d.h.indexOf('long_name');
@@ -1402,11 +1415,11 @@ function renderTeamsView(){
   const sti=d.h.findIndex(h=>h==='stadium'||h==='stadion');
   const li=d.h.indexOf('location');
   const fi=d.h.indexOf('foundation');
-  let html='<div class="teams-wrap"><div class="teams-grid">';
-  d.r.forEach(row=>{
+  return d.r.map(row=>{
     const id=ii>=0?row[ii]:'';
-    const name=(ni>=0&&row[ni])||(lni>=0&&row[lni])||id||'?';
+    const fullName=(ni>=0&&row[ni])||'';
     const longName=lni>=0?row[lni]:'';
+    const displayName=fullName||longName||id||'?';
     const color=resolveColor(ci>=0?row[ci]:'',id,0);
     const color2=resolveColor(c2>=0?row[c2]:'',id,1);
     const color3=resolveColor(c3>=0?row[c3]:'',id,2);
@@ -1414,24 +1427,65 @@ function renderTeamsView(){
     const loc=li>=0?row[li]:'';
     const found=fi>=0?row[fi]:'';
     const logo=logoFor(id,null);
-    html+=`<div class="team-card">
-      <div class="team-card-logo" style="background:${logo?'#fff':safeColor(color)}">${logo?`<img src="${logo}" alt="">`:esc((name||id).slice(0,3).toUpperCase())}</div>
-      <div class="team-card-name">${esc(name)}</div>
-      <div class="team-card-id">${esc(longName&&longName!==name?longName:id)}</div>
-      <div class="team-card-meta">
-        ${stadium?`🏟 ${esc(stadium)}<br>`:''}
-        ${loc?`📍 ${esc(loc)}<br>`:''}
-        ${found?`📅 Est. ${esc(found)}`:''}
-      </div>
-      <div class="team-card-colors">
-        ${color?`<div class="tcc-dot" style="background:${safeColor(color)}" title="Primary"></div>`:''}
-        ${color2?`<div class="tcc-dot" style="background:${safeColor(color2)}" title="Secondary"></div>`:''}
-        ${color3?`<div class="tcc-dot" style="background:${safeColor(color3)}" title="Tertiary"></div>`:''}
-      </div>
-    </div>`;
+    // Blob of searchable text — lowercased once so filtering stays cheap per keystroke.
+    const searchBlob=[id,fullName,longName,stadium,loc,found].join(' ').toLowerCase();
+    return {id,displayName,color,color2,color3,stadium,loc,found,logo,searchBlob};
   });
-  html+='</div></div>';
-  app.innerHTML=html;
+}
+
+function _renderTeamsGrid(){
+  const grid=document.getElementById('teamsGrid');
+  const countEl=document.getElementById('teamsSearchCount');
+  if(!grid)return;
+  const all=_collectTeamCards();
+  const q=_teamsQuery.trim().toLowerCase();
+  const filtered=q?all.filter(c=>c.searchBlob.includes(q)):all;
+  if(countEl)countEl.textContent=q?`${filtered.length} / ${all.length}`:`${all.length}`;
+  if(!filtered.length){
+    grid.innerHTML='<div class="empty" style="grid-column:1/-1">No teams match that search.</div>';
+    return;
+  }
+  grid.innerHTML=filtered.map(c=>`<div class="team-card">
+    <div class="team-card-logo" style="background:${c.logo?'#fff':safeColor(c.color)}">${c.logo?`<img src="${c.logo}" alt="">`:esc((c.displayName||c.id).slice(0,3).toUpperCase())}</div>
+    <div class="team-card-name">${esc(c.displayName)}</div>
+    <div class="team-card-id">${esc(c.id)}</div>
+    <div class="team-card-meta">
+      ${c.stadium?`🏟 ${esc(c.stadium)}<br>`:''}
+      ${c.loc?`📍 ${esc(c.loc)}<br>`:''}
+      ${c.found?`📅 Est. ${esc(c.found)}`:''}
+    </div>
+    <div class="team-card-colors">
+      ${c.color?`<div class="tcc-dot" style="background:${safeColor(c.color)}" title="Primary"></div>`:''}
+      ${c.color2?`<div class="tcc-dot" style="background:${safeColor(c.color2)}" title="Secondary"></div>`:''}
+      ${c.color3?`<div class="tcc-dot" style="background:${safeColor(c.color3)}" title="Tertiary"></div>`:''}
+    </div>
+  </div>`).join('');
+}
+
+function _onTeamsSearch(v){
+  _teamsQuery=v;
+  _renderTeamsGrid();
+}
+
+function renderTeamsView(){
+  const d=DB.teams;
+  const app=document.getElementById('app');
+  if(!d.r.length){
+    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
+  }
+  app.innerHTML=`<div class="teams-wrap">
+    <div class="teams-search">
+      <input type="text" id="teamsSearchInput" class="teams-search-input"
+             placeholder="🔍 Search teams by name, id, stadium, location…"
+             value="${esc(_teamsQuery)}" oninput="_onTeamsSearch(this.value)">
+      <span class="teams-search-count" id="teamsSearchCount"></span>
+    </div>
+    <div id="teamsGrid" class="teams-grid"></div>
+  </div>`;
+  _renderTeamsGrid();
+  // Auto-focus so the user can start typing immediately; place cursor at end if there is an existing query.
+  const inp=document.getElementById('teamsSearchInput');
+  if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
 }
 
 // ══════════════════════════════════════════════════════════════
