@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.19.2</title>
+<title>League Manager v2026.04.19.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2051,11 +2051,12 @@ function _prevSeasonStr(s){
 }
 function _placeToTeamMap(season){
   const d=DB.results;
-  const si=d.h.indexOf('season'),ci=d.h.indexOf('competition'),pi=d.h.indexOf('place'),ti=d.h.indexOf('team_id');
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id');
   const map=new Map();
   if(si<0||pi<0||ti<0)return map;
   // Prefer competition='overall' rows; fall back to any row with that (season, place).
-  const rowsForSeason=d.r.filter(r=>r[si]===season);
+  const rowsForSeason=d.r.filter(r=>String(r[si]||'').trim()===season);
   // First pass: set 'overall' rows
   rowsForSeason.forEach(r=>{
     const comp=ci>=0?String(r[ci]||'').toLowerCase():'';
@@ -2072,26 +2073,29 @@ function _placeToTeamMap(season){
 }
 function _roundsToDateMap(targetSeason){
   const d=DB.calendar;
-  // Accept either `round` (singular, current schema) or `rounds` (draw-style) as the key column.
-  const ri=d.h.findIndex(h=>h==='rounds'||h==='round');
-  const di=d.h.indexOf('date');
-  const si=d.h.indexOf('season');
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  // Accept either `rounds` (plural, matching draw.csv) or `round` (singular) as the key column.
+  const ri=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='rounds'||n==='round';});
+  const di=_hi('date');
+  const si=_hi('season');
   const map=new Map();
   if(ri<0)return map;
   d.r.forEach(r=>{
-    const key=r[ri];if(!key)return;
-    if(targetSeason&&si>=0&&r[si]&&r[si]!==targetSeason)return;
-    map.set(key,{date:di>=0?(r[di]||''):''});
+    const key=String(r[ri]||'').trim();if(!key)return;
+    const rowSeason=si>=0?String(r[si]||'').trim():'';
+    if(targetSeason&&rowSeason&&rowSeason!==targetSeason)return;
+    const rawDate=di>=0?String(r[di]||'').trim():'';
+    map.set(key,{date:normalizeDate(rawDate)||rawDate});
   });
   return map;
 }
 function _stadiumForTeam(teamId){
   if(!teamId)return'';
   const d=DB.teams;
-  const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
-  const si=d.h.findIndex(h=>h==='stadium'||h==='stadion');
+  const ii=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='id'||n==='team_id';});
+  const si=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='stadium'||n==='stadion';});
   if(ii<0||si<0)return'';
-  const row=d.r.find(r=>r[ii]===teamId);
+  const row=d.r.find(r=>String(r[ii]||'').trim()===teamId);
   return row?String(row[si]||'').trim():'';
 }
 
@@ -2145,12 +2149,16 @@ async function generateSeasonFromDraw(targetSeason){
   });
 
   const totalRows=newRows.length;
+  const rowsWithDate=newRows.filter(r=>{
+    const di=DB.matches.h.indexOf('date');return di>=0&&String(r[di]||'').trim();
+  }).length;
   const placesSample=[...unresolvedPlaces].slice(0,10).join(', ');
   const roundsSample=[...unresolvedRounds].slice(0,10).join(', ');
   const lines=[
     `Generate ${totalRows} match rows for season ${targetSeason}?`,
     `Using ${prev} results to resolve places (${placeMap.size} places resolved).`,
-    `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`
+    `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`,
+    `Rows with a date filled: ${rowsWithDate} / ${totalRows}.`
   ];
   if(unresolvedPlaces.size)lines.push(`⚠ ${unresolvedPlaces.size} unresolved place(s): ${placesSample}${unresolvedPlaces.size>10?'…':''}`);
   if(unresolvedRounds.size)lines.push(`⚠ ${unresolvedRounds.size} unresolved round(s): ${roundsSample}${unresolvedRounds.size>10?'…':''}`);
@@ -2189,9 +2197,10 @@ function renderResultsView(){
     </div></div>`;
     return;
   }
-  const si=rd.h.indexOf('season'),compi=rd.h.indexOf('competition'),pli=rd.h.indexOf('place'),tidi=rd.h.indexOf('team_id');
+  const _hi=(name)=>rd.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const si=_hi('season'),compi=_hi('competition'),pli=_hi('place'),tidi=_hi('team_id');
   const allSeasons=[...new Set(rd.r.map(r=>si>=0?r[si]:''))].filter(Boolean).sort().reverse();
-  if(!_resultsSeason||!allSeasons.includes(_resultsSeason))_resultsSeason=allSeasons[0];
+  if(!_resultsSeason||!allSeasons.includes(_resultsSeason))_resultsSeason=allSeasons[0]||'';
   const seasonRows=rd.r.filter(r=>si<0||r[si]===_resultsSeason);
   const byComp={};
   seasonRows.forEach(row=>{
