@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.10</title>
+<title>League Manager v2026.04.17.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -442,6 +442,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     <div class="etab"        id="etab-calendar"    onclick="edSwitchTab('calendar')">Calendar</div>
     <div class="etab"        id="etab-results"     onclick="edSwitchTab('results')">Results</div>
     <div class="etab"        id="etab-team_skills" onclick="edSwitchTab('team_skills')">Team Skills</div>
+    <div class="etab"        id="etab-draw"        onclick="edSwitchTab('draw')">Draw</div>
     <div class="etab"        id="etab-state"       onclick="edSwitchTab('state')">State</div>
   </div>
   <div class="editor-toolbar">
@@ -495,6 +496,7 @@ const DB={
   calendar:   {h:[],r:[],fid:null},
   results:    {h:[],r:[],fid:null},
   team_skills:{h:[],r:[],fid:null},
+  draw:       {h:[],r:[],fid:null},
   state:      {h:[],r:[],fid:null}
 };
 const ED_DEFAULTS={
@@ -503,6 +505,7 @@ const ED_DEFAULTS={
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
+  draw:       ['rounds','level','match_type','match_number','home_team_place','away_team_place'],
   state:      ['key','value']
 };
 
