@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.17.11</title>
+<title>League Manager v2026.04.19.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.17.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -457,6 +457,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
     </label>
     <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="tbtn" onclick="_promptGenerateSeason()" title="Join draw.csv + calendar.csv + previous-season results → matches.csv">🆕 Generate Season</button>
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
     </div>
@@ -2026,6 +2027,152 @@ async function _playSaveToMatches(){
   }catch(e){
     if(typeof toast==='function')toast('⚠ Save failed: '+(e.message||e));
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SEASON GENERATOR — draw.csv + calendar.csv + previous results → matches.csv
+// ══════════════════════════════════════════════════════════════
+// Builds one matches.csv row per draw.csv row for a given target season.
+//  • home_team_place / away_team_place are overall positions 1..80 from the
+//    previous season's final table — resolved via results.csv with
+//    season=<prev> and a preferred competition='overall'.
+//  • rounds joins directly to calendar.csv to fill `date` for the target
+//    season. Rows whose round has no calendar entry for this season are
+//    written with date blank and reported in the preview.
+//  • stadion_name defaults to the home team's stadium (from teams.csv) for
+//    match_type ∈ {0, 1, 2}. For match_type == 11 (neutral) we leave it blank
+//    so the user can pick the venue manually.
+//  • All score / random columns are left empty — they get populated when the
+//    match is played.
+function _prevSeasonStr(s){
+  const m=String(s||'').match(/^(\d{4})_(\d{2})$/);if(!m)return'';
+  const y=parseInt(m[1])-1;
+  return`${y}_${String((y+1)%100).padStart(2,'0')}`;
+}
+function _placeToTeamMap(season){
+  const d=DB.results;
+  const si=d.h.indexOf('season'),ci=d.h.indexOf('competition'),pi=d.h.indexOf('place'),ti=d.h.indexOf('team_id');
+  const map=new Map();
+  if(si<0||pi<0||ti<0)return map;
+  // Prefer competition='overall' rows; fall back to any row with that (season, place).
+  const rowsForSeason=d.r.filter(r=>r[si]===season);
+  // First pass: set 'overall' rows
+  rowsForSeason.forEach(r=>{
+    const comp=ci>=0?String(r[ci]||'').toLowerCase():'';
+    if(comp!=='overall')return;
+    const p=parseInt(r[pi]);if(isNaN(p))return;
+    map.set(p,r[ti]);
+  });
+  // Second pass: fill any missing places from other competitions (defensive fallback)
+  rowsForSeason.forEach(r=>{
+    const p=parseInt(r[pi]);if(isNaN(p))return;
+    if(!map.has(p))map.set(p,r[ti]);
+  });
+  return map;
+}
+function _roundsToDateMap(targetSeason){
+  const d=DB.calendar;
+  // Accept either `round` (singular, current schema) or `rounds` (draw-style) as the key column.
+  const ri=d.h.findIndex(h=>h==='rounds'||h==='round');
+  const di=d.h.indexOf('date');
+  const si=d.h.indexOf('season');
+  const map=new Map();
+  if(ri<0)return map;
+  d.r.forEach(r=>{
+    const key=r[ri];if(!key)return;
+    if(targetSeason&&si>=0&&r[si]&&r[si]!==targetSeason)return;
+    map.set(key,{date:di>=0?(r[di]||''):''});
+  });
+  return map;
+}
+function _stadiumForTeam(teamId){
+  if(!teamId)return'';
+  const d=DB.teams;
+  const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
+  const si=d.h.findIndex(h=>h==='stadium'||h==='stadion');
+  if(ii<0||si<0)return'';
+  const row=d.r.find(r=>r[ii]===teamId);
+  return row?String(row[si]||'').trim():'';
+}
+
+async function generateSeasonFromDraw(targetSeason){
+  if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
+  const prev=_prevSeasonStr(targetSeason);
+  if(!prev){toast('Target season must be YYYY_YY format','err');return;}
+  ensureMatchCols();
+
+  const d=DB.draw;
+  if(!d.r.length){toast('draw.csv is empty','warn');return;}
+  const ri=d.h.indexOf('rounds'),li=d.h.indexOf('level'),mti=d.h.indexOf('match_type'),
+        mni=d.h.indexOf('match_number'),hpi=d.h.indexOf('home_team_place'),api=d.h.indexOf('away_team_place');
+  if(ri<0||hpi<0||api<0){toast('draw.csv is missing required columns','err');return;}
+
+  const placeMap=_placeToTeamMap(prev);
+  const calMap=_roundsToDateMap(targetSeason);
+
+  const unresolvedPlaces=new Set();
+  const unresolvedRounds=new Set();
+  const newRows=[];
+  const matchCols=DB.matches.h;
+
+  d.r.forEach(drawRow=>{
+    const rounds=String(drawRow[ri]||'').trim();
+    const level=li>=0?String(drawRow[li]||'').trim():'';
+    const mt=mti>=0?String(drawRow[mti]||'0').trim():'0';
+    const mn=mni>=0?String(drawRow[mni]||'').trim():'';
+    const hp=parseInt(drawRow[hpi]);
+    const ap=parseInt(drawRow[api]);
+
+    const homeId=isNaN(hp)?'':(placeMap.get(hp)||'');
+    const awayId=isNaN(ap)?'':(placeMap.get(ap)||'');
+    if(!homeId&&!isNaN(hp))unresolvedPlaces.add(hp);
+    if(!awayId&&!isNaN(ap))unresolvedPlaces.add(ap);
+
+    const cal=rounds?calMap.get(rounds):null;
+    if(rounds&&!cal)unresolvedRounds.add(rounds);
+
+    const stadium=(mt==='11')?'':_stadiumForTeam(homeId);
+
+    const rowObj={
+      date:cal?cal.date:'',
+      rounds,level,match_type:mt,match_number:mn,
+      stadion_name:stadium,
+      home_id:homeId,home_place:isNaN(hp)?'':String(hp),
+      away_id:awayId,away_place:isNaN(ap)?'':String(ap)
+      // everything else (scores + rand columns) defaults to ''
+    };
+    newRows.push(matchCols.map(c=>rowObj[c]!==undefined?rowObj[c]:''));
+  });
+
+  const totalRows=newRows.length;
+  const placesSample=[...unresolvedPlaces].slice(0,10).join(', ');
+  const roundsSample=[...unresolvedRounds].slice(0,10).join(', ');
+  const lines=[
+    `Generate ${totalRows} match rows for season ${targetSeason}?`,
+    `Using ${prev} results to resolve places (${placeMap.size} places resolved).`,
+    `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`
+  ];
+  if(unresolvedPlaces.size)lines.push(`⚠ ${unresolvedPlaces.size} unresolved place(s): ${placesSample}${unresolvedPlaces.size>10?'…':''}`);
+  if(unresolvedRounds.size)lines.push(`⚠ ${unresolvedRounds.size} unresolved round(s): ${roundsSample}${unresolvedRounds.size>10?'…':''}`);
+  if(unresolvedPlaces.size||unresolvedRounds.size)lines.push('(Unresolved fields will be written blank — you can fix them in the editor.)');
+  lines.push('','This APPENDS to matches.csv.');
+
+  if(!confirm(lines.join('\n')))return;
+
+  newRows.forEach(r=>DB.matches.r.push(r));
+  try{
+    await saveSheet('matches');
+    toast(`✅ Generated ${totalRows} match rows for ${targetSeason}`);
+    if(typeof edRender==='function')edRender();
+    if(typeof renderView==='function')renderView();
+  }catch(e){
+    toast('⚠ Save failed: '+(e.message||e),'err');
+  }
+}
+function _promptGenerateSeason(){
+  const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
+  const input=prompt('Target season to generate (format YYYY_YY, e.g. 2000_01):',def||'2000_01');
+  if(input)generateSeasonFromDraw(String(input).trim());
 }
 
 // ══════════════════════════════════════════════════════════════
