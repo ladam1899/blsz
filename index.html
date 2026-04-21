@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.19.3</title>
+<title>League Manager v2026.04.19.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -447,6 +447,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   </div>
   <div class="editor-toolbar">
     <button class="tbtn primary" onclick="edAddRow()">➕ Add Row</button>
+    <button class="tbtn"         onclick="edSelectAll()" title="Select every row in this sheet">☑ Select All</button>
     <button class="tbtn danger"  onclick="edDelSel()">🗑 Delete</button>
     <button class="tbtn"         onclick="edUndo()">↩ Undo</button>
     <div class="tsep"></div>
@@ -502,7 +503,7 @@ const DB={
 };
 const ED_DEFAULTS={
   teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation'],
-  matches:    ['date','rounds','level','match_number','stadion_name','home_id','home_place','away_id','away_place','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
+  matches:    ['date','rounds','level','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
@@ -974,6 +975,12 @@ function matchColIdx(){
 function ensureMatchCols(){
   const d=DB.matches;
   const needed=ED_DEFAULTS.matches;
+  // Remove legacy columns that are no longer part of the schema.
+  const legacy=['home_place','away_place'];
+  legacy.forEach(col=>{
+    const i=d.h.indexOf(col);
+    if(i>=0){d.h.splice(i,1);d.r.forEach(r=>r.splice(i,1));}
+  });
   needed.forEach(col=>{
     if(!d.h.includes(col)){d.h.push(col);d.r.forEach(r=>r.push(''));}
   });
@@ -2141,8 +2148,9 @@ async function generateSeasonFromDraw(targetSeason){
       date:cal?cal.date:'',
       rounds,level,match_type:mt,match_number:mn,
       stadion_name:stadium,
-      home_id:homeId,home_place:isNaN(hp)?'':String(hp),
-      away_id:awayId,away_place:isNaN(ap)?'':String(ap)
+      home_id:homeId,
+      away_id:awayId
+      // places are used only to look up team_ids; they are NOT written to matches.csv
       // everything else (scores + rand columns) defaults to ''
     };
     newRows.push(matchCols.map(c=>rowObj[c]!==undefined?rowObj[c]:''));
@@ -2494,6 +2502,19 @@ function edDelSel(){
   edPushH();const del=new Set(edSelected);
   DB[edTab].r=DB[edTab].r.filter((_,i)=>!del.has(i));
   edSelected.clear();_lastSel=undefined;edModified+=del.size;edSchedSave();edRender();
+}
+function edSelectAll(){
+  const d=DB[edTab];
+  if(!d||!d.r.length){toast('Nothing to select','warn');return;}
+  // Respect the current search filter: select only the rows currently visible.
+  const q=(document.getElementById('edSearch')?.value||'').trim().toLowerCase();
+  edSelected.clear();
+  d.r.forEach((row,i)=>{
+    if(!q||row.some(v=>String(v??'').toLowerCase().includes(q)))edSelected.add(i);
+  });
+  _lastSel=undefined;
+  edRender();
+  toast(`Selected ${edSelected.size} row${edSelected.size===1?'':'s'}`,'');
 }
 function edPushH(){edHistory.push({tab:edTab,h:[...DB[edTab].h],r:DB[edTab].r.map(r=>[...r])});if(edHistory.length>50)edHistory.shift();}
 function edUndo(){
