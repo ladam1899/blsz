@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.6</title>
+<title>League Manager v2026.04.21.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -68,13 +68,22 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 /* LEAGUE VIEW — DATE BAR */
 .lg-wrap{max-width:1180px;margin:0 auto;padding:18px 16px;}
-.date-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+.date-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;position:sticky;top:calc(var(--hdr) + var(--nav) + 2px);z-index:30;box-shadow:0 1px 0 rgba(0,0,0,.03);}
 .db-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:2px;}
 .db-sel{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);outline:none;cursor:pointer;font-family:'Inter',sans-serif;}
 .db-sel:focus{border-color:var(--green);}
+.db-search{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);outline:none;font-family:'Inter',sans-serif;min-width:220px;flex:1 1 220px;max-width:360px;}
+.db-search:focus{border-color:var(--green);}
+.db-search::-webkit-search-cancel-button{cursor:pointer;}
+.db-date{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text);outline:none;font-family:'JetBrains Mono',monospace;width:140px;}
+.db-date:focus{border-color:var(--green);}
+.db-gen{background:var(--blue);color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
+.db-gen:hover{background:#2563c7;}
 .db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
 .db-now:hover{background:var(--green-m);}
 .db-current{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);padding:4px 10px;background:var(--green-l);border-radius:4px;}
+.rc-group-hdr{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;color:var(--muted);padding:10px 10px 4px;border-top:1px solid var(--border);margin-top:6px;}
+.rc-group-hdr:first-child{border-top:none;margin-top:0;}
 
 /* LEAGUE VIEW — ROUND CARD */
 .lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start;}
@@ -108,7 +117,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .rc-body{padding:10px 12px;}
 
 /* MATCH ROW (league view) */
-.m-row{display:grid;grid-template-columns:1fr 22px 72px 22px 1fr;align-items:center;gap:6px;padding:8px 8px;border-radius:6px;transition:background .1s;}
+.m-row{display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;gap:10px;padding:8px 8px;border-radius:6px;transition:background .1s;}
 .m-row + .m-row{border-top:1px dashed var(--border);}
 .m-row:hover{background:var(--surface2);}
 .m-side{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;min-width:0;}
@@ -420,7 +429,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -490,7 +499,6 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
     </label>
     <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="tbtn" onclick="_promptGenerateSeason()" title="Join draw.csv + calendar.csv + previous-season results → matches.csv">🆕 Generate Season</button>
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
     </div>
@@ -556,7 +564,7 @@ const logoCache={}; // { teamId: { current: blobUrl, byS: { "2001_02": blobUrl }
 
 // ── LEAGUE VIEW STATE ───────────────────────────────────────
 let lgSelRound=null;        // round under focus (null = current)
-let lgFilter={season:'',year:'',month:''}; // date-bar filter
+let lgFilter={season:'',year:'',month:'',roundType:'',roundNum:'',search:''}; // date-bar filter
 
 const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -1172,11 +1180,67 @@ function _lgRoundStatus(info,cur){
   if(info.date>cur)return'future';
   return'current';
 }
+// Split a round code like "MB-B-1" / "CHL-Q1-1" into {type, num}. Returns
+// null when the code doesn't end in "-<integer>".
+function _lgRoundTypeAndNumber(round){
+  const m=String(round||'').match(/^(.+)-(\d+)$/);
+  if(!m)return null;
+  return{type:m[1],num:m[2]};
+}
 function _lgFilterRounds(all){
+  const cur=currentDate();
+  const mbrGateBySeason={};
+  const mbbPresentInSeason={};
+  // Pre-compute, per season, whether MB-B is present and whether all its rounds
+  // are strictly in the past (date < current_date).
+  const collectSeason=(season)=>{
+    if(season in mbrGateBySeason)return;
+    const mbb=all.filter(x=>{
+      if(season&&x.season&&x.season!==season)return false;
+      const p=_lgRoundTypeAndNumber(x.round);
+      return p&&p.type==='MB-B';
+    });
+    mbbPresentInSeason[season]=mbb.length>0;
+    mbrGateBySeason[season]=mbb.length>0&&mbb.every(x=>x.date<cur);
+  };
+  const q=String(lgFilter.search||'').trim().toLowerCase();
+  const c=_lgMatchCols();
+  const matchesByRound={};
+  const roundHasTextHit=(rnd)=>{
+    if(!q)return true;
+    if(rnd in matchesByRound)return matchesByRound[rnd];
+    if(c.rounds<0){matchesByRound[rnd]=false;return false;}
+    const rows=DB.matches.r.filter(x=>String(x[c.rounds]||'').trim()===rnd);
+    for(const row of rows){
+      for(const cell of row){
+        if(String(cell||'').toLowerCase().includes(q)){matchesByRound[rnd]=true;return true;}
+      }
+      // Also check resolved home / away team names so searching for a team name works.
+      if(c.home>=0){const h=teamById(String(row[c.home]||''));if(h&&String(h.name||'').toLowerCase().includes(q)){matchesByRound[rnd]=true;return true;}}
+      if(c.away>=0){const a=teamById(String(row[c.away]||''));if(a&&String(a.name||'').toLowerCase().includes(q)){matchesByRound[rnd]=true;return true;}}
+    }
+    matchesByRound[rnd]=false;
+    return false;
+  };
   return all.filter(r=>{
     if(lgFilter.season&&r.season!==lgFilter.season)return false;
     if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
+    const parsed=_lgRoundTypeAndNumber(r.round);
+    if(lgFilter.roundType&&(!parsed||parsed.type!==lgFilter.roundType))return false;
+    if(lgFilter.roundNum&&(!parsed||String(parsed.num)!==String(lgFilter.roundNum)))return false;
+    // Hide MB-R rounds for a season until every MB-B round for that season
+    // is strictly in the past on the current timeline.
+    if(parsed&&parsed.type==='MB-R'){
+      collectSeason(r.season||'');
+      if(mbbPresentInSeason[r.season||'']&&!mbrGateBySeason[r.season||''])return false;
+    }
+    // Free-text search matches the round code itself, the competition column,
+    // the date, the season, or any cell in any matches.csv row for this round.
+    if(q){
+      const hay=[r.round,r.competition,r.date,r.season,formatDate(r.date)].map(x=>String(x||'').toLowerCase()).join(' | ');
+      if(!hay.includes(q)&&!roundHasTextHit(r.round))return false;
+    }
     return true;
   });
 }
@@ -1191,24 +1255,48 @@ function renderLeagueView(){
   const app=document.getElementById('app');
   const curDate=currentDate();
   const allRounds=_lgCalendarRounds();
-  const current=_lgCurrentRound(allRounds,curDate);
-  // Anchor = user-picked round (from Rounds selector) or the time-based current round
+  const visible=_lgFilterRounds(allRounds);
+  const current=_lgCurrentRound(visible.length?visible:allRounds,curDate);
+
+  // Anchor = user-picked round (from Round dropdowns) or time-based current.
   let anchor=current;
   if(lgSelRound&&lgSelRound.key){
-    const hit=allRounds.find(r=>r.key===lgSelRound.key);
+    const hit=visible.find(r=>r.key===lgSelRound.key)||allRounds.find(r=>r.key===lgSelRound.key);
+    if(hit)anchor=hit;
+  } else if(lgFilter.roundType&&lgFilter.roundNum){
+    // Both type and number are set — anchor to the first matching round.
+    const hit=visible[0];
     if(hit)anchor=hit;
   }
 
   const allSeasons=[...new Set(allRounds.map(r=>r.season))].filter(Boolean).sort();
   const allYears=[...new Set(allRounds.map(r=>r.date.slice(0,4)))].filter(Boolean).sort();
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const curLabel=`Current: ${formatDate(curDate)}`;
 
-  const visible=_lgFilterRounds(allRounds);
-  const roundsSelOpts=visible.map(r=>{
-    const lbl=`${r.competition} · ${r.round} · ${formatDate(r.date)}`;
-    const sel=(lgSelRound&&lgSelRound.key===r.key)||(!lgSelRound&&anchor&&anchor.key===r.key);
-    return`<option value="${esc(r.key)}"${sel?' selected':''}>${esc(lbl)}</option>`;
+  // Build round-type and round-number option sets, respecting the other
+  // filters (season/year/month and, conditionally, the companion dropdown).
+  const baseForRounds=allRounds.filter(r=>{
+    if(lgFilter.season&&r.season!==lgFilter.season)return false;
+    if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
+    if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
+    return true;
+  });
+  const typeSet=new Set();
+  baseForRounds.forEach(r=>{const p=_lgRoundTypeAndNumber(r.round);if(p)typeSet.add(p.type);});
+  const typeOpts=[...typeSet].sort();
+  const numSet=new Set();
+  baseForRounds.forEach(r=>{
+    const p=_lgRoundTypeAndNumber(r.round);if(!p)return;
+    if(lgFilter.roundType&&p.type!==lgFilter.roundType)return;
+    numSet.add(p.num);
+  });
+  const numOpts=[...numSet].sort((a,b)=>parseInt(a)-parseInt(b));
+
+  // Datelist of available calendar dates for the current_date jumper.
+  const dateOpts=[...new Set(allRounds.map(r=>r.date))].sort();
+  const dateSelOpts=dateOpts.map(d=>{
+    const sel=d===curDate?' selected':'';
+    return`<option value="${esc(d)}"${sel}>${esc(d)} · ${esc(formatDate(d))}</option>`;
   }).join('');
 
   app.innerHTML=`<div class="lg-wrap">
@@ -1228,13 +1316,25 @@ function renderLeagueView(){
         <option value="">All</option>
         ${monthNames.map((m,i)=>{const mm=String(i+1).padStart(2,'0');return`<option value="${mm}"${lgFilter.month===mm?' selected':''}>${m}</option>`;}).join('')}
       </select>
-      <span class="db-label">Round</span>
-      <select class="db-sel db-sel-rnd" onchange="lgPickRound(this.value)">
-        <option value="">— pick —</option>
-        ${roundsSelOpts}
+      <span class="db-label">Type</span>
+      <select class="db-sel" onchange="lgFilterChange('roundType',this.value)">
+        <option value="">All</option>
+        ${typeOpts.map(t=>`<option value="${esc(t)}"${lgFilter.roundType===t?' selected':''}>${esc(t)}</option>`).join('')}
       </select>
-      <span class="db-current">${esc(curLabel)}</span>
-      <button class="db-now" onclick="lgGoCurrent()">↺ Current</button>
+      <span class="db-label">Round</span>
+      <select class="db-sel" onchange="lgFilterChange('roundNum',this.value)">
+        <option value="">All</option>
+        ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
+      </select>
+      <span class="db-label">Date</span>
+      <select class="db-sel" onchange="lgJumpToDate(this.value)" title="Jump current_date to a round">
+        <option value="">— jump —</option>
+        ${dateSelOpts}
+      </select>
+      <input type="date" class="db-date" value="${esc(curDate)}" onchange="lgSetCurrentDate(this.value)" title="Set current_date manually">
+      <input type="search" class="db-search" placeholder="🔍 Search teams, rounds, notes…" value="${esc(lgFilter.search||'')}" oninput="lgSearchChange(this.value)" title="Search match info — team name, notes, stadium, round code, date…">
+      <button class="db-gen" onclick="lgPromptGenerate()" title="Generate a season from draw.csv">🆕 Generate</button>
+      <button class="db-now" onclick="lgGoCurrent()">↺ Reset</button>
     </div>
     <div class="lg-cols">
       <div class="lg-rounds-scroll" id="lgRoundsScroll"></div>
@@ -1244,7 +1344,7 @@ function renderLeagueView(){
 
   const scroll=document.getElementById('lgRoundsScroll');
   if(!visible.length){
-    scroll.innerHTML=`<div class="round-card"><div class="rc-body"><div class="empty" style="padding:30px 16px;font-size:13px">No rounds match these filters.<br><small>Try clearing Season/Year/Month, or add rows in ⚙ Data Editor → Calendar (date in <b>YYYY-MM-DD</b> format).</small></div></div></div>`;
+    scroll.innerHTML=`<div class="round-card"><div class="rc-body"><div class="empty" style="padding:30px 16px;font-size:13px">No rounds match these filters.<br><small>Try clearing filters (↺ Reset), or add rows in ⚙ Data Editor → Calendar (date in <b>YYYY-MM-DD</b> format).</small></div></div></div>`;
   } else {
     scroll.innerHTML=visible.map(r=>renderLeagueRoundCardHTML(r,curDate,anchor)).join('');
   }
@@ -1260,7 +1360,21 @@ function renderLeagueView(){
 }
 
 function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
-function lgGoCurrent(){lgFilter={season:'',year:'',month:''};lgSelRound=null;renderLeagueView();}
+function lgGoCurrent(){lgFilter={season:'',year:'',month:'',roundType:'',roundNum:'',search:''};lgSelRound=null;renderLeagueView();}
+let _lgSearchT=null;
+function lgSearchChange(v){
+  clearTimeout(_lgSearchT);
+  _lgSearchT=setTimeout(()=>{lgFilter.search=String(v||'').trim();lgSelRound=null;renderLeagueView();},180);
+}
+function lgSetCurrentDate(d){
+  const iso=normalizeDate(d);if(!iso){toast('Invalid date','warn');return;}
+  setState('current_date',iso,true);
+  lgSelRound=null;
+  toast(`Current date → ${iso}`,'');
+  renderLeagueView();
+}
+function lgJumpToDate(d){if(!d)return;lgSetCurrentDate(d);}
+function lgPromptGenerate(){if(typeof _promptGenerateSeason==='function')_promptGenerateSeason();else toast('Generate Season not available','warn');}
 function lgPickRound(key){
   if(!key){lgSelRound=null;renderLeagueView();return;}
   lgSelRound={key};
@@ -1350,9 +1464,7 @@ function matchRowHTML(row,c,season,reveal){
         <span class="m-name">${esc(home.name)}</span>
         ${hl?`<div class="m-logo" style="background:#fff"><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}">${esc((home.id||'').slice(0,2).toUpperCase())}</div>`}
       </div>
-      <div class="m-stripe" style="background:${safeColor(home.color)}"></div>
       <div class="${scoreCls}">${esc(scoreTxt)}</div>
-      <div class="m-stripe" style="background:${safeColor(away.color)}"></div>
       <div class="m-side away">
         ${al?`<div class="m-logo" style="background:#fff"><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}">${esc((away.id||'').slice(0,2).toUpperCase())}</div>`}
         <span class="m-name">${esc(away.name)}</span>
@@ -1391,82 +1503,91 @@ async function advanceToNextRound(){
 }
 
 // ── STANDINGS (right sidebar) ─────────────────────────────────
-// Standings are scoped to the anchor round's `level` (e.g. group "1M") and
-// cover every match whose round date is strictly before the current_date —
-// i.e. rounds that are fully behind us on the timeline.
+// Render ONE standings table per distinct `level` that appears in the
+// anchor round's matches (e.g. 1M, 1N, 2A, 2B, 2C). Each table uses every
+// match in that level whose round date is strictly before current_date.
 function renderLeagueStandings(anchor){
   const el=document.getElementById('lgSide');
   if(!el)return;
   if(!anchor){el.innerHTML='';return;}
   const c=_lgMatchCols();
+  if(c.rounds<0){el.innerHTML='';return;}
 
-  // Look up the anchor round's level via matches.csv.
-  let anchorLevel='';
-  if(c.rounds>=0&&c.level>=0){
-    const row=DB.matches.r.find(r=>String(r[c.rounds]||'').trim()===anchor.round);
-    if(row)anchorLevel=String(row[c.level]||'').trim();
-  }
+  // Distinct levels in the anchor round, in first-seen order.
+  const anchorRows=DB.matches.r.filter(r=>String(r[c.rounds]||'').trim()===anchor.round);
+  const levels=[];
+  const seen=new Set();
+  anchorRows.forEach(r=>{
+    const lv=c.level>=0?String(r[c.level]||'').trim():'';
+    if(lv&&!seen.has(lv)){seen.add(lv);levels.push(lv);}
+  });
+  if(!levels.length)levels.push(''); // no level column → single unnamed table
 
+  // Round → date map, needed to gate "past" rounds.
   const curDate=currentDate();
   const all=_lgCalendarRounds();
   const dateByRound={};
   all.forEach(r=>{if(!dateByRound[r.round])dateByRound[r.round]=r.date;});
 
-  const levelRows=(c.level>=0&&anchorLevel)
-    ?DB.matches.r.filter(r=>String(r[c.level]||'').trim()===anchorLevel)
-    :[];
-
-  const included=levelRows.filter(r=>{
-    if(c.rounds<0)return false;
-    const rnd=String(r[c.rounds]||'').trim();
-    const d=dateByRound[rnd];
-    if(!d)return false;
-    return d<curDate; // only past rounds count
-  });
-
-  const stats={};
-  included.forEach(r=>{
-    const h=c.home>=0?String(r[c.home]||''):'';
-    const a=c.away>=0?String(r[c.away]||''):'';
-    if(!h||!a)return;
-    [h,a].forEach(id=>{if(!stats[id]){const t=teamById(id);stats[id]={id,name:t.name,color:t.color,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
-    const hs=c.hs>=0?parseInt(r[c.hs]):NaN,as=c.as>=0?parseInt(r[c.as]):NaN;
-    if(isNaN(hs)||isNaN(as))return;
-    stats[h].p++;stats[a].p++;stats[h].gf+=hs;stats[h].ga+=as;stats[a].gf+=as;stats[a].ga+=hs;
-    if(hs>as){stats[h].w++;stats[h].pts+=3;stats[a].l++;}
-    else if(hs<as){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
-    else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
-  });
-  const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
-
   const col=compColor(anchor.competition);
   const season=anchor.season||seasonFor(anchor.date);
-  let html=`<div class="lg-side-card">
-    <div class="lg-side-hdr">
-      <div class="side-dot"><span class="comp-dot" style="background:${safeColor(col)}"></span>Standings${anchorLevel?' · '+esc(anchorLevel):''}</div>
-      <div class="side-count">${table.length} team${table.length===1?'':'s'}</div>
-    </div>`;
-  if(!table.length){
-    html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet for this level.</div>`;
-  } else {
-    html+=`<table class="st-table">
-      <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
-      <tbody>`;
-    table.forEach((t,i)=>{
-      const pos=i+1,total=table.length;
-      const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
-      const gd=(t.gd>0?'+':'')+t.gd;
-      const logo=logoFor(t.id,season);
-      html+=`<tr>
-        <td><span class="pos-badge ${pc}">${pos}</span></td>
-        <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
-        <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
-        <td class="n">${gd}</td><td class="pts">${t.pts}</td>
-      </tr>`;
+
+  const buildTable=(level)=>{
+    const rows=(c.level>=0&&level)
+      ?DB.matches.r.filter(r=>String(r[c.level]||'').trim()===level)
+      :DB.matches.r;
+    const included=rows.filter(r=>{
+      const rnd=String(r[c.rounds]||'').trim();
+      const d=dateByRound[rnd];
+      if(!d)return false;
+      return d<curDate;
     });
-    html+=`</tbody></table>`;
-  }
-  html+=`</div>`;
+    const stats={};
+    included.forEach(r=>{
+      const h=c.home>=0?String(r[c.home]||''):'';
+      const a=c.away>=0?String(r[c.away]||''):'';
+      if(!h||!a)return;
+      [h,a].forEach(id=>{if(!stats[id]){const t=teamById(id);stats[id]={id,name:t.name,color:t.color,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
+      const hs=c.hs>=0?parseInt(r[c.hs]):NaN,aS=c.as>=0?parseInt(r[c.as]):NaN;
+      if(isNaN(hs)||isNaN(aS))return;
+      stats[h].p++;stats[a].p++;stats[h].gf+=hs;stats[h].ga+=aS;stats[a].gf+=aS;stats[a].ga+=hs;
+      if(hs>aS){stats[h].w++;stats[h].pts+=3;stats[a].l++;}
+      else if(hs<aS){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
+      else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
+    });
+    return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+  };
+
+  let html='';
+  levels.forEach(level=>{
+    const table=buildTable(level);
+    html+=`<div class="lg-side-card">
+      <div class="lg-side-hdr">
+        <div class="side-dot"><span class="comp-dot" style="background:${safeColor(col)}"></span>Standings${level?' · '+esc(level):''}</div>
+        <div class="side-count">${table.length} team${table.length===1?'':'s'}</div>
+      </div>`;
+    if(!table.length){
+      html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet${level?' in '+esc(level):''}.</div>`;
+    } else {
+      html+=`<table class="st-table">
+        <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+        <tbody>`;
+      table.forEach((t,i)=>{
+        const pos=i+1,total=table.length;
+        const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
+        const gd=(t.gd>0?'+':'')+t.gd;
+        const logo=logoFor(t.id,season);
+        html+=`<tr>
+          <td><span class="pos-badge ${pc}">${pos}</span></td>
+          <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
+          <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
+          <td class="n">${gd}</td><td class="pts">${t.pts}</td>
+        </tr>`;
+      });
+      html+=`</tbody></table>`;
+    }
+    html+=`</div>`;
+  });
   el.innerHTML=html;
 }
 
