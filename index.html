@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.19.6</title>
+<title>League Manager v2026.04.21.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -459,6 +459,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     </label>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="_promptGenerateSeason()" title="Join draw.csv + calendar.csv + previous-season results → matches.csv">🆕 Generate Season</button>
+      <button class="tbtn" onclick="fillDatesFromCalendar()" title="Backfill matches.csv DATE by joining rounds against calendar.csv">📅 Fill Dates</button>
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
     </div>
@@ -2057,36 +2058,90 @@ function _prevSeasonStr(s){
 }
 function _placeToTeamMap(season){
   const d=DB.results;
-  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id');
   const map=new Map();
+  if(!d||!d.r.length)return map;
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  let si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id');
+  // Build the list of rows to scan. If the header is missing or malformed,
+  // treat every row (including the first one that was parsed as header) as data
+  // and fall back to positional detection: season looks like YYYY_YY, place looks
+  // like an integer, team_id is the last non-numeric non-season cell.
+  let rows=d.r;
+  const seasonRe=/^\d{4}_\d{2}$/;
+  const firstMissing=(si<0||pi<0||ti<0);
+  if(firstMissing){
+    console.warn('[placeMap] headers not found by name, falling back to positional detection. headers were:',d.h);
+    // If the header row itself looks like data (e.g. "1999_00"), include it.
+    const headerLooksLikeData=d.h.some(v=>seasonRe.test(String(v||'').trim()))||d.h.some(v=>/^\d+$/.test(String(v||'').trim()));
+    if(headerLooksLikeData)rows=[d.h.slice(),...d.r];
+    // Sniff column positions from the first data row that mentions this season.
+    const sniffRow=rows.find(r=>r.some(v=>String(v||'').trim()===season))||rows[0];
+    if(sniffRow){
+      sniffRow.forEach((v,idx)=>{
+        const s=String(v||'').trim();
+        if(si<0&&seasonRe.test(s))si=idx;
+        else if(pi<0&&/^\d+$/.test(s)&&s!==''&&idx!==si)pi=idx;
+      });
+      // team_id = first non-season, non-numeric cell (excluding competition if identified)
+      sniffRow.forEach((v,idx)=>{
+        if(ti>=0)return;
+        const s=String(v||'').trim();
+        if(idx===si||idx===pi||idx===ci)return;
+        if(!s)return;
+        if(seasonRe.test(s))return;
+        if(/^\d+$/.test(s))return;
+        // If it looks like a short alpha code (e.g. 'MB'), skip — probably competition
+        if(ci<0&&/^[A-Za-z]{1,3}$/.test(s)){ci=idx;return;}
+        ti=idx;
+      });
+      console.warn('[placeMap] positional guess → season:',si,'competition:',ci,'place:',pi,'team_id:',ti);
+    }
+  }
   if(si<0||pi<0||ti<0)return map;
-  // Prefer competition='overall' rows; fall back to any row with that (season, place).
-  const rowsForSeason=d.r.filter(r=>String(r[si]||'').trim()===season);
-  // First pass: set 'overall' rows
+  const rowsForSeason=rows.filter(r=>String(r[si]||'').trim()===season);
+  // First pass: 'overall' or 'MB' rows (whole-league rankings)
   rowsForSeason.forEach(r=>{
-    const comp=ci>=0?String(r[ci]||'').toLowerCase():'';
-    if(comp!=='overall')return;
+    const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
+    if(comp!=='overall'&&comp!=='mb')return;
     const p=parseInt(r[pi]);if(isNaN(p))return;
-    map.set(p,r[ti]);
+    map.set(p,String(r[ti]||'').trim());
   });
   // Second pass: fill any missing places from other competitions (defensive fallback)
   rowsForSeason.forEach(r=>{
     const p=parseInt(r[pi]);if(isNaN(p))return;
-    if(!map.has(p))map.set(p,r[ti]);
+    const tid=String(r[ti]||'').trim();if(!tid)return;
+    if(!map.has(p))map.set(p,tid);
   });
   return map;
 }
 function _roundsToDateMap(targetSeason){
   const d=DB.calendar;
-  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  // Accept either `rounds` (plural, matching draw.csv) or `round` (singular) as the key column.
-  const ri=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='rounds'||n==='round';});
-  const di=_hi('date');
-  const si=_hi('season');
   const map=new Map();
+  if(!d||!d.r.length)return map;
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  // Accept any of `rounds` / `round` / `game_day` / `round_key` as the key column.
+  let ri=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='rounds'||n==='round'||n==='round_key';});
+  let di=_hi('date');
+  let si=_hi('season');
+  let rows=d.r;
+  // If we couldn't find a rounds key column, try positional sniffing: look for a
+  // column whose values look like draw codes (e.g. MB-B-1) — i.e. match /[A-Z]+-[A-Z]+-\d+/.
+  if(ri<0){
+    console.warn('[calMap] rounds/round header not found, sniffing positionally. headers were:',d.h);
+    const headerLooksLikeData=d.h.some(v=>/[A-Za-z]+-[A-Za-z0-9]+-\d+/.test(String(v||'').trim()));
+    if(headerLooksLikeData)rows=[d.h.slice(),...d.r];
+    const sample=rows[0]||[];
+    sample.forEach((v,idx)=>{
+      if(ri<0&&/[A-Za-z]+-[A-Za-z0-9]+-\d+/.test(String(v||'').trim()))ri=idx;
+    });
+    // Date column = any cell that looks like an ISO date (YYYY-MM-DD) or dd/mm/yyyy
+    sample.forEach((v,idx)=>{
+      if(di<0&&/^\d{4}-\d{2}-\d{2}$|^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(String(v||'').trim()))di=idx;
+    });
+    console.warn('[calMap] positional guess → rounds:',ri,'date:',di,'season:',si);
+  }
   if(ri<0)return map;
-  d.r.forEach(r=>{
+  rows.forEach(r=>{
     const key=String(r[ri]||'').trim();if(!key)return;
     const rowSeason=si>=0?String(r[si]||'').trim():'';
     if(targetSeason&&rowSeason&&rowSeason!==targetSeason)return;
@@ -2179,7 +2234,7 @@ async function generateSeasonFromDraw(targetSeason){
   const lines=[
     `Generate ${totalRows} match rows for season ${targetSeason}?`,
     `Using ${prev} results to resolve places (${placeMap.size} places resolved).`,
-    placeMap.size?`Sample place→team_id: ${mapSample}${placeMap.size>6?'…':''}`:`⚠ placeMap is EMPTY — no rows in results.csv with season='${prev}' resolved. Check results sheet season & team_id columns.`,
+    placeMap.size?`Sample place→team_id: ${mapSample}${placeMap.size>6?'…':''}`:`⚠ placeMap is EMPTY — no ${prev} rows resolved. results.csv headers: [${DB.results.h.join(', ')}]. First row: [${(DB.results.r[0]||[]).join(', ')}]. Check that your results sheet has a header row with 'season, competition, place, team_id'.`,
     `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`,
     `Rows filled: date=${rowsWithDate}/${totalRows}, home_id=${rowsWithHomeId}/${totalRows}, away_id=${rowsWithAwayId}/${totalRows}`
   ];
@@ -2199,6 +2254,49 @@ async function generateSeasonFromDraw(targetSeason){
   }catch(e){
     toast('⚠ Save failed: '+(e.message||e),'err');
   }
+}
+async function fillDatesFromCalendar(){
+  ensureMatchCols();
+  const m=DB.matches;
+  if(!m.r.length){toast('matches.csv is empty','warn');return;}
+  const mri=m.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='rounds'||n==='round';});
+  const mdi=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  if(mri<0){toast('matches.csv has no rounds/round column','err');return;}
+  if(mdi<0){toast('matches.csv has no date column','err');return;}
+  // Build calendar map that ignores season filtering — we just need rounds→date.
+  const calMap=_roundsToDateMap('');
+  if(!calMap.size){
+    toast(`calendar.csv produced no rounds→date mapping. headers: [${DB.calendar.h.join(', ')}]`,'err');
+    console.warn('[fillDates] calendar headers:',DB.calendar.h,'first row:',DB.calendar.r[0]);
+    return;
+  }
+  let filled=0,already=0,missing=0;
+  const missingRounds=new Set();
+  m.r.forEach(r=>{
+    const key=String(r[mri]||'').trim();
+    const cur=String(r[mdi]||'').trim();
+    if(cur){already++;return;}
+    const cal=calMap.get(key);
+    if(cal&&cal.date){r[mdi]=cal.date;filled++;}
+    else{missing++;missingRounds.add(key);}
+  });
+  const missSample=[...missingRounds].slice(0,10).join(', ');
+  const msg=[
+    `Fill Dates summary:`,
+    `• Filled: ${filled}`,
+    `• Already had a date: ${already}`,
+    `• Still missing: ${missing}${missing?` (rounds: ${missSample}${missingRounds.size>10?'…':''})`:''}`,
+    '',
+    filled?`Save ${filled} updated date(s) to matches.csv?`:'Nothing to save.'
+  ].join('\n');
+  console.log('[fillDates] calMap size:',calMap.size,'sample:',[...calMap.entries()].slice(0,6));
+  if(!filled){alert(msg);edRender();return;}
+  if(!confirm(msg)){return;}
+  try{
+    await saveSheet('matches');
+    toast(`✅ Filled ${filled} date(s)`);
+    edRender();if(typeof renderView==='function')renderView();
+  }catch(e){toast('⚠ Save failed: '+(e.message||e),'err');}
 }
 function _promptGenerateSeason(){
   const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
