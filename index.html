@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.7</title>
+<title>League Manager v2026.04.21.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -89,7 +89,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start;}
 @media(max-width:900px){.lg-cols{grid-template-columns:1fr;}}
 .lg-rounds-scroll{display:flex;flex-direction:column;gap:14px;min-width:0;}
-.lg-side{position:sticky;top:calc(var(--hdr) + var(--nav) + 18px);display:flex;flex-direction:column;gap:14px;}
+.lg-side{position:sticky;top:calc(var(--hdr) + var(--nav) + 18px);display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - var(--hdr) - var(--nav) - 40px);overflow-y:auto;padding-right:4px;}
+.lg-side-group-hdr{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.08em;color:var(--text);padding:4px 4px 2px;border-top:2px solid var(--border);margin-top:6px;display:flex;align-items:baseline;gap:8px;}
+.lg-side-group-hdr:first-child{border-top:none;margin-top:0;}
+.lg-side-group-hdr .lg-side-season{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.03em;}
 .round-card.past{opacity:.82;}
 .round-card.future{opacity:.72;}
 .round-card.current{border:2px solid var(--green);box-shadow:0 0 0 4px rgba(26,107,58,.12);}
@@ -429,7 +432,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1283,6 +1286,25 @@ function renderLeagueView(){
   });
   const typeSet=new Set();
   baseForRounds.forEach(r=>{const p=_lgRoundTypeAndNumber(r.round);if(p)typeSet.add(p.type);});
+  // Also surface any round-types that exist in matches.csv but aren't (yet)
+  // in calendar.csv, so e.g. MB-R shows up even if only MB-B is dated.
+  const mc=_lgMatchCols();
+  const mDateOk=(row)=>{
+    if(!lgFilter.season&&!lgFilter.year&&!lgFilter.month)return true;
+    const d=mc.date>=0?normalizeDate(row[mc.date]):'';
+    if(!d)return true; // undateable matches row — don't exclude it
+    if(lgFilter.season&&seasonFor(d)!==lgFilter.season)return false;
+    if(lgFilter.year&&!d.startsWith(lgFilter.year))return false;
+    if(lgFilter.month&&d.slice(5,7)!==lgFilter.month)return false;
+    return true;
+  };
+  if(mc.rounds>=0){
+    DB.matches.r.forEach(row=>{
+      const rnd=String(row[mc.rounds]||'').trim();if(!rnd)return;
+      if(!mDateOk(row))return;
+      const p=_lgRoundTypeAndNumber(rnd);if(p)typeSet.add(p.type);
+    });
+  }
   const typeOpts=[...typeSet].sort();
   const numSet=new Set();
   baseForRounds.forEach(r=>{
@@ -1290,6 +1312,15 @@ function renderLeagueView(){
     if(lgFilter.roundType&&p.type!==lgFilter.roundType)return;
     numSet.add(p.num);
   });
+  if(mc.rounds>=0){
+    DB.matches.r.forEach(row=>{
+      const rnd=String(row[mc.rounds]||'').trim();if(!rnd)return;
+      if(!mDateOk(row))return;
+      const p=_lgRoundTypeAndNumber(rnd);if(!p)return;
+      if(lgFilter.roundType&&p.type!==lgFilter.roundType)return;
+      numSet.add(p.num);
+    });
+  }
   const numOpts=[...numSet].sort((a,b)=>parseInt(a)-parseInt(b));
 
   // Datelist of available calendar dates for the current_date jumper.
@@ -1503,9 +1534,11 @@ async function advanceToNextRound(){
 }
 
 // ── STANDINGS (right sidebar) ─────────────────────────────────
-// Render ONE standings table per distinct `level` that appears in the
-// anchor round's matches (e.g. 1M, 1N, 2A, 2B, 2C). Each table uses every
-// match in that level whose round date is strictly before current_date.
+// Render one standings table per distinct (round-type, level) group that
+// appears in the anchor's season — so MB-B groups (1M/1N/2A/…) AND MB-R
+// groups (I/II/III/…) both show up, each under its round-type header.
+// Every table counts matches whose round date is strictly before
+// current_date (past-only).
 function renderLeagueStandings(anchor){
   const el=document.getElementById('lgSide');
   if(!el)return;
@@ -1513,33 +1546,49 @@ function renderLeagueStandings(anchor){
   const c=_lgMatchCols();
   if(c.rounds<0){el.innerHTML='';return;}
 
-  // Distinct levels in the anchor round, in first-seen order.
-  const anchorRows=DB.matches.r.filter(r=>String(r[c.rounds]||'').trim()===anchor.round);
-  const levels=[];
-  const seen=new Set();
-  anchorRows.forEach(r=>{
-    const lv=c.level>=0?String(r[c.level]||'').trim():'';
-    if(lv&&!seen.has(lv)){seen.add(lv);levels.push(lv);}
-  });
-  if(!levels.length)levels.push(''); // no level column → single unnamed table
-
-  // Round → date map, needed to gate "past" rounds.
+  // Round → date map (from calendar.csv) + matches.csv `date` fallback.
   const curDate=currentDate();
   const all=_lgCalendarRounds();
   const dateByRound={};
   all.forEach(r=>{if(!dateByRound[r.round])dateByRound[r.round]=r.date;});
+  if(c.date>=0){
+    DB.matches.r.forEach(row=>{
+      const rnd=String(row[c.rounds]||'').trim();if(!rnd||dateByRound[rnd])return;
+      const d=normalizeDate(row[c.date]);if(d)dateByRound[rnd]=d;
+    });
+  }
+
+  const anchorSeason=anchor.season||seasonFor(anchor.date)||'';
+
+  // Build groups = { roundType → [level, level, …] } from every matches.csv
+  // row that belongs to the anchor's season.
+  const groups={};          // type → Set of levels
+  const typeOrder=[];       // first-seen ordering
+  DB.matches.r.forEach(r=>{
+    const rnd=String(r[c.rounds]||'').trim();if(!rnd)return;
+    const p=_lgRoundTypeAndNumber(rnd);if(!p)return;
+    const d=dateByRound[rnd]||(c.date>=0?normalizeDate(r[c.date]):'');
+    if(anchorSeason&&d&&seasonFor(d)!==anchorSeason)return;
+    const lv=c.level>=0?String(r[c.level]||'').trim():'';
+    if(!groups[p.type]){groups[p.type]=new Set();typeOrder.push(p.type);}
+    groups[p.type].add(lv);
+  });
+  if(!typeOrder.length){el.innerHTML='';return;}
 
   const col=compColor(anchor.competition);
-  const season=anchor.season||seasonFor(anchor.date);
+  const season=anchorSeason;
 
-  const buildTable=(level)=>{
-    const rows=(c.level>=0&&level)
-      ?DB.matches.r.filter(r=>String(r[c.level]||'').trim()===level)
-      :DB.matches.r;
-    const included=rows.filter(r=>{
-      const rnd=String(r[c.rounds]||'').trim();
-      const d=dateByRound[rnd];
+  const buildTable=(type,level)=>{
+    const included=DB.matches.r.filter(r=>{
+      const rnd=String(r[c.rounds]||'').trim();if(!rnd)return false;
+      const p=_lgRoundTypeAndNumber(rnd);if(!p||p.type!==type)return false;
+      if(c.level>=0){
+        const lv=String(r[c.level]||'').trim();
+        if((level||'')!==(lv||''))return false;
+      }
+      const d=dateByRound[rnd]||(c.date>=0?normalizeDate(r[c.date]):'');
       if(!d)return false;
+      if(anchorSeason&&seasonFor(d)!==anchorSeason)return false;
       return d<curDate;
     });
     const stats={};
@@ -1558,35 +1607,45 @@ function renderLeagueStandings(anchor){
     return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
   };
 
+  const sortLevels=(arr)=>arr.slice().sort((a,b)=>{
+    const an=parseInt(a),bn=parseInt(b);
+    if(!isNaN(an)&&!isNaN(bn)&&an!==bn)return an-bn;
+    return String(a).localeCompare(String(b),'hu');
+  });
+
   let html='';
-  levels.forEach(level=>{
-    const table=buildTable(level);
-    html+=`<div class="lg-side-card">
-      <div class="lg-side-hdr">
-        <div class="side-dot"><span class="comp-dot" style="background:${safeColor(col)}"></span>Standings${level?' · '+esc(level):''}</div>
-        <div class="side-count">${table.length} team${table.length===1?'':'s'}</div>
-      </div>`;
-    if(!table.length){
-      html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet${level?' in '+esc(level):''}.</div>`;
-    } else {
-      html+=`<table class="st-table">
-        <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
-        <tbody>`;
-      table.forEach((t,i)=>{
-        const pos=i+1,total=table.length;
-        const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
-        const gd=(t.gd>0?'+':'')+t.gd;
-        const logo=logoFor(t.id,season);
-        html+=`<tr>
-          <td><span class="pos-badge ${pc}">${pos}</span></td>
-          <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
-          <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
-          <td class="n">${gd}</td><td class="pts">${t.pts}</td>
-        </tr>`;
-      });
-      html+=`</tbody></table>`;
-    }
-    html+=`</div>`;
+  typeOrder.forEach(type=>{
+    const levels=sortLevels([...groups[type]]);
+    html+=`<div class="lg-side-group-hdr">${esc(type)} · <span class="lg-side-season">${esc(seasonLabel(season))}</span></div>`;
+    levels.forEach(level=>{
+      const table=buildTable(type,level);
+      html+=`<div class="lg-side-card">
+        <div class="lg-side-hdr">
+          <div class="side-dot"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(type)}${level?' · '+esc(level):''}</div>
+          <div class="side-count">${table.length} team${table.length===1?'':'s'}</div>
+        </div>`;
+      if(!table.length){
+        html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet${level?' in '+esc(level):''}.</div>`;
+      } else {
+        html+=`<table class="st-table">
+          <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+          <tbody>`;
+        table.forEach((t,i)=>{
+          const pos=i+1,total=table.length;
+          const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
+          const gd=(t.gd>0?'+':'')+t.gd;
+          const logo=logoFor(t.id,season);
+          html+=`<tr>
+            <td><span class="pos-badge ${pc}">${pos}</span></td>
+            <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
+            <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
+            <td class="n">${gd}</td><td class="pts">${t.pts}</td>
+          </tr>`;
+        });
+        html+=`</tbody></table>`;
+      }
+      html+=`</div>`;
+    });
   });
   el.innerHTML=html;
 }
