@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.4</title>
+<title>League Manager v2026.04.21.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -402,7 +402,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -899,9 +899,16 @@ function teamSkillsFor(teamId,halfSeason){
   if(!d.h.length||!d.r.length)return defaultSkills();
   const ti=d.h.indexOf('team_id'),hsi=d.h.indexOf('half_season');
   if(ti<0)return defaultSkills();
-  // Prefer exact half_season match, fall back to any row for the team
+  // Lookup order:
+  //   1. exact half-season match
+  //   2. if requested half is spring (YYYY_YY_S), fall back to same-season autumn (YYYY_YY_A)
+  //   3. any row for this team (last-resort)
   let row=null;
   if(hsi>=0&&halfSeason)row=d.r.find(r=>r[ti]===teamId&&r[hsi]===halfSeason);
+  if(!row&&hsi>=0&&halfSeason&&/_S$/.test(halfSeason)){
+    const autumn=halfSeason.replace(/_S$/,'_A');
+    row=d.r.find(r=>r[ti]===teamId&&r[hsi]===autumn);
+  }
   if(!row)row=d.r.find(r=>r[ti]===teamId);
   if(!row)return defaultSkills();
   const num=(name)=>{const i=d.h.indexOf(name);const v=i>=0?parseFloat(row[i]):NaN;return isNaN(v)?0:v;};
@@ -2241,6 +2248,178 @@ function _prevSeasonStr(s){
   const y=parseInt(m[1])-1;
   return`${y}_${String((y+1)%100).padStart(2,'0')}`;
 }
+// ── PLACE-TOKEN PARSER ─────────────────────────────────────────
+// draw.csv `home_team_place` / `away_team_place` values can be:
+//   • a plain integer (MB-B base rows → previous-season overall place)
+//   • "H<digit>"       → running standings of CURRENT row's level (H0=10)
+//   • "4K|4NY|4É|4D [N]" → one of the user-picked MB-4 groups (place defaults to 1)
+//   • "1M 7" / "1N 3" / "2A 2" / "2B 5" / "2C 4" / "3NY 1" / "3K 2" / "3É 3" / "3D 4"
+//                       → final table lookup of that MB-B group
+//   • "III 2" / "VII 5" / … → running standings of that MB-R roman-numeral level
+function _parsePlaceToken(tok){
+  const s=String(tok==null?'':tok).trim();
+  if(!s)return null;
+  if(/^\d+$/.test(s))return{kind:'prev_overall',place:parseInt(s)};
+  const h=s.match(/^[Hh]([0-9])$/);
+  if(h)return{kind:'running_h',place:h[1]==='0'?10:parseInt(h[1])};
+  const m4=s.match(/^(4K|4NY|4É|4D)(?:\s+(\d+))?$/);
+  if(m4)return{kind:'mb4',group:m4[1],place:m4[2]?parseInt(m4[2]):1};
+  const mg=s.match(/^(1M|1N|2A|2B|2C|3NY|3K|3É|3D)\s+(\d+)$/);
+  if(mg)return{kind:'mbb_group',group:mg[1],place:parseInt(mg[2])};
+  const mr=s.match(/^(I|II|III|IV|V|VI|VII|VIII|IX|X)\s+(\d+)$/);
+  if(mr)return{kind:'mbr_roman',level:mr[1],place:parseInt(mr[2])};
+  return null;
+}
+
+// Shared standings-from-matches.csv builder. Scans DB.matches.r and aggregates
+// wins/draws/losses/goals for every row where the given predicate returns true.
+// Sorted by pts desc → gd desc → gf desc.
+function _tableForMatches(predicate){
+  const m=DB.matches;
+  const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_hi('rounds'),li=_hi('level'),hi=_hi('home_id'),ai=_hi('away_id');
+  const hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  const out=[];
+  if(ri<0||hi<0||ai<0||hsi<0||asi<0)return out;
+  const stats={};
+  m.r.forEach(row=>{
+    const rnd=String(row[ri]||'').trim();
+    const lvl=li>=0?String(row[li]||'').trim():'';
+    if(!predicate({rounds:rnd,level:lvl,row}))return;
+    const h=String(row[hi]||'').trim(),a=String(row[ai]||'').trim();
+    if(!h||!a)return;
+    const hs=parseInt(row[hsi]),as=parseInt(row[asi]);
+    if(isNaN(hs)||isNaN(as))return;
+    if(!stats[h])stats[h]={id:h,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+    if(!stats[a])stats[a]={id:a,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+    stats[h].p++;stats[a].p++;stats[h].gf+=hs;stats[h].ga+=as;stats[a].gf+=as;stats[a].ga+=hs;
+    if(hs>as){stats[h].w++;stats[h].pts+=3;stats[a].l++;}
+    else if(hs<as){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
+    else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
+  });
+  return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga}))
+    .sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+}
+
+// MB-B final table for a single group (level = '1M' / '1N' / '2A' / '3NY' / …).
+function _mbBGroupTable(group){
+  return _tableForMatches(ctx=>/^MB-B-/i.test(ctx.rounds)&&ctx.level===group);
+}
+// Running MB-R table for a roman-numeral level, restricted to rounds < uptoRoundNum.
+function _mbRLevelRunningTable(level,uptoRoundNum){
+  return _tableForMatches(ctx=>{
+    if(!/^MB-R-/i.test(ctx.rounds))return false;
+    if(ctx.level!==level)return false;
+    const m=ctx.rounds.match(/^MB-R-(\d+)$/i);
+    if(!m)return false;
+    return parseInt(m[1])<uptoRoundNum;
+  });
+}
+
+// Resolve a single place-token into a team_id using context maps.
+// ctx: { prevOverall:Map, mb4:Map, mbbGroupCache:Object, currentLevel, currentRoundNum }
+function _resolvePlaceTok(tok,ctx){
+  const p=_parsePlaceToken(tok);
+  if(!p)return{id:'',reason:'unparsed "'+tok+'"'};
+  if(p.kind==='prev_overall'){
+    const id=ctx.prevOverall?ctx.prevOverall.get(p.place):'';
+    return id?{id}:{id:'',reason:'prev_overall '+p.place+' not in results.csv'};
+  }
+  if(p.kind==='mb4'){
+    const id=ctx.mb4?ctx.mb4.get(p.group):'';
+    return id?{id}:{id:'',reason:'mb4 group '+p.group+' not picked'};
+  }
+  if(p.kind==='mbb_group'){
+    const tbl=ctx.mbbGroupCache[p.group]||(ctx.mbbGroupCache[p.group]=_mbBGroupTable(p.group));
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'mbb '+p.group+' place '+p.place+' (table size '+tbl.length+')'};
+  }
+  if(p.kind==='running_h'){
+    const lvl=ctx.currentLevel;
+    if(!lvl)return{id:'',reason:'H-code needs row.level'};
+    const tbl=_mbRLevelRunningTable(lvl,ctx.currentRoundNum);
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'running '+lvl+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
+  }
+  if(p.kind==='mbr_roman'){
+    const tbl=_mbRLevelRunningTable(p.level,ctx.currentRoundNum);
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'running '+p.level+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
+  }
+  return{id:'',reason:'unknown kind'};
+}
+
+// ── MB-4 TEAM PICKER MODAL ─────────────────────────────────────
+// Opens a centered modal with 4 dropdowns (one per MB-4 group: 4K, 4NY, 4É, 4D).
+// Excludes team_ids already used by MB-B (so the same team cannot land in MB-4
+// and MB at the same time). Resolves to Map{group→teamId} or null if cancelled.
+function _pickMB4Teams(excludeIds){
+  return new Promise(resolve=>{
+    const groups=['4K','4NY','4É','4D'];
+    const t=DB.teams;
+    const ii=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
+    const fni=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='long_name'||n==='full_name'||n==='name';});
+    const options=t.r.map(r=>{
+      const id=ii>=0?String(r[ii]||'').trim():'';
+      const name=fni>=0?String(r[fni]||'').trim():id;
+      return{id,name};
+    }).filter(o=>o.id&&!excludeIds.has(o.id)).sort((a,b)=>a.name.localeCompare(b.name));
+    const ov=document.createElement('div');
+    ov.className='panel-overlay open';ov.style.zIndex='500';
+    const md=document.createElement('div');
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:420px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    md.innerHTML=`<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">Select MB-4 teams</h3>
+      <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">Pick the team for each MB-4 group. Teams already in MB-B are excluded.</p>
+      ${groups.map(g=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <label style="min-width:44px;font-weight:600;">${g}</label>
+        <select data-mb4="${g}" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+          <option value="">— select —</option>
+          ${options.map(o=>`<option value="${esc(o.id)}">${esc(o.name)} (${esc(o.id)})</option>`).join('')}
+        </select>
+      </div>`).join('')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" id="mb4Cancel" class="tbtn">Cancel</button>
+        <button type="button" id="mb4Ok" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue</button>
+      </div>`;
+    document.body.appendChild(ov);
+    document.body.appendChild(md);
+    const cleanup=()=>{ov.remove();md.remove();};
+    md.querySelector('#mb4Cancel').onclick=()=>{cleanup();resolve(null);};
+    md.querySelector('#mb4Ok').onclick=()=>{
+      const picks=new Map();const seen=new Set();let err='';
+      groups.forEach(g=>{
+        const v=md.querySelector(`select[data-mb4="${g}"]`).value;
+        if(!v){err=err||'Pick a team for '+g;return;}
+        if(seen.has(v)){err=err||'Duplicate: '+v+' picked more than once';return;}
+        seen.add(v);picks.set(g,v);
+      });
+      if(err){alert(err);return;}
+      cleanup();resolve(picks);
+    };
+    ov.onclick=()=>{cleanup();resolve(null);};
+  });
+}
+
+// Collect the set of team_ids used by MB-B draw rows (so they can be excluded
+// from the MB-4 picker). Uses prev-season overall map to resolve integer places.
+function _mbTeamIdsInUse(prevOverall){
+  const d=DB.draw;
+  const used=new Set();
+  if(!d||!d.r.length)return used;
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_hi('rounds'),hpi=_hi('home_team_place'),api=_hi('away_team_place');
+  if(ri<0||hpi<0||api<0)return used;
+  d.r.forEach(r=>{
+    const rnd=String(r[ri]||'').trim();
+    if(!/^MB-B-/i.test(rnd))return;
+    [r[hpi],r[api]].forEach(p=>{
+      const n=parseInt(p);if(isNaN(n))return;
+      const id=prevOverall.get(n);if(id)used.add(id);
+    });
+  });
+  return used;
+}
+
 function _placeToTeamMap(season){
   const d=DB.results;
   const map=new Map();
@@ -2347,6 +2526,111 @@ function _stadiumForTeam(teamId){
   return row?String(row[si]||'').trim():'';
 }
 
+// Build one matches.csv row (as an array matching DB.matches.h order) from a
+// resolved draw entry, running the full randomized simulation so the row has
+// a stored score. Returns { row, reason } — reason is populated if home/away
+// could not be resolved and the row was written blank.
+function _buildSimulatedMatchRow(ctx){
+  // ctx: { rounds, level, mt, mn, date, homeId, awayId }
+  const cols=DB.matches.h;
+  const halfS=halfSeasonFor(ctx.date);
+  const hSk=teamSkillsFor(ctx.homeId,halfS);
+  const aSk=teamSkillsFor(ctx.awayId,halfS);
+  const neutral=(String(ctx.mt)==='11');
+  let h1=0,a1=0,h2=0,a2=0,het=0,aet=0,hpen=0,apen=0;
+  let notesParts=[];
+  if(ctx.homeId&&ctx.awayId){
+    // Detailed half simulation so we can persist the rand columns too.
+    const H=hSk.skills+(neutral?0:hSk.home),A=aSk.skills;
+    const p1=simPeriodDetailed(H,A,hSk.attack_1h,hSk.defence_1h,aSk.attack_1h,aSk.defence_1h);
+    const p2=simPeriodDetailed(H,A,hSk.attack_2h,hSk.defence_2h,aSk.attack_2h,aSk.defence_2h);
+    h1=p1.homeG;a1=p1.awayG;h2=p2.homeG;a2=p2.awayG;
+    notesParts.push(`1H ${h1}-${a1}`);
+    notesParts.push(`2H ${h2}-${a2}`);
+    let p3=null,pp=null;
+    const mt=String(ctx.mt||'0');
+    const ftTied=(h1+h2)===(a1+a2);
+    const needET=(mt==='1'||mt==='11')&&ftTied;
+    if(needET){
+      p3=simPeriodDetailed(H,A,hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
+      het=p3.homeG;aet=p3.awayG;
+      notesParts.push(`ET ${het}-${aet}`);
+      if((h1+h2+het)===(a1+a2+aet)){
+        pp=simPenaltiesDetailed(hSk,aSk,neutral);
+        hpen=pp.hpen;apen=pp.apen;
+        notesParts.push(`PEN ${hpen}-${apen}`);
+      }
+    }
+    const fth=h1+h2+het+hpen,fta=a1+a2+aet+apen;
+    if(needET)notesParts.push(`AET ${h1+h2+het}-${a1+a2+aet}`);
+    notesParts.push(`FT ${fth}-${fta}`);
+    const obj={
+      date:ctx.date||'',
+      rounds:ctx.rounds||'',
+      level:ctx.level||'',
+      match_type:String(ctx.mt||'0'),
+      match_number:ctx.mn||'',
+      stadion_name:neutral?'':_stadiumForTeam(ctx.homeId),
+      home_id:ctx.homeId,
+      away_id:ctx.awayId,
+      home_score_full_time:String(fth),
+      away_score_full_time:String(fta),
+      home_score_first_half:String(h1),
+      away_score_first_half:String(a1),
+      notes:'[auto] '+notesParts.join('; '),
+      first_home_att:p1?String(p1.hAttRnd):'',
+      first_home_def:p1?String(p1.hDefRnd):'',
+      second_home_att:p2?String(p2.hAttRnd):'',
+      second_home_def:p2?String(p2.hDefRnd):'',
+      extra_home_att:p3?String(p3.hAttRnd):'',
+      extra_home_def:p3?String(p3.hDefRnd):'',
+      pen_home:pp?String(pp.hRnd):'',
+      first_away_att:p1?String(p1.aAttRnd):'',
+      first_away_def:p1?String(p1.aDefRnd):'',
+      second_away_att:p2?String(p2.aAttRnd):'',
+      second_away_def:p2?String(p2.aDefRnd):'',
+      extra_away_att:p3?String(p3.aAttRnd):'',
+      extra_away_def:p3?String(p3.aDefRnd):'',
+      pen_away:pp?String(pp.aRnd):''
+    };
+    return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:true};
+  }
+  // Unresolved teams → write a blank fixture row (scores empty) so the user can
+  // still see what was attempted in the Data Editor.
+  const obj={
+    date:ctx.date||'',
+    rounds:ctx.rounds||'',
+    level:ctx.level||'',
+    match_type:String(ctx.mt||'0'),
+    match_number:ctx.mn||'',
+    stadion_name:'',
+    home_id:ctx.homeId||'',
+    away_id:ctx.awayId||'',
+    notes:'[auto] unresolved'
+  };
+  return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:false};
+}
+
+// Upsert a simulated row into DB.matches.r by (rounds, level, match_number).
+// Returns 'updated' | 'inserted'.
+function _upsertMatchRow(row){
+  const m=DB.matches;
+  const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_hi('rounds'),li=_hi('level'),mni=_hi('match_number');
+  if(ri<0)return(m.r.push(row),'inserted');
+  const newRounds=String(row[ri]||'').trim();
+  const newLevel=li>=0?String(row[li]||'').trim():'';
+  const newMn=mni>=0?String(row[mni]||'').trim():'';
+  const idx=m.r.findIndex(r=>{
+    if(String(r[ri]||'').trim()!==newRounds)return false;
+    if(li>=0&&String(r[li]||'').trim()!==newLevel)return false;
+    if(mni>=0&&String(r[mni]||'').trim()!==newMn)return false;
+    return true;
+  });
+  if(idx>=0){m.r[idx]=row;return'updated';}
+  m.r.push(row);return'inserted';
+}
+
 async function generateSeasonFromDraw(targetSeason){
   if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
   const prev=_prevSeasonStr(targetSeason);
@@ -2358,84 +2642,139 @@ async function generateSeasonFromDraw(targetSeason){
   const _dhi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
   const ri=_dhi('rounds'),li=_dhi('level'),mti=_dhi('match_type'),
         mni=_dhi('match_number'),hpi=_dhi('home_team_place'),api=_dhi('away_team_place');
-  console.log('[GenerateSeason] draw.csv headers:',d.h);
-  console.log('[GenerateSeason] resolved indexes → rounds:',ri,'level:',li,'match_type:',mti,'match_number:',mni,'home_team_place:',hpi,'away_team_place:',api);
   if(ri<0||hpi<0||api<0){
     toast(`draw.csv missing required columns. headers: [${d.h.join(', ')}]`,'err');
     return;
   }
 
-  const placeMap=_placeToTeamMap(prev);
+  const prevOverall=_placeToTeamMap(prev);
   const calMap=_roundsToDateMap(targetSeason);
-  console.log('[GenerateSeason] results.csv headers:',DB.results.h);
-  console.log(`[GenerateSeason] placeMap built from prev season '${prev}' size=${placeMap.size}`);
-  console.log('[GenerateSeason] placeMap first 5:',[...placeMap.entries()].slice(0,5));
-  console.log('[GenerateSeason] calendar.csv headers:',DB.calendar.h);
-  console.log(`[GenerateSeason] calMap size=${calMap.size}`);
-  console.log('[GenerateSeason] calMap first 5:',[...calMap.entries()].slice(0,5));
-  console.log('[GenerateSeason] matches.csv headers:',DB.matches.h);
+  console.log('[GenerateSeason] draw headers:',d.h,'results headers:',DB.results.h,'calendar headers:',DB.calendar.h);
+  console.log(`[GenerateSeason] prev season '${prev}' placeMap size=${prevOverall.size}`);
+  console.log(`[GenerateSeason] calMap size=${calMap.size} (first 5)`,[...calMap.entries()].slice(0,5));
 
-  const unresolvedPlaces=new Set();
-  const unresolvedRounds=new Set();
-  const newRows=[];
-  const matchCols=DB.matches.h;
+  // Partition draw rows into MB-B and MB-R buckets. Other competitions (KKS,
+  // UCL, …) are skipped until we model them.
+  const mbB=[],mbR=[];
+  d.r.forEach(r=>{
+    const rnd=String(r[ri]||'').trim();
+    if(/^MB-B-/i.test(rnd))mbB.push(r);
+    else if(/^MB-R-/i.test(rnd))mbR.push(r);
+  });
+  if(!mbB.length&&!mbR.length){
+    toast('draw.csv has no MB-B or MB-R rows','warn');return;
+  }
 
-  d.r.forEach(drawRow=>{
-    const rounds=String(drawRow[ri]||'').trim();
-    const level=li>=0?String(drawRow[li]||'').trim():'';
-    const mt=mti>=0?String(drawRow[mti]||'0').trim():'0';
-    const mn=mni>=0?String(drawRow[mni]||'').trim():'';
-    const hp=parseInt(drawRow[hpi]);
-    const ap=parseInt(drawRow[api]);
+  // Collect the MB-team-ids so the MB-4 picker can exclude them.
+  const mbUsed=_mbTeamIdsInUse(prevOverall);
 
-    const homeId=isNaN(hp)?'':(placeMap.get(hp)||'');
-    const awayId=isNaN(ap)?'':(placeMap.get(ap)||'');
-    if(!homeId&&!isNaN(hp))unresolvedPlaces.add(hp);
-    if(!awayId&&!isNaN(ap))unresolvedPlaces.add(ap);
+  // Does the draw reference any MB-4 group? If yes, prompt for picks.
+  let mb4Picks=new Map();
+  const needsMB4=d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
+    (/^(4K|4NY|4É|4D)(\s|$)/.test(String(r[hpi]||'').trim())||
+     /^(4K|4NY|4É|4D)(\s|$)/.test(String(r[api]||'').trim())));
+  if(needsMB4){
+    const picks=await _pickMB4Teams(mbUsed);
+    if(!picks){toast('Generate Season cancelled','warn');return;}
+    mb4Picks=picks;
+  }
 
-    const cal=rounds?calMap.get(rounds):null;
-    if(rounds&&!cal)unresolvedRounds.add(rounds);
-
-    const stadium=(mt==='11')?'':_stadiumForTeam(homeId);
-
-    const rowObj={
-      date:cal?cal.date:'',
-      rounds,level,match_type:mt,match_number:mn,
-      stadion_name:stadium,
-      home_id:homeId,
-      away_id:awayId
-      // places are used only to look up team_ids; they are NOT written to matches.csv
-      // everything else (scores + rand columns) defaults to ''
-    };
-    newRows.push(matchCols.map(c=>rowObj[c]!==undefined?rowObj[c]:''));
+  // Dry-run the MB-B rows first so the preview can report counts.
+  const unresolved=[];       // {rounds,level,mn,reason}
+  const missingDates=new Set();
+  const mbbPlan=[];          // array of ctx objs for MB-B sim
+  mbB.forEach(r=>{
+    const rnd=String(r[ri]||'').trim();
+    const lvl=li>=0?String(r[li]||'').trim():'';
+    const mt=mti>=0?String(r[mti]||'0').trim():'0';
+    const mn=mni>=0?String(r[mni]||'').trim():'';
+    const hpTok=String(r[hpi]||'').trim();
+    const apTok=String(r[api]||'').trim();
+    const hh=_resolvePlaceTok(hpTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{}});
+    const aa=_resolvePlaceTok(apTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{}});
+    const cal=calMap.get(rnd);
+    if(!cal)missingDates.add(rnd);
+    if(!hh.id)unresolved.push({rounds:rnd,level:lvl,mn,side:'home',tok:hpTok,reason:hh.reason});
+    if(!aa.id)unresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
+    mbbPlan.push({rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id});
   });
 
-  const totalRows=newRows.length;
-  const hidIdx=DB.matches.h.indexOf('home_id'),aidIdx=DB.matches.h.indexOf('away_id'),dateIdx=DB.matches.h.indexOf('date');
-  const rowsWithDate=dateIdx<0?0:newRows.filter(r=>String(r[dateIdx]||'').trim()).length;
-  const rowsWithHomeId=hidIdx<0?0:newRows.filter(r=>String(r[hidIdx]||'').trim()).length;
-  const rowsWithAwayId=aidIdx<0?0:newRows.filter(r=>String(r[aidIdx]||'').trim()).length;
-  const placesSample=[...unresolvedPlaces].slice(0,10).join(', ');
-  const roundsSample=[...unresolvedRounds].slice(0,10).join(', ');
-  const mapSample=[...placeMap.entries()].slice(0,6).map(([p,t])=>`${p}→${t}`).join(', ');
-  const lines=[
-    `Generate ${totalRows} match rows for season ${targetSeason}?`,
-    `Using ${prev} results to resolve places (${placeMap.size} places resolved).`,
-    placeMap.size?`Sample place→team_id: ${mapSample}${placeMap.size>6?'…':''}`:`⚠ placeMap is EMPTY — no ${prev} rows resolved. results.csv headers: [${DB.results.h.join(', ')}]. First row: [${(DB.results.r[0]||[]).join(', ')}]. Check that your results sheet has a header row with 'season, competition, place, team_id'.`,
-    `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`,
-    `Rows filled: date=${rowsWithDate}/${totalRows}, home_id=${rowsWithHomeId}/${totalRows}, away_id=${rowsWithAwayId}/${totalRows}`
-  ];
-  if(unresolvedPlaces.size)lines.push(`⚠ ${unresolvedPlaces.size} unresolved place(s): ${placesSample}${unresolvedPlaces.size>10?'…':''}`);
-  if(unresolvedRounds.size)lines.push(`⚠ ${unresolvedRounds.size} unresolved round(s): ${roundsSample}${unresolvedRounds.size>10?'…':''}`);
-  if(unresolvedPlaces.size||unresolvedRounds.size)lines.push('(Unresolved fields will be written blank — you can fix them in the editor.)');
-  lines.push('','This APPENDS to matches.csv.','(See browser console for detailed diagnostics.)');
+  // Group MB-R rows by round-number so we can simulate round-by-round and feed
+  // running standings into later rounds' place tokens.
+  const mbrByRound=new Map();
+  mbR.forEach(r=>{
+    const rnd=String(r[ri]||'').trim();
+    const m=rnd.match(/^MB-R-(\d+)$/i);
+    if(!m)return;
+    const n=parseInt(m[1]);
+    if(!mbrByRound.has(n))mbrByRound.set(n,[]);
+    mbrByRound.get(n).push(r);
+  });
+  const roundNums=[...mbrByRound.keys()].sort((a,b)=>a-b);
 
+  const totalPlanned=mbbPlan.length+mbR.length;
+  const lines=[
+    `Generate ${totalPlanned} match rows for season ${targetSeason}?`,
+    `• MB-B: ${mbbPlan.length} rows`,
+    `• MB-R: ${mbR.length} rows across ${roundNums.length} rounds (${roundNums.length?'R'+roundNums[0]+'→R'+roundNums[roundNums.length-1]:'none'})`,
+    `• Previous season '${prev}' → ${prevOverall.size} overall places resolved`,
+    `• Calendar for '${targetSeason}' → ${calMap.size} rounds mapped`,
+    needsMB4?`• MB-4 picks: ${[...mb4Picks.entries()].map(([g,t])=>`${g}=${t}`).join(', ')}`:`• MB-4: not referenced by this draw`,
+    missingDates.size?`⚠ ${missingDates.size} MB-B round(s) with no calendar date: ${[...missingDates].slice(0,6).join(', ')}${missingDates.size>6?'…':''}`:'',
+    unresolved.length?`⚠ ${unresolved.length} MB-B side(s) unresolved (sample: ${unresolved.slice(0,3).map(u=>`${u.rounds}/${u.level}/${u.mn} ${u.side}="${u.tok}" [${u.reason}]`).join(' | ')})`:'',
+    '',
+    'This UPSERTS into matches.csv by (rounds, level, match_number).',
+    'All simulated matches are marked with `[auto]` in the notes column.',
+    '(See browser console for detailed diagnostics.)'
+  ].filter(Boolean);
   if(!confirm(lines.join('\n')))return;
 
-  newRows.forEach(r=>DB.matches.r.push(r));
+  // ── PHASE 1: simulate MB-B rows and upsert ────────────────────
+  let upd=0,ins=0,blank=0;
+  mbbPlan.forEach(ctx=>{
+    const{row,simulated}=_buildSimulatedMatchRow(ctx);
+    if(!simulated)blank++;
+    const op=_upsertMatchRow(row);
+    if(op==='updated')upd++;else ins++;
+  });
+
+  // ── PHASE 2: MB-R rounds in order ─────────────────────────────
+  const mbbGroupCache={}; // memoise final MB-B group tables (built from DB.matches after phase 1)
+  const mbrUnresolved=[];
+  for(const n of roundNums){
+    const rows=mbrByRound.get(n);
+    rows.forEach(r=>{
+      const rnd=String(r[ri]||'').trim();
+      const lvl=li>=0?String(r[li]||'').trim():'';
+      const mt=mti>=0?String(r[mti]||'0').trim():'0';
+      const mn=mni>=0?String(r[mni]||'').trim():'';
+      const hpTok=String(r[hpi]||'').trim();
+      const apTok=String(r[api]||'').trim();
+      const tokCtx={prevOverall,mb4:mb4Picks,mbbGroupCache,currentLevel:lvl,currentRoundNum:n};
+      const hh=_resolvePlaceTok(hpTok,tokCtx);
+      const aa=_resolvePlaceTok(apTok,tokCtx);
+      if(!hh.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'home',tok:hpTok,reason:hh.reason});
+      if(!aa.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
+      const cal=calMap.get(rnd);
+      if(!cal)missingDates.add(rnd);
+      const{row,simulated}=_buildSimulatedMatchRow({
+        rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
+      });
+      if(!simulated)blank++;
+      const op=_upsertMatchRow(row);
+      if(op==='updated')upd++;else ins++;
+    });
+  }
+
+  console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, missingDates=${missingDates.size}`);
+  if(mbrUnresolved.length){
+    console.warn(`[GenerateSeason] ${mbrUnresolved.length} MB-R unresolved sides. Sample:`,mbrUnresolved.slice(0,10));
+  }
   try{
     await saveSheet('matches');
-    toast(`✅ Generated ${totalRows} match rows for ${targetSeason}`);
+    const msg=[`✅ Season ${targetSeason}: ${upd} updated, ${ins} inserted`];
+    if(blank)msg.push(`(${blank} rows left blank — see console)`);
+    toast(msg.join(' '));
     if(typeof edRender==='function')edRender();
     if(typeof renderView==='function')renderView();
   }catch(e){
