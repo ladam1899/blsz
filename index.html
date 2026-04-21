@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.9</title>
+<title>League Manager v2026.04.21.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -89,7 +89,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start;}
 @media(max-width:900px){.lg-cols{grid-template-columns:1fr;}}
 .lg-rounds-scroll{display:flex;flex-direction:column;gap:14px;min-width:0;}
-.lg-side{position:sticky;top:calc(var(--hdr) + var(--nav) + 18px);display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - var(--hdr) - var(--nav) - 40px);overflow-y:auto;padding-right:4px;}
+.lg-side{position:sticky;top:calc(var(--hdr) + var(--nav) + 88px);display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - var(--hdr) - var(--nav) - 100px);overflow-y:auto;padding-right:4px;}
+.lg-side::-webkit-scrollbar{width:8px;}
+.lg-side::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+.lg-side::-webkit-scrollbar-thumb:hover{background:var(--muted);}
 .lg-side-group-hdr{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.08em;color:var(--text);padding:4px 4px 2px;border-top:2px solid var(--border);margin-top:6px;display:flex;align-items:baseline;gap:8px;}
 .lg-side-group-hdr:first-child{border-top:none;margin-top:0;}
 .lg-side-group-hdr .lg-side-season{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.03em;}
@@ -158,21 +161,28 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .comp-block{margin-bottom:28px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
 .comp-title{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:.06em;padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface2);}
 .comp-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
-.st-table{width:100%;border-collapse:collapse;font-size:13px;}
-.st-table th{background:var(--surface);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+.st-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.st-table col.c-pos{width:28px;}
+.st-table col.c-team{width:auto;}
+.st-table col.c-n{width:26px;}
+.st-table col.c-gd{width:32px;}
+.st-table col.c-pts{width:32px;}
+.st-table th{background:var(--surface);padding:6px 4px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
 .st-table th.n{text-align:center;}
-.st-table td{padding:8px 10px;border-bottom:1px solid var(--border);}
+.st-table td{padding:6px 4px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .st-table tr:last-child td{border-bottom:none;}
 .st-table tr:hover td{background:var(--surface2);}
 .st-table td.n{text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
-.st-table td.pts{text-align:center;font-weight:700;font-size:14px;}
+.st-table td.pts{text-align:center;font-weight:700;font-size:13px;}
+.st-table td.team{overflow:hidden;}
 .pos-badge{width:22px;height:22px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;}
 .p1{background:var(--gold-l);color:var(--gold);}
 .p2,.p3{background:var(--blue-l);color:var(--blue);}
 .prel{background:var(--red-l);color:var(--red);}
 .pdef{background:var(--surface2);color:var(--muted);}
-.team-cell{display:flex;align-items:center;gap:7px;}
-.team-badge-sm{width:20px;height:20px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;}
+.team-cell{display:flex;align-items:center;gap:6px;min-width:0;}
+.team-cell .team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
+.team-badge-sm{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;}
 .team-badge-sm img{width:100%;height:100%;object-fit:contain;}
 
 /* CALENDAR VIEW */
@@ -432,7 +442,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1433,7 +1443,25 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   if(!rows.length){
     body=`<div class="empty" style="padding:20px 12px;font-size:12px;color:var(--muted)">No matches in this round.</div>`;
   } else {
-    body=rows.map(r=>matchRowHTML(r,c,info.season||seasonFor(info.date),reveal)).join('');
+    // Group rows by `level` so each group (1M, 1N, 2A, …) gets its own
+    // sub-header inside the round card.
+    const groups=new Map(); // level → rows
+    rows.forEach(r=>{
+      const lv=c.level>=0?String(r[c.level]||'').trim():'';
+      if(!groups.has(lv))groups.set(lv,[]);
+      groups.get(lv).push(r);
+    });
+    const sortKeys=[...groups.keys()].sort((a,b)=>{
+      const an=parseInt(a),bn=parseInt(b);
+      if(!isNaN(an)&&!isNaN(bn)&&an!==bn)return an-bn;
+      return String(a).localeCompare(String(b),'hu');
+    });
+    const season=info.season||seasonFor(info.date);
+    body=sortKeys.map(lv=>{
+      const header=lv?`<div class="rc-group-hdr">${esc(lv)}</div>`:'';
+      const rowsHtml=groups.get(lv).map(r=>matchRowHTML(r,c,season,reveal)).join('');
+      return header+rowsHtml;
+    }).join('');
   }
 
   let playBtn='',stageLabel='';
@@ -1509,6 +1537,14 @@ function _lgBuildPeriodLine(row,c){
   const asF=c.as>=0?parseInt(row[c.as]):NaN;
   const h1=c.h1>=0?parseInt(row[c.h1]):NaN;
   const a1=c.a1>=0?parseInt(row[c.a1]):NaN;
+  const mtype=c.mtype>=0?String(row[c.mtype]||'').trim():'';
+  // League / group / first-leg matches (match_type = 0): show ONLY the
+  // half-time score in parentheses, nothing else.
+  if(mtype==='0'){
+    if(!isNaN(h1)&&!isNaN(a1))return `(${h1}-${a1})`;
+    return '';
+  }
+  // Knockout or other types — keep the detailed breakdown.
   const parts=[];
   if(!isNaN(h1)&&!isNaN(a1))parts.push(`1H ${h1}:${a1}`);
   if(!isNaN(hsF)&&!isNaN(asF)){
@@ -1628,6 +1664,7 @@ function renderLeagueStandings(anchor){
         html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet${level?' in '+esc(level):''}.</div>`;
       } else {
         html+=`<table class="st-table">
+          <colgroup><col class="c-pos"><col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
           <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
           <tbody>`;
         table.forEach((t,i)=>{
@@ -1637,7 +1674,7 @@ function renderLeagueStandings(anchor){
           const logo=logoFor(t.id,season);
           html+=`<tr>
             <td><span class="pos-badge ${pc}">${pos}</span></td>
-            <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
+            <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span></div></td>
             <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
             <td class="n">${gd}</td><td class="pts">${t.pts}</td>
           </tr>`;
