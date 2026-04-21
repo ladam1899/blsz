@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.19.5</title>
+<title>League Manager v2026.04.19.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2113,12 +2113,25 @@ async function generateSeasonFromDraw(targetSeason){
 
   const d=DB.draw;
   if(!d.r.length){toast('draw.csv is empty','warn');return;}
-  const ri=d.h.indexOf('rounds'),li=d.h.indexOf('level'),mti=d.h.indexOf('match_type'),
-        mni=d.h.indexOf('match_number'),hpi=d.h.indexOf('home_team_place'),api=d.h.indexOf('away_team_place');
-  if(ri<0||hpi<0||api<0){toast('draw.csv is missing required columns','err');return;}
+  const _dhi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_dhi('rounds'),li=_dhi('level'),mti=_dhi('match_type'),
+        mni=_dhi('match_number'),hpi=_dhi('home_team_place'),api=_dhi('away_team_place');
+  console.log('[GenerateSeason] draw.csv headers:',d.h);
+  console.log('[GenerateSeason] resolved indexes → rounds:',ri,'level:',li,'match_type:',mti,'match_number:',mni,'home_team_place:',hpi,'away_team_place:',api);
+  if(ri<0||hpi<0||api<0){
+    toast(`draw.csv missing required columns. headers: [${d.h.join(', ')}]`,'err');
+    return;
+  }
 
   const placeMap=_placeToTeamMap(prev);
   const calMap=_roundsToDateMap(targetSeason);
+  console.log('[GenerateSeason] results.csv headers:',DB.results.h);
+  console.log(`[GenerateSeason] placeMap built from prev season '${prev}' size=${placeMap.size}`);
+  console.log('[GenerateSeason] placeMap first 5:',[...placeMap.entries()].slice(0,5));
+  console.log('[GenerateSeason] calendar.csv headers:',DB.calendar.h);
+  console.log(`[GenerateSeason] calMap size=${calMap.size}`);
+  console.log('[GenerateSeason] calMap first 5:',[...calMap.entries()].slice(0,5));
+  console.log('[GenerateSeason] matches.csv headers:',DB.matches.h);
 
   const unresolvedPlaces=new Set();
   const unresolvedRounds=new Set();
@@ -2156,21 +2169,24 @@ async function generateSeasonFromDraw(targetSeason){
   });
 
   const totalRows=newRows.length;
-  const rowsWithDate=newRows.filter(r=>{
-    const di=DB.matches.h.indexOf('date');return di>=0&&String(r[di]||'').trim();
-  }).length;
+  const hidIdx=DB.matches.h.indexOf('home_id'),aidIdx=DB.matches.h.indexOf('away_id'),dateIdx=DB.matches.h.indexOf('date');
+  const rowsWithDate=dateIdx<0?0:newRows.filter(r=>String(r[dateIdx]||'').trim()).length;
+  const rowsWithHomeId=hidIdx<0?0:newRows.filter(r=>String(r[hidIdx]||'').trim()).length;
+  const rowsWithAwayId=aidIdx<0?0:newRows.filter(r=>String(r[aidIdx]||'').trim()).length;
   const placesSample=[...unresolvedPlaces].slice(0,10).join(', ');
   const roundsSample=[...unresolvedRounds].slice(0,10).join(', ');
+  const mapSample=[...placeMap.entries()].slice(0,6).map(([p,t])=>`${p}→${t}`).join(', ');
   const lines=[
     `Generate ${totalRows} match rows for season ${targetSeason}?`,
     `Using ${prev} results to resolve places (${placeMap.size} places resolved).`,
+    placeMap.size?`Sample place→team_id: ${mapSample}${placeMap.size>6?'…':''}`:`⚠ placeMap is EMPTY — no rows in results.csv with season='${prev}' resolved. Check results sheet season & team_id columns.`,
     `Calendar mapped ${calMap.size} rounds for ${targetSeason}.`,
-    `Rows with a date filled: ${rowsWithDate} / ${totalRows}.`
+    `Rows filled: date=${rowsWithDate}/${totalRows}, home_id=${rowsWithHomeId}/${totalRows}, away_id=${rowsWithAwayId}/${totalRows}`
   ];
   if(unresolvedPlaces.size)lines.push(`⚠ ${unresolvedPlaces.size} unresolved place(s): ${placesSample}${unresolvedPlaces.size>10?'…':''}`);
   if(unresolvedRounds.size)lines.push(`⚠ ${unresolvedRounds.size} unresolved round(s): ${roundsSample}${unresolvedRounds.size>10?'…':''}`);
   if(unresolvedPlaces.size||unresolvedRounds.size)lines.push('(Unresolved fields will be written blank — you can fix them in the editor.)');
-  lines.push('','This APPENDS to matches.csv.');
+  lines.push('','This APPENDS to matches.csv.','(See browser console for detailed diagnostics.)');
 
   if(!confirm(lines.join('\n')))return;
 
