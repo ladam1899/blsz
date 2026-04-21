@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.3</title>
+<title>League Manager v2026.04.21.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -146,7 +146,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .team-badge-sm img{width:100%;height:100%;object-fit:contain;}
 
 /* CALENDAR VIEW */
-.cal-wrap{max-width:1100px;margin:0 auto;padding:18px 16px;}
+.cal-wrap{max-width:1100px;margin:0 auto;padding:18px 16px;position:relative;}
 .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
 .cal-month{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.06em;}
 .cal-nav-btns{display:flex;gap:6px;}
@@ -169,6 +169,20 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .round-pill:hover{opacity:.85;}
 .round-pill.played{opacity:.55;}
 .round-pill .pill-r{background:rgba(255,255,255,.25);border-radius:8px;padding:0 4px;font-size:9px;}
+.round-pill[draggable="true"]{cursor:grab;}
+.round-pill[draggable="true"]:active{cursor:grabbing;}
+.cal-day.drop-target{background:var(--green-l);box-shadow:inset 0 0 0 2px var(--green);}
+.cal-tooltip{position:absolute;z-index:200;min-width:220px;max-width:340px;background:#111;color:#f5f5f5;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none;}
+.cal-tt-head{font-size:11px;color:#d1d5db;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.12);}
+.cal-tt-head b{color:#fff;}
+.cal-tt-r{color:#facc15;font-family:'JetBrains Mono',monospace;}
+.cal-tt-d{color:#9ca3af;font-family:'JetBrains Mono',monospace;}
+.cal-tt-row{display:flex;align-items:center;gap:6px;padding:2px 0;}
+.cal-tt-h{flex:1;text-align:right;}
+.cal-tt-a{flex:1;text-align:left;}
+.cal-tt-v{color:#9ca3af;font-size:10px;}
+.cal-tt-score{color:#fde68a;font-family:'JetBrains Mono',monospace;font-weight:700;margin-left:4px;}
+.cal-tt-empty{color:#9ca3af;font-style:italic;}
 
 /* EDIT MATCH PANEL (right side) */
 .panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;}
@@ -388,7 +402,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -516,7 +530,7 @@ let edTab='teams',edHistory=[],edSelected=new Set(),edModified=0,edSaveTimer=nul
 let _lastSel=undefined;
 
 // ── VIEW STATE ──────────────────────────────────────────────
-let currentView='play';
+let currentView='calendar';
 let calYear=2000, calMonth=6;
 let panelData=null;
 let logosFolderId=null;
@@ -1429,6 +1443,9 @@ function computeTable(competition,uptoInfo,c){
 //  CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════
 function renderCalendarView(){
+  // Always snap the view to the month of the current_date (state.csv).
+  const d=new Date(currentDate());
+  if(!isNaN(d.getTime())){calYear=d.getFullYear();calMonth=d.getMonth();}
   const app=document.getElementById('app');
   app.innerHTML=`<div class="cal-wrap">
     <div class="cal-header">
@@ -1445,26 +1462,185 @@ function renderCalendarView(){
       </div>
       <div class="cal-days" id="calDays"></div>
     </div>
+    <div id="calTooltip" class="cal-tooltip" style="display:none"></div>
   </div>`;
   renderCalendarGrid();
 }
 function calMove(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;}renderCalendarGrid();}
 function calGotoCurrent(){const d=new Date(currentDate());calYear=d.getFullYear();calMonth=d.getMonth();renderCalendarGrid();}
 
+// Walk the wide-schema calendar.csv and return { date -> [{competition, round, played}] }.
+// Every non-system column (game_day / date / season excluded) is a competition column;
+// each non-empty cell in those columns is a round code for that row's date.
+function _buildCalendarIndex(){
+  const cd=DB.calendar;
+  const idx={};
+  if(!cd||!cd.r.length)return idx;
+  const _hi=(name)=>cd.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const dti=_hi('date'),gdi=_hi('game_day'),si=_hi('season');
+  const systemCols=new Set();
+  if(dti>=0)systemCols.add(dti);
+  if(gdi>=0)systemCols.add(gdi);
+  if(si>=0)systemCols.add(si);
+  if(dti<0)return idx;
+  cd.r.forEach((row,rowIdx)=>{
+    const dt=normalizeDate(row[dti]);
+    if(!dt)return;
+    if(!idx[dt])idx[dt]=[];
+    for(let c=0;c<row.length;c++){
+      if(systemCols.has(c))continue;
+      const round=String(row[c]||'').trim();
+      if(!round)continue;
+      if(/^\d+(\.\d+)?$/.test(round))continue; // plain numbers aren't round codes
+      const competition=String(cd.h[c]||'').trim();
+      if(!competition)continue;
+      idx[dt].push({
+        competition,round,
+        played:isRoundFullyPlayed(competition,round),
+        rowIdx, // source row in DB.calendar.r
+        colIdx:c // source column index
+      });
+    }
+  });
+  return idx;
+}
+
+// Build a tooltip body listing the matches that belong to (competition, round).
+// Uses matches.csv `rounds` + level/match_number. Falls back to team ids when
+// long names are unavailable.
+function _tooltipForRound(round){
+  const m=DB.matches;
+  // Tolerate both legacy and current column names.
+  const _mhi=(...names)=>{
+    for(const n of names){
+      const i=m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+      if(i>=0)return i;
+    }
+    return -1;
+  };
+  const rndI=_mhi('rounds','round');
+  const homeI=_mhi('home_id','home');
+  const awayI=_mhi('away_id','away');
+  const hsI=_mhi('home_score_full_time','home_score');
+  const asI=_mhi('away_score_full_time','away_score');
+  if(rndI<0)return '<div class="cal-tt-empty">matches.csv has no rounds column.</div>';
+  const rows=m.r.filter(r=>String(r[rndI]||'').trim()===round);
+  if(!rows.length)return '<div class="cal-tt-empty">No matches found for this round.</div>';
+  const lines=rows.map(r=>{
+    const hId=homeI>=0?String(r[homeI]||'').trim():'';
+    const aId=awayI>=0?String(r[awayI]||'').trim():'';
+    const hT=hId?teamById(hId):{name:''};
+    const aT=aId?teamById(aId):{name:''};
+    const hName=esc(hT.name||hId||'?');
+    const aName=esc(aT.name||aId||'?');
+    const hs=hsI>=0?r[hsI]:'';
+    const as=asI>=0?r[asI]:'';
+    const hasScore=hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as));
+    const score=hasScore?` <span class="cal-tt-score">${esc(String(hs))}–${esc(String(as))}</span>`:'';
+    return `<div class="cal-tt-row"><span class="cal-tt-h">${hName}</span><span class="cal-tt-v">vs</span><span class="cal-tt-a">${aName}</span>${score}</div>`;
+  }).join('');
+  return lines;
+}
+
+function _showCalTooltip(ev,competition,round,dateStr){
+  const tt=document.getElementById('calTooltip');
+  if(!tt)return;
+  tt.innerHTML=`<div class="cal-tt-head"><b>${esc(competition)}</b> · <span class="cal-tt-r">${esc(round)}</span> · <span class="cal-tt-d">${esc(dateStr)}</span></div>${_tooltipForRound(round)}`;
+  tt.style.display='block';
+  const wrap=tt.parentElement.getBoundingClientRect();
+  const pillRect=ev.currentTarget.getBoundingClientRect();
+  // Position just below the pill, clamped to the wrap.
+  let left=pillRect.left-wrap.left;
+  let top=pillRect.bottom-wrap.top+6;
+  const maxLeft=wrap.width-tt.offsetWidth-8;
+  if(left>maxLeft)left=Math.max(4,maxLeft);
+  if(left<4)left=4;
+  tt.style.left=left+'px';
+  tt.style.top=top+'px';
+}
+function _hideCalTooltip(){const tt=document.getElementById('calTooltip');if(tt)tt.style.display='none';}
+
+// Drag-and-drop state (one event at a time).
+let _calDrag=null;
+function _onPillDragStart(ev,competition,round,oldDate,rowIdx,colIdx){
+  _calDrag={competition,round,oldDate,rowIdx,colIdx};
+  ev.dataTransfer.effectAllowed='move';
+  try{ev.dataTransfer.setData('text/plain',`${competition}|${round}|${oldDate}`);}catch(_){}
+  _hideCalTooltip();
+}
+function _onDayDragOver(ev){if(_calDrag){ev.preventDefault();ev.dataTransfer.dropEffect='move';ev.currentTarget.classList.add('drop-target');}}
+function _onDayDragLeave(ev){ev.currentTarget.classList.remove('drop-target');}
+async function _onDayDrop(ev,newDate){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drop-target');
+  const dg=_calDrag;_calDrag=null;
+  if(!dg)return;
+  if(dg.oldDate===newDate)return;
+  await _moveRoundToDate(dg.competition,dg.round,dg.oldDate,newDate,dg.rowIdx,dg.colIdx);
+}
+
+// Core move logic: rewrite calendar.csv (clear old cell, write new cell) + update
+// every matches.csv row whose `rounds` matches to the new date, then save both.
+async function _moveRoundToDate(competition,round,oldDate,newDate,srcRowIdx,srcColIdx){
+  const cd=DB.calendar;
+  const _hi=(name)=>cd.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const dti=_hi('date');
+  if(dti<0){toast('calendar.csv has no date column','err');return;}
+  // 1) Clear the source cell.
+  if(cd.r[srcRowIdx]&&String(cd.r[srcRowIdx][srcColIdx]||'').trim()===round){
+    cd.r[srcRowIdx][srcColIdx]='';
+  }
+  // 2) Find / create the destination row (same date).
+  let destRowIdx=cd.r.findIndex(r=>normalizeDate(r[dti])===newDate);
+  if(destRowIdx<0){
+    const blank=cd.h.map(()=>'');
+    blank[dti]=newDate;
+    cd.r.push(blank);
+    destRowIdx=cd.r.length-1;
+  }
+  // Destination column = same competition column as the source.
+  if(String(cd.r[destRowIdx][srcColIdx]||'').trim()){
+    if(!confirm(`The ${competition} column already has "${cd.r[destRowIdx][srcColIdx]}" on ${newDate}. Overwrite it with "${round}"?`)){
+      // Undo step 1 so nothing is lost.
+      cd.r[srcRowIdx][srcColIdx]=round;
+      return;
+    }
+  }
+  cd.r[destRowIdx][srcColIdx]=round;
+  // 3) Update every matches.csv row whose rounds matches.
+  const m=DB.matches;
+  const _mhi=(...names)=>{
+    for(const n of names){
+      const i=m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+      if(i>=0)return i;
+    }
+    return -1;
+  };
+  const rndI=_mhi('rounds','round');
+  const mdI=_mhi('date');
+  let moved=0;
+  if(rndI>=0&&mdI>=0){
+    m.r.forEach(r=>{
+      if(String(r[rndI]||'').trim()===round){r[mdI]=newDate;moved++;}
+    });
+  }
+  try{
+    await saveSheet('calendar');
+    if(moved)await saveSheet('matches');
+    toast(`Moved ${competition} ${round}: ${oldDate} → ${newDate}${moved?` (${moved} match row${moved===1?'':'s'} updated)`:''}`);
+  }catch(e){
+    toast('⚠ Save failed: '+(e.message||e),'err');
+  }
+  renderCalendarGrid();
+}
+
 function renderCalendarGrid(){
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('calMonthLabel').textContent=`${monthNames[calMonth]} ${calYear}`;
-  const calIdx={};
-  const cd=DB.calendar;
-  const gdi=cd.h.indexOf('game_day'),dti=cd.h.indexOf('date'),cpi=cd.h.indexOf('competition'),rni=cd.h.indexOf('round');
-  cd.r.forEach(row=>{
-    const dt=normalizeDate(dti>=0?row[dti]:'');
-    if(!dt)return;
-    if(!calIdx[dt])calIdx[dt]=[];
-    const comp=cpi>=0?row[cpi]:'',round=rni>=0?row[rni]:'';
-    calIdx[dt].push({game_day:gdi>=0?row[gdi]:'',competition:comp,round,played:isRoundFullyPlayed(comp,round)});
-  });
+  const calIdx=_buildCalendarIndex();
   const cur=currentDate();
+  // Real-world today (local machine) — highlighted separately from the state's current_date.
+  const realToday=(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})();
   const first=new Date(calYear,calMonth,1);
   const startDow=(first.getDay()+6)%7;
   const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
@@ -1478,16 +1654,26 @@ function renderCalendarGrid(){
     else{day=i-startDow+1;month=calMonth;year=calYear;}
     const dateStr=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const rounds=calIdx[dateStr]||[];
-    const isCur=dateStr===cur;
+    const isCur=dateStr===cur;            // app "current date" from state.csv
+    const isRealToday=dateStr===realToday; // real calendar today
     const isSStart=dateStr===SEASON_START;
     const pills=rounds.map(r=>{
       const col=compColor(r.competition);
-      const gdLabel=r.game_day?`GD${esc(r.game_day)}`:`R${esc(r.round)}`;
-      return`<button class="round-pill${r.played?' played':''}" style="background:${safeColor(col)}" onclick="openRoundPanel(event,'${esc(r.competition)}','${esc(r.round)}','${esc(r.game_day)}','${esc(dateStr)}')" title="${esc(r.competition)} — Round ${esc(r.round)}${r.played?' (played)':''}">
-        ${esc(r.competition)} <span class="pill-r">${gdLabel}</span>
+      return`<button class="round-pill${r.played?' played':''}"
+        style="background:${safeColor(col)}"
+        draggable="true"
+        ondragstart="_onPillDragStart(event,'${esc(r.competition)}','${esc(r.round)}','${esc(dateStr)}',${r.rowIdx},${r.colIdx})"
+        onmouseenter="_showCalTooltip(event,'${esc(r.competition)}','${esc(r.round)}','${esc(dateStr)}')"
+        onmouseleave="_hideCalTooltip()"
+        onclick="openRoundPanel(event,'${esc(r.competition)}','${esc(r.round)}','','${esc(dateStr)}')"
+        title="${esc(r.competition)} — ${esc(r.round)}${r.played?' (played)':''} · drag to move">
+        <span class="pill-r">${esc(r.round)}</span>
       </button>`;
     }).join('');
-    html+=`<div class="cal-day${isOther?' other-month':''}${isCur?' current':''}">
+    html+=`<div class="cal-day${isOther?' other-month':''}${isCur?' current':''}${isRealToday?' today':''}"
+      ondragover="_onDayDragOver(event)"
+      ondragleave="_onDayDragLeave(event)"
+      ondrop="_onDayDrop(event,'${dateStr}')">
       <div class="day-num${isSStart?' season-start':''}">${day}${isSStart?' ★':''}</div>
       <div class="day-rounds">${pills}</div>
     </div>`;
