@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.2</title>
+<title>League Manager v2026.04.21.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2114,38 +2114,40 @@ function _placeToTeamMap(season){
   return map;
 }
 function _roundsToDateMap(targetSeason){
+  // Calendar.csv has one column per competition (NATIONAL TEAM / UCL / UEFA /
+  // MBS / KKS / KKQS / NKWS / …). Each non-empty cell in those columns is a
+  // round code for that row's date. Build the map by scanning every non-system
+  // column and recording { roundCode -> { date } }.
   const d=DB.calendar;
   const map=new Map();
   if(!d||!d.r.length)return map;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  // Accept any of `rounds` / `round` / `game_day` / `round_key` as the key column.
-  let ri=d.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='rounds'||n==='round'||n==='round_key';});
-  let di=_hi('date');
-  let si=_hi('season');
-  let rows=d.r;
-  // If we couldn't find a rounds key column, try positional sniffing: look for a
-  // column whose values look like draw codes (e.g. MB-B-1) — i.e. match /[A-Z]+-[A-Z]+-\d+/.
-  if(ri<0){
-    console.warn('[calMap] rounds/round header not found, sniffing positionally. headers were:',d.h);
-    const headerLooksLikeData=d.h.some(v=>/[A-Za-z]+-[A-Za-z0-9]+-\d+/.test(String(v||'').trim()));
-    if(headerLooksLikeData)rows=[d.h.slice(),...d.r];
-    const sample=rows[0]||[];
-    sample.forEach((v,idx)=>{
-      if(ri<0&&/[A-Za-z]+-[A-Za-z0-9]+-\d+/.test(String(v||'').trim()))ri=idx;
-    });
-    // Date column = any cell that looks like an ISO date (YYYY-MM-DD) or dd/mm/yyyy
-    sample.forEach((v,idx)=>{
-      if(di<0&&/^\d{4}-\d{2}-\d{2}$|^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(String(v||'').trim()))di=idx;
-    });
-    console.warn('[calMap] positional guess → rounds:',ri,'date:',di,'season:',si);
+  const di=_hi('date');
+  const si=_hi('season');
+  const gdi=_hi('game_day');
+  // System columns never contain round codes.
+  const systemCols=new Set();
+  if(di>=0)systemCols.add(di);
+  if(si>=0)systemCols.add(si);
+  if(gdi>=0)systemCols.add(gdi);
+  // If no date column, we can't produce a map.
+  if(di<0){
+    console.warn('[calMap] no date column found. headers were:',d.h);
+    return map;
   }
-  if(ri<0)return map;
-  rows.forEach(r=>{
-    const key=String(r[ri]||'').trim();if(!key)return;
+  d.r.forEach(r=>{
     const rowSeason=si>=0?String(r[si]||'').trim():'';
     if(targetSeason&&rowSeason&&rowSeason!==targetSeason)return;
-    const rawDate=di>=0?String(r[di]||'').trim():'';
-    map.set(key,{date:normalizeDate(rawDate)||rawDate});
+    const rawDate=String(r[di]||'').trim();if(!rawDate)return;
+    const iso=normalizeDate(rawDate)||rawDate;
+    // Every cell in a non-system column that contains a non-empty value is a round key.
+    for(let c=0;c<r.length;c++){
+      if(systemCols.has(c))continue;
+      const key=String(r[c]||'').trim();if(!key)continue;
+      // Ignore plain integers / decimal values — those are never round codes.
+      if(/^\d+(\.\d+)?$/.test(key))continue;
+      if(!map.has(key))map.set(key,{date:iso});
+    }
   });
   return map;
 }
