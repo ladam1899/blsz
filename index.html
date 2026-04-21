@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.1</title>
+<title>League Manager v2026.04.21.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -459,7 +459,6 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     </label>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="_promptGenerateSeason()" title="Join draw.csv + calendar.csv + previous-season results → matches.csv">🆕 Generate Season</button>
-      <button class="tbtn" onclick="fillDatesFromCalendar()" title="Backfill matches.csv DATE by joining rounds against calendar.csv">📅 Fill Dates</button>
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
     </div>
