@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.19.4</title>
+<title>League Manager v2026.04.19.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -388,7 +388,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.19.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -503,7 +503,7 @@ const DB={
 };
 const ED_DEFAULTS={
   teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation'],
-  matches:    ['date','rounds','level','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
+  matches:    ['date','rounds','level','match_type','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
@@ -1963,7 +1963,6 @@ function _playNotes(){
   const awayScore=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
   const parts=[];
   parts.push(`1H ${d.h1}-${d.a1}`);
-  parts.push(`HT ${d.h1}-${d.a1}`);
   parts.push(`2H ${d.h2}-${d.a2}`);
   const regHome=(d.h1||0)+(d.h2||0), regAway=(d.a1||0)+(d.a2||0);
   parts.push(`FT ${regHome}-${regAway}`);
