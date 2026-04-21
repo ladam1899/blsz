@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.21.5</title>
+<title>League Manager v2026.04.21.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -77,8 +77,26 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-current{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);padding:4px 10px;background:var(--green-l);border-radius:4px;}
 
 /* LEAGUE VIEW — ROUND CARD */
-.lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;}
+.lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start;}
 @media(max-width:900px){.lg-cols{grid-template-columns:1fr;}}
+.lg-rounds-scroll{display:flex;flex-direction:column;gap:14px;min-width:0;}
+.lg-side{position:sticky;top:calc(var(--hdr) + var(--nav) + 18px);display:flex;flex-direction:column;gap:14px;}
+.round-card.past{opacity:.82;}
+.round-card.future{opacity:.72;}
+.round-card.current{border:2px solid var(--green);box-shadow:0 0 0 4px rgba(26,107,58,.12);}
+.round-card.current .rc-hdr{background:linear-gradient(0deg,rgba(26,107,58,.06),rgba(26,107,58,.02));}
+.rc-hdr .rc-play{display:flex;align-items:center;gap:8px;}
+.rc-play-btn{background:var(--green);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;transition:background .15s;}
+.rc-play-btn:hover{background:var(--green-m);}
+.rc-play-btn.next{background:var(--blue);}
+.rc-play-btn.next:hover{background:#2563c7;}
+.rc-stage{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:3px 8px;background:var(--surface2);border-radius:999px;}
+.m-score.hidden{color:var(--dimmed);background:var(--surface2);font-size:16px;}
+.m-score.half{background:#fef3c7;color:#92400e;}
+.lg-side-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;}
+.lg-side-hdr{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+.lg-side-hdr .side-dot{display:flex;align-items:center;gap:8px;}
+.lg-side-hdr .side-count{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;}
 .round-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:0;overflow:hidden;}
 .rc-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
 .rc-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;display:flex;align-items:center;gap:8px;}
@@ -402,7 +420,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.21.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -414,11 +432,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 
 <!-- Navigation -->
 <div class="nav">
-  <div class="ntab" id="ntab-league" onclick="switchView('league')">🏠 League</div>
+  <div class="ntab active" id="ntab-league" onclick="switchView('league')">🏠 Matches</div>
   <div class="ntab" id="ntab-calendar" onclick="switchView('calendar')">📆 Calendar</div>
   <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
   <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
-  <div class="ntab active" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
+  <div class="ntab" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
   <div class="nav-space"></div>
   <div class="nav-gear" onclick="openEditor()" title="Data editor">⚙</div>
 </div>
@@ -530,7 +548,7 @@ let edTab='teams',edHistory=[],edSelected=new Set(),edModified=0,edSaveTimer=nul
 let _lastSel=undefined;
 
 // ── VIEW STATE ──────────────────────────────────────────────
-let currentView='calendar';
+let currentView='league';
 let calYear=2000, calMonth=6;
 let panelData=null;
 let logosFolderId=null;
@@ -1101,17 +1119,97 @@ function roundNeedsPenalties(competition,round){
   });
 }
 
+// Matches view uses a wide-calendar-aware model: each calendar row has one
+// column per competition, and each non-empty cell in those columns carries
+// a round code. Each (row, comp-column, round-code) triple is one "round".
+// Rounds are paired with matches via the `rounds` column in matches.csv.
+
+const revealStages={}; // in-memory { key -> 0|1|2 } for progressive reveal
+
+function _lgMatchCols(){
+  const h=DB.matches.h;
+  const idx=(n)=>h.findIndex(x=>String(x||'').trim().toLowerCase()===n);
+  return{
+    date:idx('date'),rounds:idx('rounds'),level:idx('level'),
+    mtype:idx('match_type'),mn:idx('match_number'),stadium:idx('stadion_name'),
+    home:idx('home_id'),away:idx('away_id'),
+    hs:idx('home_score_full_time'),as:idx('away_score_full_time'),
+    h1:idx('home_score_first_half'),a1:idx('away_score_first_half'),
+    notes:idx('notes')
+  };
+}
+function _lgCalendarRounds(){
+  const cd=DB.calendar;if(!cd||!cd.r.length)return[];
+  const idx=(n)=>cd.h.findIndex(x=>String(x||'').trim().toLowerCase()===n);
+  const di=idx('date'),gdi=idx('game_day'),si=idx('season');
+  const ci=idx('competition'),ri=idx('round'); // legacy narrow schema
+  const out=[];
+  if(ci>=0&&ri>=0){
+    cd.r.forEach(r=>{
+      const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
+      const comp=String(r[ci]||'').trim();const round=String(r[ri]||'').trim();
+      if(!comp||!round)return;
+      out.push({date,competition:comp,round,game_day:gdi>=0?String(r[gdi]||''):'',season:si>=0?String(r[si]||''):'',key:comp+'||'+round});
+    });
+  } else {
+    // Wide schema: scan every non-system column
+    const sys=new Set([di,gdi,si].filter(x=>x>=0));
+    cd.r.forEach(r=>{
+      const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
+      for(let c=0;c<cd.h.length;c++){
+        if(sys.has(c))continue;
+        const round=String(r[c]||'').trim();if(!round)continue;
+        if(/^\d+(\.\d+)?$/.test(round))continue; // skip pure numbers
+        const comp=String(cd.h[c]||'').trim();if(!comp)continue;
+        out.push({date,competition:comp,round,game_day:gdi>=0?String(r[gdi]||''):'',season:si>=0?String(r[si]||''):'',key:comp+'||'+round});
+      }
+    });
+  }
+  return out.sort((a,b)=>a.date.localeCompare(b.date)||a.competition.localeCompare(b.competition)||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
+}
+function _lgRoundStatus(info,cur){
+  if(info.date<cur)return'past';
+  if(info.date>cur)return'future';
+  return'current';
+}
+function _lgFilterRounds(all){
+  return all.filter(r=>{
+    if(lgFilter.season&&r.season!==lgFilter.season)return false;
+    if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
+    if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
+    return true;
+  });
+}
+function _lgCurrentRound(all,cur){
+  if(!all||!all.length)return null;
+  const today=all.find(r=>r.date===cur);if(today)return today;
+  return all.find(r=>r.date>=cur)||all[all.length-1];
+}
+function _lgCssId(s){return String(s||'').replace(/[^a-zA-Z0-9_-]/g,'_');}
+
 function renderLeagueView(){
   const app=document.getElementById('app');
-  const info=currentRoundInfo();
+  const curDate=currentDate();
+  const allRounds=_lgCalendarRounds();
+  const current=_lgCurrentRound(allRounds,curDate);
+  // Anchor = user-picked round (from Rounds selector) or the time-based current round
+  let anchor=current;
+  if(lgSelRound&&lgSelRound.key){
+    const hit=allRounds.find(r=>r.key===lgSelRound.key);
+    if(hit)anchor=hit;
+  }
 
-  // Date bar options
-  const cal=DB.calendar,dti=cal.h.indexOf('date'),sni=cal.h.indexOf('season');
-  const allSeasons=[...new Set(cal.r.map(r=>sni>=0?r[sni]:''))].filter(Boolean).sort();
-  const allYears=[...new Set(cal.r.map(r=>{const d=normalizeDate(dti>=0?r[dti]:'');return d.slice(0,4);}))].filter(Boolean).sort();
-  const cur=currentDate();
-  const curLabel=`Current: ${formatDate(cur)}`;
+  const allSeasons=[...new Set(allRounds.map(r=>r.season))].filter(Boolean).sort();
+  const allYears=[...new Set(allRounds.map(r=>r.date.slice(0,4)))].filter(Boolean).sort();
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const curLabel=`Current: ${formatDate(curDate)}`;
+
+  const visible=_lgFilterRounds(allRounds);
+  const roundsSelOpts=visible.map(r=>{
+    const lbl=`${r.competition} · ${r.round} · ${formatDate(r.date)}`;
+    const sel=(lgSelRound&&lgSelRound.key===r.key)||(!lgSelRound&&anchor&&anchor.key===r.key);
+    return`<option value="${esc(r.key)}"${sel?' selected':''}>${esc(lbl)}</option>`;
+  }).join('');
 
   app.innerHTML=`<div class="lg-wrap">
     <div class="date-bar">
@@ -1130,320 +1228,246 @@ function renderLeagueView(){
         <option value="">All</option>
         ${monthNames.map((m,i)=>{const mm=String(i+1).padStart(2,'0');return`<option value="${mm}"${lgFilter.month===mm?' selected':''}>${m}</option>`;}).join('')}
       </select>
+      <span class="db-label">Round</span>
+      <select class="db-sel db-sel-rnd" onchange="lgPickRound(this.value)">
+        <option value="">— pick —</option>
+        ${roundsSelOpts}
+      </select>
       <span class="db-current">${esc(curLabel)}</span>
       <button class="db-now" onclick="lgGoCurrent()">↺ Current</button>
     </div>
     <div class="lg-cols">
-      <div id="lgRoundCard"></div>
-      <div id="lgPlayPanel"></div>
+      <div class="lg-rounds-scroll" id="lgRoundsScroll"></div>
+      <div class="lg-side" id="lgSide"></div>
     </div>
-    <div class="lg-standings" id="lgStandings"></div>
   </div>`;
 
-  renderLeagueRoundCard(info);
-  renderLeaguePlayPanel(info);
-  renderLeagueStandings(info);
+  const scroll=document.getElementById('lgRoundsScroll');
+  if(!visible.length){
+    scroll.innerHTML=`<div class="round-card"><div class="rc-body"><div class="empty" style="padding:30px 16px;font-size:13px">No rounds match these filters.<br><small>Try clearing Season/Year/Month, or add rows in ⚙ Data Editor → Calendar (date in <b>YYYY-MM-DD</b> format).</small></div></div></div>`;
+  } else {
+    scroll.innerHTML=visible.map(r=>renderLeagueRoundCardHTML(r,curDate,anchor)).join('');
+  }
+
+  renderLeagueStandings(anchor);
+
+  // Anchor the selected round to the middle of the viewport.
+  requestAnimationFrame(()=>{
+    if(!anchor)return;
+    const el=document.getElementById('lgRc-'+_lgCssId(anchor.key));
+    if(el)el.scrollIntoView({block:'center',behavior:'auto'});
+  });
 }
 
 function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
 function lgGoCurrent(){lgFilter={season:'',year:'',month:''};lgSelRound=null;renderLeagueView();}
-
-function filteredRoundsOrdered(){
-  const cd=DB.calendar;
-  const gdi=cd.h.indexOf('game_day'),dti=cd.h.indexOf('date'),cpi=cd.h.indexOf('competition'),rni=cd.h.indexOf('round'),sni=cd.h.indexOf('season');
-  return cd.r.map(r=>({game_day:gdi>=0?r[gdi]:'',date:normalizeDate(dti>=0?r[dti]:''),competition:cpi>=0?r[cpi]:'',round:rni>=0?r[rni]:'',season:sni>=0?r[sni]:''}))
-    .filter(r=>{
-      if(!r.date)return false;
-      if(lgFilter.season&&r.season!==lgFilter.season)return false;
-      if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
-      if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
-      return true;
-    })
-    .sort((a,b)=>a.date.localeCompare(b.date)||String(a.competition).localeCompare(String(b.competition))||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
+function lgPickRound(key){
+  if(!key){lgSelRound=null;renderLeagueView();return;}
+  lgSelRound={key};
+  renderLeagueView();
+}
+function lgRevealNextStage(key){
+  const cur=revealStages[key]||0;
+  revealStages[key]=Math.min(2,cur+1);
+  renderLeagueView();
 }
 
-function renderLeagueRoundCard(info){
-  const el=document.getElementById('lgRoundCard');
-  if(!info){
-    el.innerHTML=`<div class="round-card"><div class="rc-body"><div class="empty">No calendar rows yet. Add them in ⚙ Data Editor → Calendar, with <code>date</code> in <b>YYYY-MM-DD</b> format.</div></div></div>`;
-    return;
-  }
-  // Round navigation within filtered list
-  const ordered=filteredRoundsOrdered();
-  const idx=ordered.findIndex(r=>r.competition===info.competition&&r.round===info.round);
-  const c=matchColIdx();
-  const rows=DB.matches.r.filter(r=>(c.comp<0||r[c.comp]===info.competition)&&(c.rnd<0||r[c.rnd]===info.round));
+function renderLeagueRoundCardHTML(info,curDate,anchor){
+  const status=_lgRoundStatus(info,curDate);
+  const isAnchor=!!(anchor&&info.key===anchor.key);
   const col=compColor(info.competition);
+  const c=_lgMatchCols();
+  const rows=c.rounds>=0?DB.matches.r.filter(r=>String(r[c.rounds]||'').trim()===info.round):[];
+  // reveal: 'full' (past), 'hidden' (future), or 0|1|2 (current anchor)
+  let reveal;
+  if(status==='past')reveal='full';
+  else if(status==='future')reveal='hidden';
+  else reveal=revealStages[info.key]||0;
 
   let body='';
   if(!rows.length){
-    body=`<div class="empty" style="padding:30px 16px;font-size:13px">No matches scheduled in <b>${esc(info.competition)}</b> round <b>${esc(info.round)}</b>.<br><small>Add them via ⚙ Data Editor → Matches</small></div>`;
+    body=`<div class="empty" style="padding:20px 12px;font-size:12px;color:var(--muted)">No matches in this round.</div>`;
   } else {
-    body=rows.map(r=>matchRowHTML(r,c,info.season||seasonFor(info.date))).join('');
+    body=rows.map(r=>matchRowHTML(r,c,info.season||seasonFor(info.date),reveal)).join('');
   }
 
-  el.innerHTML=`<div class="round-card">
+  let playBtn='',stageLabel='';
+  if(status==='past'){
+    stageLabel='Played';
+  } else if(status==='future'){
+    stageLabel='Upcoming';
+  } else {
+    const stage=revealStages[info.key]||0;
+    stageLabel=['Kick-off','Half-time','Full Time'][stage];
+    if(isAnchor){
+      const keyAttr=esc(info.key).replace(/'/g,'&#39;');
+      if(stage>=2){
+        playBtn=`<button class="rc-play-btn next" onclick="advanceToNextRound()">⏭ Next Round</button>`;
+      } else if(stage===1){
+        playBtn=`<button class="rc-play-btn" onclick="lgRevealNextStage('${keyAttr}')">▶ Reveal Full Time</button>`;
+      } else {
+        playBtn=`<button class="rc-play-btn" onclick="lgRevealNextStage('${keyAttr}')">▶ Reveal First Half</button>`;
+      }
+    }
+  }
+
+  return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
       <div>
-        <div class="rc-title"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(info.competition)} · R${esc(info.round)}</div>
-        <div class="rc-sub">${formatDate(info.date)} · Game day ${esc(info.game_day||'—')}${info.season?' · '+esc(seasonLabel(info.season)):''}</div>
+        <div class="rc-title"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(info.competition)} · ${esc(info.round)}</div>
+        <div class="rc-sub">${formatDate(info.date)}${info.game_day?' · Game day '+esc(info.game_day):''}${info.season?' · '+esc(seasonLabel(info.season)):''}</div>
       </div>
-      <div class="rc-nav">
-        <button class="rc-nav-btn" onclick="lgPrevRound()" ${idx<=0?'disabled':''}>‹</button>
-        <button class="rc-nav-btn" onclick="lgJumpCurrent()" title="Jump to current round">⌂</button>
-        <button class="rc-nav-btn" onclick="lgNextRound()" ${idx<0||idx>=ordered.length-1?'disabled':''}>›</button>
-        <button class="rc-nav-btn" onclick="openRoundPanel(event,'${esc(info.competition)}','${esc(info.round)}','${esc(info.game_day)}','${esc(info.date)}')" title="Edit scores">✎</button>
+      <div class="rc-play">
+        <span class="rc-stage">${esc(stageLabel)}</span>
+        ${playBtn}
       </div>
     </div>
     <div class="rc-body">${body}</div>
   </div>`;
 }
 
-function matchRowHTML(row,c,season){
-  const home=teamById(c.home>=0?row[c.home]:'');
-  const away=teamById(c.away>=0?row[c.away]:'');
+function matchRowHTML(row,c,season,reveal){
+  const homeId=c.home>=0?String(row[c.home]||''):'';
+  const awayId=c.away>=0?String(row[c.away]||''):'';
+  const home=teamById(homeId);
+  const away=teamById(awayId);
   const hl=logoFor(home.id,season);
   const al=logoFor(away.id,season);
-  const tot=sumPeriodScores(row,c);
-  const played=c.hs>=0&&c.as>=0&&row[c.hs]!==''&&row[c.as]!==''&&!isNaN(parseInt(row[c.hs]))&&!isNaN(parseInt(row[c.as]));
-  const anyPeriod=matchHasPeriod(row,c.h1)||matchHasPeriod(row,c.h2);
-  const liveStage=!played&&anyPeriod;
-  const scoreCls=played?'m-score':(liveStage?'m-score live':'m-score pending');
-  const scoreTxt=played?`${row[c.hs]}-${row[c.as]}`:(liveStage?`${tot.home}-${tot.away}`:'— : —');
-  const periodLine=(matchHasPeriod(row,c.h1)||matchHasPeriod(row,c.h2))?buildPeriodLine(row,c):'';
+  const hsF=c.hs>=0?row[c.hs]:'';const asF=c.as>=0?row[c.as]:'';
+  const h1=c.h1>=0?row[c.h1]:'';const a1=c.a1>=0?row[c.a1]:'';
+  const hasFull=hsF!==''&&asF!==''&&!isNaN(parseInt(hsF))&&!isNaN(parseInt(asF));
+  const has1H=h1!==''&&a1!==''&&!isNaN(parseInt(h1))&&!isNaN(parseInt(a1));
+  const isFull=reveal==='full'||reveal===2;
+  const is1H=reveal===1;
+  let scoreCls='m-score',scoreTxt='— : —';
+  if(isFull&&hasFull){scoreTxt=`${parseInt(hsF)}-${parseInt(asF)}`;}
+  else if(is1H&&has1H){scoreCls+=' half';scoreTxt=`${parseInt(h1)}-${parseInt(a1)}`;}
+  else{scoreCls+=' hidden';scoreTxt='— : —';}
+  const periodLine=isFull?_lgBuildPeriodLine(row,c):'';
   return`<div>
     <div class="m-row">
       <div class="m-side home">
         <span class="m-name">${esc(home.name)}</span>
-        ${hl?`<div class="m-logo" style="background:#fff"><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}">${esc(home.id.slice(0,2).toUpperCase())}</div>`}
+        ${hl?`<div class="m-logo" style="background:#fff"><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}">${esc((home.id||'').slice(0,2).toUpperCase())}</div>`}
       </div>
       <div class="m-stripe" style="background:${safeColor(home.color)}"></div>
       <div class="${scoreCls}">${esc(scoreTxt)}</div>
       <div class="m-stripe" style="background:${safeColor(away.color)}"></div>
       <div class="m-side away">
-        ${al?`<div class="m-logo" style="background:#fff"><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}">${esc(away.id.slice(0,2).toUpperCase())}</div>`}
+        ${al?`<div class="m-logo" style="background:#fff"><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}">${esc((away.id||'').slice(0,2).toUpperCase())}</div>`}
         <span class="m-name">${esc(away.name)}</span>
       </div>
     </div>
     ${periodLine?`<div class="m-periods">${periodLine}</div>`:''}
   </div>`;
 }
-function buildPeriodLine(row,c){
-  const seg=(a,b,label)=>{
-    const va=c[a]>=0?row[c[a]]:'';const vb=c[b]>=0?row[c[b]]:'';
-    if(va===''||vb==='')return null;
-    return`${label} ${va}:${vb}`;
-  };
-  return[seg('h1','a1','1H'),seg('h2','a2','2H'),seg('het','aet','ET'),seg('hpen','apen','PEN')].filter(Boolean).join(' · ');
-}
-
-function lgPrevRound(){
-  const ordered=filteredRoundsOrdered();
-  const info=currentRoundInfo();if(!info)return;
-  const idx=ordered.findIndex(r=>r.competition===info.competition&&r.round===info.round);
-  if(idx>0){lgSelRound={competition:ordered[idx-1].competition,round:ordered[idx-1].round};renderLeagueView();}
-}
-function lgNextRound(){
-  const ordered=filteredRoundsOrdered();
-  const info=currentRoundInfo();if(!info)return;
-  const idx=ordered.findIndex(r=>r.competition===info.competition&&r.round===info.round);
-  if(idx>=0&&idx<ordered.length-1){lgSelRound={competition:ordered[idx+1].competition,round:ordered[idx+1].round};renderLeagueView();}
-}
-function lgJumpCurrent(){lgSelRound=null;renderLeagueView();}
-
-// ── PLAY PANEL ────────────────────────────────────────────────
-function renderLeaguePlayPanel(info){
-  const el=document.getElementById('lgPlayPanel');
-  if(!info){el.innerHTML='';return;}
-  const stage=roundPlayStage(info.competition,info.round);
-  const fullyPlayed=isRoundFullyPlayed(info.competition,info.round);
-  const needsET=roundNeedsExtraTime(info.competition,info.round);
-  const needsPen=roundNeedsPenalties(info.competition,info.round);
-
-  let btnLabel='',stageLabel='',subLabel='',action='play',disabled=false;
-  if(fullyPlayed){
-    btnLabel='⏭ Next Round';stageLabel='Full Time';subLabel='All matches played';action='next';
-  } else if(stage===0){
-    btnLabel='▶ Play First Half';stageLabel='Kick-off';subLabel='Simulate the 1st half of every match';action='play';
-  } else if(stage===1){
-    btnLabel='▶ Play Second Half';stageLabel='Half-time';subLabel='Simulate the 2nd half';action='play';
-  } else if(stage===2&&needsET){
-    btnLabel='▶ Play Extra Time';stageLabel='End of Regulation';subLabel='Cup match(es) tied — play 30 min';action='play';
-  } else if(stage===2&&!needsET){
-    btnLabel='⏭ Next Round';stageLabel='Full Time';subLabel='Round complete';action='next';
-  } else if(stage===3&&needsPen){
-    btnLabel='▶ Play Penalties';stageLabel='End of Extra Time';subLabel='Still level — go to spot-kicks';action='play';
-  } else if(stage===3&&!needsPen){
-    btnLabel='⏭ Next Round';stageLabel='Full Time';subLabel='Round complete';action='next';
-  } else {
-    btnLabel='⏭ Next Round';stageLabel='Full Time';subLabel='Round complete';action='next';
-  }
-
-  el.innerHTML=`<div class="play-panel">
-    <div class="pp-stage">${esc(stageLabel)}</div>
-    <div class="pp-label">${esc(info.competition)} · R${esc(info.round)}</div>
-    <div class="pp-mini">${esc(subLabel)}</div>
-    <button class="pp-btn ${action==='next'?'next':''}" onclick="${action==='next'?'advanceToNextRound()':'playNextPeriod()'}">${esc(btnLabel)}</button>
-    <button class="pp-edit-btn" onclick="openRoundPanel(event,'${esc(info.competition)}','${esc(info.round)}','${esc(info.game_day)}','${esc(info.date)}')">✎ Edit scores manually</button>
-    <div class="pp-mini" style="border-top:1px solid var(--border);padding-top:10px">Current date:<br><b>${esc(formatDate(currentDate()))}</b></div>
-  </div>`;
-}
-
-async function playNextPeriod(){
-  const info=currentRoundInfo();if(!info)return;
-  ensureMatchCols();
-  const c=matchColIdx();
-  const rows=DB.matches.r.filter(r=>(c.comp<0||r[c.comp]===info.competition)&&(c.rnd<0||r[c.rnd]===info.round));
-  if(!rows.length){toast('No matches in this round','warn');return;}
-  const stage=roundPlayStage(info.competition,info.round);
-  const season=info.season||seasonFor(info.date);
-  const halfS=halfSeasonFor(info.date);
-  setSS('busy');
-  rows.forEach(r=>{
-    const home=c.home>=0?r[c.home]:'';const away=c.away>=0?r[c.away]:'';
-    const hs=teamSkillsFor(home,halfS),as=teamSkillsFor(away,halfS);
-    const mt=c.mtype>=0?String(r[c.mtype]||'0'):'0';
-    // Write season if empty
-    if(c.season>=0&&!r[c.season])r[c.season]=season;
-
-    if(stage===0){
-      const{h1,a1,h2,a2}=simulateHalves(hs,as);
-      if(c.h1>=0)r[c.h1]=String(h1);if(c.a1>=0)r[c.a1]=String(a1);
-      // store 2h too (deterministic), but only reveal when stage advances — we'll stage reveal
-      // Instead, just write 1h now; 2h computed again next cycle
-    } else if(stage===1){
-      const{h2,a2}=simulateHalves(hs,as);
-      if(c.h2>=0)r[c.h2]=String(h2);if(c.a2>=0)r[c.a2]=String(a2);
-      // Finalise full-time score if league match or cup not tied
-      const h1=parseInt(r[c.h1])||0,a1=parseInt(r[c.a1])||0;
-      const tied=(h1+h2)===(a1+a2);
-      if(mt==='0'||!tied){
-        if(c.hs>=0)r[c.hs]=String(h1+h2);if(c.as>=0)r[c.as]=String(a1+a2);
-        if(c.het>=0)r[c.het]='0';if(c.aet>=0)r[c.aet]='0';
-        if(c.hpen>=0)r[c.hpen]='0';if(c.apen>=0)r[c.apen]='0';
-      }
-    } else if(stage===2){
-      // Only cup matches that need ET get it; others already finalised
-      const h1=parseInt(r[c.h1])||0,a1=parseInt(r[c.a1])||0;
-      const h2=parseInt(r[c.h2])||0,a2=parseInt(r[c.a2])||0;
-      if(mt==='1'&&(h1+h2)===(a1+a2)){
-        const{het,aet}=simulateExtraTime(hs,as);
-        if(c.het>=0)r[c.het]=String(het);if(c.aet>=0)r[c.aet]=String(aet);
-        if(het!==aet){
-          if(c.hs>=0)r[c.hs]=String(h1+h2+het);if(c.as>=0)r[c.as]=String(a1+a2+aet);
-          if(c.hpen>=0)r[c.hpen]='0';if(c.apen>=0)r[c.apen]='0';
-        }
-      }
-    } else if(stage===3){
-      const h1=parseInt(r[c.h1])||0,a1=parseInt(r[c.a1])||0;
-      const h2=parseInt(r[c.h2])||0,a2=parseInt(r[c.a2])||0;
-      const het=parseInt(r[c.het])||0,aet=parseInt(r[c.aet])||0;
-      if(mt==='1'&&(h1+h2)===(a1+a2)&&het===aet){
-        const{hpen,apen}=simulatePenalties(hs,as);
-        if(c.hpen>=0)r[c.hpen]=String(hpen);if(c.apen>=0)r[c.apen]=String(apen);
-        if(c.hs>=0)r[c.hs]=String(h1+h2+het+hpen);if(c.as>=0)r[c.as]=String(a1+a2+aet+apen);
-      }
+function _lgBuildPeriodLine(row,c){
+  const hsF=c.hs>=0?parseInt(row[c.hs]):NaN;
+  const asF=c.as>=0?parseInt(row[c.as]):NaN;
+  const h1=c.h1>=0?parseInt(row[c.h1]):NaN;
+  const a1=c.a1>=0?parseInt(row[c.a1]):NaN;
+  const parts=[];
+  if(!isNaN(h1)&&!isNaN(a1))parts.push(`1H ${h1}:${a1}`);
+  if(!isNaN(hsF)&&!isNaN(asF)){
+    if(!isNaN(h1)&&!isNaN(a1)){
+      const h2=hsF-h1,a2=asF-a1;
+      parts.push(`2H ${h2}:${a2}`);
     }
-  });
-  await saveSheet('matches');
-  toast('Period played','');
-  renderLeagueView();
+    parts.push(`FT ${hsF}:${asF}`);
+  }
+  return parts.join(' · ');
 }
 
 async function advanceToNextRound(){
-  // Move current_date forward to the date of the next not-fully-played round
+  // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
-  const cd=DB.calendar;
-  const gdi=cd.h.indexOf('game_day'),dti=cd.h.indexOf('date'),cpi=cd.h.indexOf('competition'),rni=cd.h.indexOf('round');
-  const rows=cd.r.map(r=>({game_day:gdi>=0?r[gdi]:'',date:normalizeDate(dti>=0?r[dti]:''),competition:cpi>=0?r[cpi]:'',round:rni>=0?r[rni]:''}))
-    .filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date));
-  const next=rows.find(r=>r.date>cur&&!isRoundFullyPlayed(r.competition,r.round))||rows.find(r=>!isRoundFullyPlayed(r.competition,r.round));
-  if(!next){toast('No more rounds to advance','warn');return;}
+  const all=_lgCalendarRounds();
+  const next=all.find(r=>r.date>cur);
+  if(!next){toast('No more rounds scheduled','warn');return;}
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
   renderLeagueView();
 }
 
-// ── STANDINGS ─────────────────────────────────────────────────
-function renderLeagueStandings(info){
-  const el=document.getElementById('lgStandings');
-  const c=matchColIdx();
-  if(c.comp<0){el.innerHTML='';return;}
-  // Up-to-round: all matches from the same competition/season with round <= info.round, fully played
-  const ordered=filteredRoundsOrdered();
-  // Options: "Up to current" by default, or select a specific round
-  const currentInfo=info||currentRoundInfo();
-  const roundOpts=ordered.filter(r=>!currentInfo||r.competition===currentInfo.competition).map(r=>{
-    const key=`${r.competition}||${r.round}`;
-    const label=`${r.competition} R${r.round}`;
-    return`<option value="${esc(key)}"${currentInfo&&r.competition===currentInfo.competition&&r.round===currentInfo.round?' selected':''}>${esc(label)}</option>`;
-  }).join('');
+// ── STANDINGS (right sidebar) ─────────────────────────────────
+// Standings are scoped to the anchor round's `level` (e.g. group "1M") and
+// cover every match whose round date is strictly before the current_date —
+// i.e. rounds that are fully behind us on the timeline.
+function renderLeagueStandings(anchor){
+  const el=document.getElementById('lgSide');
+  if(!el)return;
+  if(!anchor){el.innerHTML='';return;}
+  const c=_lgMatchCols();
 
-  const comps=[...new Set(DB.matches.r.map(r=>c.comp>=0?r[c.comp]:''))].filter(Boolean);
-  if(!comps.length){el.innerHTML='';return;}
-
-  let html=`<div class="standings-hdr">
-    <div class="standings-title">Standings</div>
-    <div class="standings-pick">
-      <span>Up to:</span>
-      <select onchange="lgPickStandingsRound(this.value)">
-        ${roundOpts}
-      </select>
-    </div>
-  </div>`;
-
-  comps.forEach(comp=>{
-    const table=computeTable(comp,currentInfo,c);
-    if(!table.length)return;
-    const col=compColor(comp);
-    html+=`<div class="comp-block">
-      <div class="comp-title"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(comp)}</div>
-      <table class="st-table">
-        <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GF</th><th class="n">GA</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
-        <tbody>`;
-    table.forEach((t,i)=>{
-      const pos=i+1,total=table.length;
-      const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
-      const gd=(t.gd>0?'+':'')+t.gd;
-      const logo=logoFor(t.id,currentInfo?.season||seasonFor(currentInfo?.date||''));
-      html+=`<tr>
-        <td><span class="pos-badge ${pc}">${pos}</span></td>
-        <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
-        <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
-        <td class="n">${t.gf}</td><td class="n">${t.ga}</td><td class="n">${gd}</td><td class="pts">${t.pts}</td>
-      </tr>`;
-    });
-    html+=`</tbody></table></div>`;
-  });
-  el.innerHTML=html;
-}
-function lgPickStandingsRound(v){
-  const[competition,round]=v.split('||');
-  lgSelRound={competition,round};
-  renderLeagueView();
-}
-function computeTable(competition,uptoInfo,c){
-  // Filter matches of this competition; if an uptoInfo is given on the SAME competition,
-  // restrict to rounds ≤ uptoInfo.round (numeric compare).
-  let rows=DB.matches.r.filter(r=>(c.comp<0||r[c.comp]===competition));
-  if(uptoInfo&&uptoInfo.competition===competition){
-    const cap=parseFloat(uptoInfo.round);
-    if(!isNaN(cap))rows=rows.filter(r=>{const v=parseFloat(c.rnd>=0?r[c.rnd]:'');return!isNaN(v)&&v<=cap;});
+  // Look up the anchor round's level via matches.csv.
+  let anchorLevel='';
+  if(c.rounds>=0&&c.level>=0){
+    const row=DB.matches.r.find(r=>String(r[c.rounds]||'').trim()===anchor.round);
+    if(row)anchorLevel=String(row[c.level]||'').trim();
   }
+
+  const curDate=currentDate();
+  const all=_lgCalendarRounds();
+  const dateByRound={};
+  all.forEach(r=>{if(!dateByRound[r.round])dateByRound[r.round]=r.date;});
+
+  const levelRows=(c.level>=0&&anchorLevel)
+    ?DB.matches.r.filter(r=>String(r[c.level]||'').trim()===anchorLevel)
+    :[];
+
+  const included=levelRows.filter(r=>{
+    if(c.rounds<0)return false;
+    const rnd=String(r[c.rounds]||'').trim();
+    const d=dateByRound[rnd];
+    if(!d)return false;
+    return d<curDate; // only past rounds count
+  });
+
   const stats={};
-  rows.forEach(row=>{
-    const h=c.home>=0?row[c.home]:'',a=c.away>=0?row[c.away]:'';
+  included.forEach(r=>{
+    const h=c.home>=0?String(r[c.home]||''):'';
+    const a=c.away>=0?String(r[c.away]||''):'';
     if(!h||!a)return;
     [h,a].forEach(id=>{if(!stats[id]){const t=teamById(id);stats[id]={id,name:t.name,color:t.color,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
-    const hs=parseInt(c.hs>=0?row[c.hs]:''),as=parseInt(c.as>=0?row[c.as]:'');
+    const hs=c.hs>=0?parseInt(r[c.hs]):NaN,as=c.as>=0?parseInt(r[c.as]):NaN;
     if(isNaN(hs)||isNaN(as))return;
     stats[h].p++;stats[a].p++;stats[h].gf+=hs;stats[h].ga+=as;stats[a].gf+=as;stats[a].ga+=hs;
     if(hs>as){stats[h].w++;stats[h].pts+=3;stats[a].l++;}
     else if(hs<as){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
     else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
   });
-  return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+  const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+
+  const col=compColor(anchor.competition);
+  const season=anchor.season||seasonFor(anchor.date);
+  let html=`<div class="lg-side-card">
+    <div class="lg-side-hdr">
+      <div class="side-dot"><span class="comp-dot" style="background:${safeColor(col)}"></span>Standings${anchorLevel?' · '+esc(anchorLevel):''}</div>
+      <div class="side-count">${table.length} team${table.length===1?'':'s'}</div>
+    </div>`;
+  if(!table.length){
+    html+=`<div class="empty" style="padding:18px 4px;font-size:12px;color:var(--muted)">No matches played yet for this level.</div>`;
+  } else {
+    html+=`<table class="st-table">
+      <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+      <tbody>`;
+    table.forEach((t,i)=>{
+      const pos=i+1,total=table.length;
+      const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
+      const gd=(t.gd>0?'+':'')+t.gd;
+      const logo=logoFor(t.id,season);
+      html+=`<tr>
+        <td><span class="pos-badge ${pc}">${pos}</span></td>
+        <td><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div>${esc(t.name)}</div></td>
+        <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
+        <td class="n">${gd}</td><td class="pts">${t.pts}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table>`;
+  }
+  html+=`</div>`;
+  el.innerHTML=html;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2358,23 +2382,27 @@ function _pickMB4Teams(excludeIds){
     const groups=['4K','4NY','4É','4D'];
     const t=DB.teams;
     const ii=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
-    const fni=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='long_name'||n==='full_name'||n==='name';});
+    // Prefer `full_name`; fall back to `long_name`, then generic `name`, then team_id.
+    const fnFull=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='full_name');
+    const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
+    const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
+    const fni=fnFull>=0?fnFull:(fnLong>=0?fnLong:fnName);
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
       const name=fni>=0?String(r[fni]||'').trim():id;
-      return{id,name};
+      return{id,name:name||id};
     }).filter(o=>o.id&&!excludeIds.has(o.id)).sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
-    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:420px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:460px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
     md.innerHTML=`<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">Select MB-4 teams</h3>
-      <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">Pick the team for each MB-4 group. Teams already in MB-B are excluded.</p>
+      <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">Pick the team for each MB-4 group. Teams already in MB-B are excluded; once a team is picked in one dropdown it is removed from the others.</p>
       ${groups.map(g=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <label style="min-width:44px;font-weight:600;">${g}</label>
         <select data-mb4="${g}" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
           <option value="">— select —</option>
-          ${options.map(o=>`<option value="${esc(o.id)}">${esc(o.name)} (${esc(o.id)})</option>`).join('')}
+          ${options.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}
         </select>
       </div>`).join('')}
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
@@ -2383,12 +2411,30 @@ function _pickMB4Teams(excludeIds){
       </div>`;
     document.body.appendChild(ov);
     document.body.appendChild(md);
+    const selects=groups.map(g=>md.querySelector(`select[data-mb4="${g}"]`));
+    // Live-exclude: whenever a dropdown changes, rebuild every OTHER dropdown's
+    // option list with the remaining picks removed (preserving each dropdown's
+    // own selection). Prevents the same team from being picked twice.
+    const refreshOptions=()=>{
+      const picked=new Set(selects.map(s=>s.value).filter(Boolean));
+      selects.forEach(s=>{
+        const keep=s.value;
+        // Teams to hide in this dropdown: all picks from OTHER dropdowns
+        const hide=new Set([...picked].filter(v=>v!==keep));
+        // Replace the option list while preserving the placeholder and current selection.
+        s.innerHTML='<option value="">— select —</option>'+options
+          .filter(o=>!hide.has(o.id))
+          .map(o=>`<option value="${esc(o.id)}"${o.id===keep?' selected':''}>${esc(o.name)}</option>`)
+          .join('');
+      });
+    };
+    selects.forEach(s=>s.addEventListener('change',refreshOptions));
     const cleanup=()=>{ov.remove();md.remove();};
     md.querySelector('#mb4Cancel').onclick=()=>{cleanup();resolve(null);};
     md.querySelector('#mb4Ok').onclick=()=>{
       const picks=new Map();const seen=new Set();let err='';
-      groups.forEach(g=>{
-        const v=md.querySelector(`select[data-mb4="${g}"]`).value;
+      groups.forEach((g,i)=>{
+        const v=selects[i].value;
         if(!v){err=err||'Pick a team for '+g;return;}
         if(seen.has(v)){err=err||'Duplicate: '+v+' picked more than once';return;}
         seen.add(v);picks.set(g,v);
