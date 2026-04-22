@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.2</title>
+<title>League Manager v2026.04.22.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -495,7 +495,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1403,19 +1403,18 @@ function renderLeagueView(){
     return`<option value="${esc(d)}"${sel}>${esc(d)} · ${esc(formatDate(d))}</option>`;
   }).join('');
 
-  // Context-aware Reveal / Next button for the filter bar (always visible).
-  // It acts on the app's computed current round (the one happening now),
-  // not on whatever the user has picked via the Round dropdowns. Clicking
-  // also resets lgSelRound so the view scrolls back to the current round.
+  // Play button for the filter bar (always visible). It always acts on the
+  // app's computed current round (the one happening now), not on whatever
+  // the user has picked via the Round dropdowns. Clicking also resets
+  // lgSelRound so the view scrolls back to the actual current round.
+  // Stages cycle: Kick-off → Reveal First Half → Reveal Full Time → Next Round.
   const currentActual=current;
-  const actStatus=currentActual?_lgRoundStatus(currentActual,curDate):'';
   const stageNow=currentActual?(revealStages[currentActual.key]||0):0;
-  let revealLabel='↓ Go to current',revealAction='jump',revealCls='db-now';
-  if(actStatus==='current'){
-    if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
-    else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
-    else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
-  }
+  let revealLabel='▶ Reveal First Half',revealAction='reveal',revealCls='db-now';
+  if(!currentActual){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
+  else if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
+  else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
+  else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
 
   app.innerHTML=`<div class="lg-wrap">
     <div class="date-bar">
@@ -1435,7 +1434,7 @@ function renderLeagueView(){
         ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
       </select>
       <input type="date" class="db-date" value="${esc(curDate)}" onchange="lgSetCurrentDate(this.value)" title="Set current_date manually">
-      <button class="${revealCls}" onclick="lgRevealBtnClick('${revealAction}')" title="Act on the current round and scroll to it">${esc(revealLabel)}</button>
+      <button class="${revealCls}" onclick="lgRevealBtnClick('${revealAction}')" title="Play the current round — reveal first half, full time, then advance to the next round">${esc(revealLabel)}</button>
     </div>
     <div class="lg-cols">
       <div class="lg-rounds-scroll" id="lgRoundsScroll"></div>
@@ -1532,7 +1531,7 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     body=sortKeys.map(lv=>{
       const levelLabel=lv?`<div class="rc-level-label">${esc(lv)}</div>`:'';
       const rowsHtml=groups.get(lv).map(r=>matchRowHTML(r,c,season,reveal)).join('');
-      const standCardHtml=lv?_lgLevelStandCardHTML(info,c,lv,season):'';
+      const standCardHtml=lv?_lgLevelStandCardHTML(info,c,lv,season,status,reveal):'';
       return `<div class="rc-level-block">
         <div class="rc-matches">${levelLabel}${rowsHtml}</div>
         <div class="rc-standings">${standCardHtml}</div>
@@ -1565,25 +1564,54 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
 }
 
 // Build a single standings card for one `level` within a round. The table
-// uses every match in that level & season whose date <= round.date AND that
-// has a full-time score recorded (so future, unplayed matches don't
-// artificially inflate anything).
-function _lgLevelStandCardHTML(info,c,level,seasonHint){
+// lists every team that is scheduled to play in that level & season (so a
+// group of 6 teams always shows 6 rows, even at round 1 when most of them
+// still have zero stats). Stats are computed from matches whose date <=
+// cutoff and that have a full-time score recorded. The cutoff respects the
+// round's status (past/current/future) AND the app's `current_date` — so
+// future (not-yet-played) match scores never leak into the standings.
+function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal){
   if(c.rounds<0||c.level<0||!level)return '';
   const season=seasonHint||info.season||seasonFor(info.date)||'';
-  const cutoff=info.date;
-  const included=DB.matches.r.filter(r=>{
+  const curIso=(typeof currentDate==='function')?currentDate():'';
+  const roundDate=info.date;
+  const revealDone=reveal==='full'||reveal===2;
+  // All season+level matches: used to determine the full roster of teams
+  // that will appear in this level over the course of the season.
+  const seasonLevelRows=DB.matches.r.filter(r=>{
     const lv=String(r[c.level]||'').trim();
     if(lv!==level)return false;
     const d=c.date>=0?normalizeDate(r[c.date]):'';
     if(!d)return false;
     if(season&&seasonFor(d)!==season)return false;
-    if(d>cutoff)return false;
+    return true;
+  });
+  const included=seasonLevelRows.filter(r=>{
+    const d=c.date>=0?normalizeDate(r[c.date]):'';
+    if(!d)return false;
+    // Never count match results past the app's current date (future = unseen).
+    if(curIso&&d>curIso)return false;
+    // For past rounds: snapshot up to the round's own date.
+    if(status==='past'&&d>roundDate)return false;
+    // For the currently-viewed round: exclude this round's own matches until
+    // the user has revealed full time. Other matches on the same date in
+    // other levels (or earlier in the same level) are still counted.
+    if(status==='current'&&d===roundDate&&!revealDone){
+      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+      if(rd===info.round)return false;
+    }
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
     return !isNaN(hs)&&!isNaN(aS);
   });
   const stats={};
+  // Seed with every team that appears anywhere in this level+season, so
+  // teams with 0 games so far still show up in the table.
+  seasonLevelRows.forEach(r=>{
+    const h=c.home>=0?String(r[c.home]||''):'';
+    const a=c.away>=0?String(r[c.away]||''):'';
+    [h,a].forEach(id=>{if(id&&!stats[id]){const t=teamById(id);stats[id]={id,name:t.name,color:t.color,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
+  });
   included.forEach(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
     const a=c.away>=0?String(r[c.away]||''):'';
@@ -1595,7 +1623,7 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint){
     else if(hs<aS){stats[a].w++;stats[a].pts+=3;stats[h].l++;}
     else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
   });
-  const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+  const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf||String(a.name).localeCompare(String(b.name),'hu'));
   let html=`<div class="rc-stand-card">
     <div class="rc-stand-hdr">${esc(level)}<span class="sc">${table.length} team${table.length===1?'':'s'}</span></div>`;
   if(!table.length){
@@ -1636,6 +1664,14 @@ function matchRowHTML(row,c,season,reveal){
   const h1=c.h1>=0?row[c.h1]:'';const a1=c.a1>=0?row[c.a1]:'';
   const hasFull=hsF!==''&&asF!==''&&!isNaN(parseInt(hsF))&&!isNaN(parseInt(asF));
   const has1H=h1!==''&&a1!==''&&!isNaN(parseInt(h1))&&!isNaN(parseInt(a1));
+  // Row-level future-date gate: never leak a score from the CSV for a match
+  // whose own date is past the app's current_date, regardless of what the
+  // round-level reveal says. This keeps the League view in sync with the
+  // user's timeline even if a row's date has drifted from its round header.
+  const curIsoRow=(typeof currentDate==='function')?currentDate():'';
+  const rowDate=c.date>=0?normalizeDate(row[c.date]):'';
+  const rowIsFuture=!!(curIsoRow&&rowDate&&rowDate>curIsoRow);
+  if(rowIsFuture)reveal='hidden';
   const isFull=reveal==='full'||reveal===2;
   const is1H=reveal===1;
   let scoreCls='m-score',scoreTxt='— : —';
