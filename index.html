@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.8</title>
+<title>League Manager v2026.04.22.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -497,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1614,13 +1614,16 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   // group — e.g. EURO-GR-1, EURO-GR-2, EURO-GR-3 all share the prefix
   // "EURO-GR" and therefore feed the same standings table.
   const _roundPrefix=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?m[1]:String(code||'');};
-  const groupPrefix=mode==='rounds'?_roundPrefix(level):'';
-  // Build a rounds→season map from calendar.csv. For tournaments that
-  // straddle the mid-June season boundary (EURO, UCL finals, etc.) the
-  // seasonFor(date) of individual matches can fall on opposite sides of
-  // the boundary even though the calendar tags them with the same season.
-  // When the calendar has a season column, it is the source of truth;
-  // otherwise we fall back to seasonFor(date).
+  const _roundNumber=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?parseInt(m[2]):NaN;};
+  const groupPrefix=mode==='rounds'?_roundPrefix(level):_roundPrefix(info.round);
+  const cardNumber=_roundNumber(info.round);
+  // Build rounds→season and rounds→scheduled-date maps from calendar.csv.
+  //  - The season map handles tournaments that straddle the mid-June season
+  //    boundary (EURO, UCL finals, etc.) where seasonFor(date) would
+  //    disagree with the calendar's explicit season column.
+  //  - The date map handles the much more common case where the match
+  //    row's stored `date` has drifted from the calendar-scheduled date
+  //    (manual edits, Play re-saves). The calendar is the authority.
   const _rdSeasonMap=(function(){
     const m=new Map();
     try{
@@ -1629,9 +1632,21 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     }catch(e){/* ignore */}
     return m;
   })();
+  const _rdDateMap=(function(){
+    const m=new Map();
+    try{
+      const all=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
+      all.forEach(r=>{if(r&&r.round&&r.date&&!m.has(String(r.round).trim()))m.set(String(r.round).trim(),String(r.date).trim());});
+    }catch(e){/* ignore */}
+    return m;
+  })();
+  const _effDate=(r,d)=>{
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    return _rdDateMap.get(rd)||d;
+  };
   const _rowSeason=(r,d)=>{
     const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
-    return _rdSeasonMap.get(rd)||seasonFor(d);
+    return _rdSeasonMap.get(rd)||seasonFor(_effDate(r,d));
   };
   const seasonLevelRows=DB.matches.r.filter(r=>{
     if(mode==='rounds'){
@@ -1642,23 +1657,43 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       if(lv!==level)return false;
     }
     const d=c.date>=0?normalizeDate(r[c.date]):'';
-    if(!d)return false;
+    const ed=_effDate(r,d);
+    if(!ed)return false;
     if(season&&_rowSeason(r,d)!==season)return false;
     return true;
   });
   const included=seasonLevelRows.filter(r=>{
     const d=c.date>=0?normalizeDate(r[c.date]):'';
-    if(!d)return false;
-    // Never count match results past the app's current date (future = unseen).
-    if(curIso&&d>curIso)return false;
-    // For past rounds: snapshot up to the round's own date.
-    if(status==='past'&&d>roundDate)return false;
-    // For the currently-viewed round: exclude this round's own matches until
-    // the user has revealed full time. Other matches on the same date in
-    // other levels (or earlier in the same level) are still counted.
-    if(status==='current'&&d===roundDate&&!revealDone){
-      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
-      if(rd===info.round)return false;
+    const ed=_effDate(r,d);
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    const rPrefix=_roundPrefix(rd);
+    const rNum=_roundNumber(rd);
+    // "Same tournament" = this row and the card share the same rounds-prefix
+    // AND both have parseable round numbers. When that's true we use
+    // round-number ordering instead of dates, which is robust to row dates
+    // that have drifted from the calendar schedule.
+    const sameTournament=!!groupPrefix&&rPrefix===groupPrefix&&!isNaN(rNum)&&!isNaN(cardNumber);
+    if(sameTournament){
+      // Never count rounds scheduled (per calendar) past current_date.
+      if(curIso&&ed&&ed>curIso)return false;
+      // Exclude rounds that come AFTER this card's round.
+      if(rNum>cardNumber)return false;
+      // For the current round: exclude its own matches until revealed.
+      if(rNum===cardNumber){
+        if(status==='current'&&!revealDone)return false;
+        if(status==='future')return false;
+      }
+    } else {
+      if(!ed)return false;
+      // Never count match results past the app's current date (future = unseen).
+      if(curIso&&ed>curIso)return false;
+      // For past rounds: snapshot up to the round's own date.
+      if(status==='past'&&ed>roundDate)return false;
+      // For the currently-viewed round: exclude this round's own matches until
+      // the user has revealed full time.
+      if(status==='current'&&ed===roundDate&&!revealDone){
+        if(rd===info.round)return false;
+      }
     }
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
@@ -1813,18 +1848,32 @@ function _imMatchOutcomeCls(hs,aS){
 // yet — are treated as unplayed, so their scores never leak into popups
 // or tooltips regardless of what the CSV has already pre-simulated.
 function _isMatchPlayedInApp(row,c){
-  if(!c||c.date<0)return false;
-  const d=normalizeDate(row[c.date]);
-  if(!d)return false;
+  if(!c)return false;
+  const d=c.date>=0?normalizeDate(row[c.date]):'';
+  const rnd=c.rounds>=0?String(row[c.rounds]||'').trim():'';
   const cur=(typeof currentDate==='function')?currentDate():'';
   if(!cur)return false;
-  if(d<cur)return true;
-  if(d>cur)return false;
-  const rnd=c.rounds>=0?String(row[c.rounds]||'').trim():'';
+  // Prefer the calendar-scheduled date of the match's round code as the
+  // "effective" date — the stored row date can drift (manual edits, Play
+  // re-saves, season generator), whereas the calendar is authoritative.
+  // Fall back to the row's own date when the round code has no calendar
+  // entry (friendlies / off-calendar rows).
+  let effDate=d;
+  if(rnd){
+    try{
+      const all=_lgCalendarRounds();
+      const hit=all.find(r=>r.round===rnd);
+      if(hit&&hit.date)effDate=hit.date;
+    }catch(e){/* ignore — keep row date */}
+  }
+  if(!effDate)return false;
+  if(effDate<cur)return true;
+  if(effDate>cur)return false;
+  // effDate === cur: it's the current round — played only when revealed.
   if(!rnd)return false;
   try{
     const all=_lgCalendarRounds();
-    const hit=all.find(r=>r.round===rnd&&r.date===d);
+    const hit=all.find(r=>r.round===rnd&&r.date===effDate);
     if(!hit)return false;
     return (revealStages[hit.key]||0)>=2;
   }catch(e){return false;}
