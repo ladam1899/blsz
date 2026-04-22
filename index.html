@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.7</title>
+<title>League Manager v2026.04.22.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -497,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1615,6 +1615,24 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   // "EURO-GR" and therefore feed the same standings table.
   const _roundPrefix=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?m[1]:String(code||'');};
   const groupPrefix=mode==='rounds'?_roundPrefix(level):'';
+  // Build a rounds→season map from calendar.csv. For tournaments that
+  // straddle the mid-June season boundary (EURO, UCL finals, etc.) the
+  // seasonFor(date) of individual matches can fall on opposite sides of
+  // the boundary even though the calendar tags them with the same season.
+  // When the calendar has a season column, it is the source of truth;
+  // otherwise we fall back to seasonFor(date).
+  const _rdSeasonMap=(function(){
+    const m=new Map();
+    try{
+      const all=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
+      all.forEach(r=>{if(r&&r.round&&r.season)m.set(String(r.round).trim(),String(r.season).trim());});
+    }catch(e){/* ignore */}
+    return m;
+  })();
+  const _rowSeason=(r,d)=>{
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    return _rdSeasonMap.get(rd)||seasonFor(d);
+  };
   const seasonLevelRows=DB.matches.r.filter(r=>{
     if(mode==='rounds'){
       const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
@@ -1625,7 +1643,7 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     }
     const d=c.date>=0?normalizeDate(r[c.date]):'';
     if(!d)return false;
-    if(season&&seasonFor(d)!==season)return false;
+    if(season&&_rowSeason(r,d)!==season)return false;
     return true;
   });
   const included=seasonLevelRows.filter(r=>{
