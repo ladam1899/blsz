@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.10</title>
+<title>League Manager v2026.04.22.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -190,6 +190,12 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .p2,.p3{background:var(--blue-l);color:var(--blue);}
 .prel{background:var(--red-l);color:var(--red);}
 .pdef{background:var(--surface2);color:var(--muted);}
+.pos-badge.sr-advance{background:#16a34a;color:#fff;}
+.pos-badge.sr-eliminate{background:#dc2626;color:#fff;}
+.st-row.sr-advance{background:rgba(34,197,94,.10);}
+.st-row.sr-advance:hover{background:rgba(34,197,94,.18);}
+.st-row.sr-eliminate{background:rgba(239,68,68,.10);}
+.st-row.sr-eliminate:hover{background:rgba(239,68,68,.18);}
 .team-cell{display:flex;align-items:center;gap:6px;min-width:0;}
 .team-cell .team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
 .team-badge-sm{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;}
@@ -497,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1223,6 +1229,11 @@ function _lgMatchCols(){
     home:idx('home_id'),away:idx('away_id'),
     hs:idx('home_score_full_time'),as:idx('away_score_full_time'),
     h1:idx('home_score_first_half'),a1:idx('away_score_first_half'),
+    h2a:idx('second_home_att'),h2d:idx('second_home_def'),
+    a2a:idx('second_away_att'),a2d:idx('second_away_def'),
+    hEa:idx('extra_home_att'),hEd:idx('extra_home_def'),
+    aEa:idx('extra_away_att'),aEd:idx('extra_away_def'),
+    hPen:idx('pen_home'),aPen:idx('pen_away'),
     notes:idx('notes')
   };
 }
@@ -1739,12 +1750,20 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       <tbody>`;
     table.forEach((t,i)=>{
       const pos=i+1,total=table.length;
-      const pc=pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef';
+      // In group/tournament mode (rounds), colour the top 2 as "advancing"
+      // (green) and the bottom 2 as "eliminated" (red). Everything in the
+      // middle keeps the neutral class. In normal league mode the original
+      // position classes apply.
+      const isGroup=mode==='rounds'&&total>=4;
+      const pc=isGroup
+        ?(pos<=2?'sr-advance':pos>=total-1?'sr-eliminate':'pdef')
+        :(pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef');
+      const rowCls=isGroup?(pos<=2?'sr-advance':pos>=total-1?'sr-eliminate':''):'';
       const gd=(t.gd>0?'+':'')+t.gd;
       const logo=logoFor(t.id,season);
       const tid=esc(t.id).replace(/'/g,'&#39;');
       const ttl=esc(t.name).replace(/'/g,'&#39;');
-      html+=`<tr class="st-row" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
+      html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
         <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span></div></td>
         <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
@@ -1809,10 +1828,12 @@ function matchRowHTML(row,c,season,reveal){
   </div>`;
 }
 function _lgBuildPeriodLine(row,c){
-  const hsF=c.hs>=0?parseInt(row[c.hs]):NaN;
-  const asF=c.as>=0?parseInt(row[c.as]):NaN;
-  const h1=c.h1>=0?parseInt(row[c.h1]):NaN;
-  const a1=c.a1>=0?parseInt(row[c.a1]):NaN;
+  const gi=(k)=>(c[k]!==undefined&&c[k]>=0)?parseInt(row[c[k]]):NaN;
+  const h1=gi('h1'),a1=gi('a1');
+  const hsF=gi('hs'),asF=gi('as');
+  const h2a=gi('h2a'),a2a=gi('a2a');
+  const hEa=gi('hEa'),aEa=gi('aEa');
+  const hPen=gi('hPen'),aPen=gi('aPen');
   const mtype=c.mtype>=0?String(row[c.mtype]||'').trim():'';
   // League / group / first-leg matches (match_type = 0): show ONLY the
   // half-time score in parentheses, nothing else.
@@ -1820,16 +1841,31 @@ function _lgBuildPeriodLine(row,c){
     if(!isNaN(h1)&&!isNaN(a1))return `(${h1}-${a1})`;
     return '';
   }
-  // Knockout or other types — keep the detailed breakdown.
+  // Knockout or other types — build the breakdown from per-period columns
+  // so ET/pen goals don't bleed into the 2H number. home_score_full_time
+  // already includes ET + pen (per the simulation formula), so we prefer
+  // second_home_att/second_away_att for the true 2H figure when available.
+  const et=(!isNaN(hEa)&&!isNaN(aEa))?(hEa>0||aEa>0):false;
+  const pen=(!isNaN(hPen)&&!isNaN(aPen))?(hPen>0||aPen>0):false;
+  let h2=NaN,a2=NaN;
+  if(!isNaN(h2a)&&!isNaN(a2a)){
+    h2=h2a;a2=a2a;
+  } else if(!isNaN(hsF)&&!isNaN(asF)&&!isNaN(h1)&&!isNaN(a1)){
+    // Fallback: derive 2H from FT minus 1H minus ET minus pen.
+    h2=hsF-h1-(isNaN(hEa)?0:hEa)-(isNaN(hPen)?0:hPen);
+    a2=asF-a1-(isNaN(aEa)?0:aEa)-(isNaN(aPen)?0:aPen);
+  }
+  const regH=(!isNaN(h1)&&!isNaN(h2))?(h1+h2):(!isNaN(hsF)?hsF:NaN);
+  const regA=(!isNaN(a1)&&!isNaN(a2))?(a1+a2):(!isNaN(asF)?asF:NaN);
   const parts=[];
   if(!isNaN(h1)&&!isNaN(a1))parts.push(`1H ${h1}:${a1}`);
-  if(!isNaN(hsF)&&!isNaN(asF)){
-    if(!isNaN(h1)&&!isNaN(a1)){
-      const h2=hsF-h1,a2=asF-a1;
-      parts.push(`2H ${h2}:${a2}`);
-    }
-    parts.push(`FT ${hsF}:${asF}`);
+  if(!isNaN(h2)&&!isNaN(a2))parts.push(`2H ${h2}:${a2}`);
+  if(!isNaN(regH)&&!isNaN(regA))parts.push(`FT ${regH}:${regA}`);
+  if(et){
+    parts.push(`ET ${hEa}:${aEa}`);
+    if(!isNaN(regH)&&!isNaN(regA))parts.push(`AET ${regH+hEa}:${regA+aEa}`);
   }
+  if(pen)parts.push(`PEN ${hPen}:${aPen}`);
   return parts.join(' · ');
 }
 
@@ -2749,12 +2785,19 @@ function _playStageBarHTML(){
 function _playStadiumPickerHTML(locked){
   const stadiums=_playUniqueStadiums();
   if(!_playNeutralStadium&&stadiums.length)_playNeutralStadium=stadiums[0];
-  const opts=stadiums.map(s=>`<option value="${esc(s)}" ${s===_playNeutralStadium?'selected':''}>${esc(s)}</option>`).join('');
+  // Datalist-backed text input: user can either pick from autocomplete
+  // (populated from teams.csv) or type a custom venue name.
+  const opts=stadiums.map(s=>`<option value="${esc(s)}"></option>`).join('');
+  const placeholder=stadiums.length?'Type or pick a stadium…':'Type a stadium name…';
   return`<div class="play-stadium-row">
     <label>Neutral stadium:</label>
-    <select class="play-stadium-sel" onchange="_playSetNeutralStadium(this.value)" ${locked?'disabled':''}>
-      ${stadiums.length?opts:`<option value="">— no stadiums in teams.csv —</option>`}
-    </select>
+    <input type="text" class="play-stadium-sel" list="playStadiumList"
+           value="${esc(_playNeutralStadium||'')}"
+           oninput="_playSetNeutralStadium(this.value)"
+           onchange="_playSetNeutralStadium(this.value)"
+           placeholder="${placeholder}"
+           ${locked?'disabled':''}>
+    <datalist id="playStadiumList">${opts}</datalist>
   </div>`;
 }
 // Dropdown listing the round codes a user can attach this match to. Only
