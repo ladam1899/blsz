@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.1</title>
+<title>League Manager v2026.04.22.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -495,7 +495,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1403,6 +1403,20 @@ function renderLeagueView(){
     return`<option value="${esc(d)}"${sel}>${esc(d)} · ${esc(formatDate(d))}</option>`;
   }).join('');
 
+  // Context-aware Reveal / Next button for the filter bar (always visible).
+  // It acts on the app's computed current round (the one happening now),
+  // not on whatever the user has picked via the Round dropdowns. Clicking
+  // also resets lgSelRound so the view scrolls back to the current round.
+  const currentActual=current;
+  const actStatus=currentActual?_lgRoundStatus(currentActual,curDate):'';
+  const stageNow=currentActual?(revealStages[currentActual.key]||0):0;
+  let revealLabel='↓ Go to current',revealAction='jump',revealCls='db-now';
+  if(actStatus==='current'){
+    if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
+    else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
+    else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
+  }
+
   app.innerHTML=`<div class="lg-wrap">
     <div class="date-bar">
       <span class="db-label">Season</span>
@@ -1421,7 +1435,7 @@ function renderLeagueView(){
         ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
       </select>
       <input type="date" class="db-date" value="${esc(curDate)}" onchange="lgSetCurrentDate(this.value)" title="Set current_date manually">
-      <button class="db-now" onclick="lgGoCurrent()">↺ Reset</button>
+      <button class="${revealCls}" onclick="lgRevealBtnClick('${revealAction}')" title="Act on the current round and scroll to it">${esc(revealLabel)}</button>
     </div>
     <div class="lg-cols">
       <div class="lg-rounds-scroll" id="lgRoundsScroll"></div>
@@ -1445,6 +1459,21 @@ function renderLeagueView(){
 
 function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
 function lgGoCurrent(){lgFilter={season:'',roundType:'',roundNum:'',search:''};lgSelRound=null;renderLeagueView();}
+// Filter-bar reveal/next handler. Always resets lgSelRound so the
+// re-rendered view scrolls back to the actual current round.
+function lgRevealBtnClick(action){
+  lgSelRound=null;
+  if(action==='next'){
+    advanceToNextRound();
+    return;
+  }
+  if(action==='reveal'){
+    const all=_lgCalendarRounds();
+    const cur=_lgCurrentRound(all,currentDate());
+    if(cur){lgRevealNextStage(cur.key);return;}
+  }
+  renderLeagueView();
+}
 let _lgSearchT=null;
 function lgSearchChange(v){
   clearTimeout(_lgSearchT);
@@ -1511,7 +1540,7 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     }).join('');
   }
 
-  let playBtn='',stageLabel='';
+  let stageLabel='';
   if(status==='past'){
     stageLabel='Played';
   } else if(status==='future'){
@@ -1519,16 +1548,6 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   } else {
     const stage=revealStages[info.key]||0;
     stageLabel=['Kick-off','Half-time','Full Time'][stage];
-    if(isAnchor){
-      const keyAttr=esc(info.key).replace(/'/g,'&#39;');
-      if(stage>=2){
-        playBtn=`<button class="rc-play-btn next" onclick="advanceToNextRound()">⏭ Next Round</button>`;
-      } else if(stage===1){
-        playBtn=`<button class="rc-play-btn" onclick="lgRevealNextStage('${keyAttr}')">▶ Reveal Full Time</button>`;
-      } else {
-        playBtn=`<button class="rc-play-btn" onclick="lgRevealNextStage('${keyAttr}')">▶ Reveal First Half</button>`;
-      }
-    }
   }
 
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
@@ -1539,7 +1558,6 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
       </div>
       <div class="rc-play">
         <span class="rc-stage">${esc(stageLabel)}</span>
-        ${playBtn}
       </div>
     </div>
     <div class="rc-body">${body}</div>
@@ -1698,7 +1716,12 @@ function _imMatchRowHTML(row,c,revealScore){
   const rnd=c.rounds>=0?String(row[c.rounds]||''):'';
   const hs=c.hs>=0?parseInt(row[c.hs]):NaN;
   const aS=c.as>=0?parseInt(row[c.as]):NaN;
-  const played=!isNaN(hs)&&!isNaN(aS);
+  // Only reveal scores for matches at-or-before the current_date. Future
+  // matches keep their scores hidden in the popups even if the sheet has
+  // a pre-simulated result.
+  const cur=(typeof currentDate==='function')?currentDate():'';
+  const isFuture=d&&cur&&d>cur;
+  const played=!isFuture&&!isNaN(hs)&&!isNaN(aS);
   const cls=played?_imMatchOutcomeCls(hs,aS):'';
   const scoreTxt=played?`${hs}-${aS}`:'— : —';
   const scoreCls=played?'im-score':'im-score pending';
@@ -1753,12 +1776,16 @@ function openTeamProfile(teamId,seasonHint){
     const db=c.date>=0?normalizeDate(b[c.date]):'';
     return da<db?-1:da>db?1:0;
   });
-  // Season totals across those matches
+  // Season totals across those matches — only matches at-or-before
+  // current_date are counted, so future pre-simulated scores don't leak.
+  const curIso=(typeof currentDate==='function')?currentDate():'';
   let w=0,drw=0,l=0,gf=0,ga=0,played=0;
   matches.forEach(r=>{
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
     if(isNaN(hs)||isNaN(aS))return;
+    const rd=c.date>=0?normalizeDate(r[c.date]):'';
+    if(rd&&curIso&&rd>curIso)return;
     const h=c.home>=0?String(r[c.home]||''):'';
     const isHome=(h===teamId);
     const my=isHome?hs:aS;const opp=isHome?aS:hs;
@@ -1802,11 +1829,14 @@ function openHeadToHead(aId,bId){
     const dy=c.date>=0?normalizeDate(y[c.date]):'';
     return dx<dy?-1:dx>dy?1:0;
   });
+  const curIsoH2H=(typeof currentDate==='function')?currentDate():'';
   let wA=0,wB=0,drw=0,played=0,gfA=0,gfB=0;
   rows.forEach(r=>{
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
     if(isNaN(hs)||isNaN(aS))return;
+    const rd=c.date>=0?normalizeDate(r[c.date]):'';
+    if(rd&&curIsoH2H&&rd>curIsoH2H)return;
     const h=c.home>=0?String(r[c.home]||''):'';
     const aGoals=(h===aId)?hs:aS;
     const bGoals=(h===aId)?aS:hs;
@@ -2050,9 +2080,11 @@ function _tooltipForRound(round){
   const awayI=_mhi('away_id','away');
   const hsI=_mhi('home_score_full_time','home_score');
   const asI=_mhi('away_score_full_time','away_score');
+  const dateI=_mhi('date');
   if(rndI<0)return '<div class="cal-tt-empty">matches.csv has no rounds column.</div>';
   const rows=m.r.filter(r=>String(r[rndI]||'').trim()===round);
   if(!rows.length)return '<div class="cal-tt-empty">No matches found for this round.</div>';
+  const curIso=(typeof currentDate==='function')?currentDate():'';
   const lines=rows.map(r=>{
     const hId=homeI>=0?String(r[homeI]||'').trim():'';
     const aId=awayI>=0?String(r[awayI]||'').trim():'';
@@ -2062,7 +2094,9 @@ function _tooltipForRound(round){
     const aName=esc(aT.name||aId||'?');
     const hs=hsI>=0?r[hsI]:'';
     const as=asI>=0?r[asI]:'';
-    const hasScore=hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as));
+    const rd=dateI>=0?normalizeDate(r[dateI]):'';
+    const isFuture=rd&&curIso&&rd>curIso;
+    const hasScore=!isFuture&&hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as));
     const score=hasScore?` <span class="cal-tt-score">${esc(String(hs))}–${esc(String(as))}</span>`:'';
     return `<div class="cal-tt-row"><span class="cal-tt-h">${hName}</span><span class="cal-tt-v">vs</span><span class="cal-tt-a">${aName}</span>${score}</div>`;
   }).join('');
