@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.3</title>
+<title>League Manager v2026.04.22.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -126,9 +126,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .rc-matches{min-width:0;display:flex;flex-direction:column;}
 .rc-standings{display:flex;flex-direction:column;min-width:0;}
 .rc-stand-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;height:100%;}
-.rc-stand-hdr{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;margin-bottom:6px;display:flex;align-items:center;gap:6px;justify-content:space-between;color:var(--text);}
+.rc-stand-hdr{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.06em;margin-bottom:6px;display:flex;align-items:baseline;gap:8px;justify-content:space-between;color:var(--text);line-height:1;}
 .rc-stand-hdr .sc{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;}
-.rc-level-label{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;color:var(--muted);padding:4px 2px 6px;border-bottom:1px dashed var(--border);margin-bottom:4px;}
+.rc-level-label{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:4px 2px 6px;border-bottom:1px dashed var(--border);margin-bottom:4px;}
+.rc-level-name{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.06em;color:var(--text);line-height:1;}
+.rc-level-sub{font-size:11px;color:var(--muted);letter-spacing:.04em;font-family:'JetBrains Mono',monospace;}
 
 /* MATCH ROW (league view) */
 .m-row{display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;gap:10px;padding:8px 8px;border-radius:6px;transition:background .1s;}
@@ -495,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1452,7 +1454,7 @@ function renderLeagueView(){
   requestAnimationFrame(()=>{
     if(!anchor)return;
     const el=document.getElementById('lgRc-'+_lgCssId(anchor.key));
-    if(el)el.scrollIntoView({block:'center',behavior:'auto'});
+    if(el)el.scrollIntoView({block:'start',behavior:'auto'});
   });
 }
 
@@ -1529,7 +1531,7 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     });
     const season=info.season||seasonFor(info.date);
     body=sortKeys.map(lv=>{
-      const levelLabel=lv?`<div class="rc-level-label">${esc(lv)}</div>`:'';
+      const levelLabel=lv?`<div class="rc-level-label"><span class="rc-level-name">${esc(lv)}</span><span class="rc-level-sub">${esc(info.round)} · ${esc(formatDate(info.date))}</span></div>`:'';
       const rowsHtml=groups.get(lv).map(r=>matchRowHTML(r,c,season,reveal)).join('');
       const standCardHtml=lv?_lgLevelStandCardHTML(info,c,lv,season,status,reveal):'';
       return `<div class="rc-level-block">
@@ -1744,6 +1746,30 @@ function _imMatchOutcomeCls(hs,aS){
   if(hs<aS)return 'win-a';
   return 'dr';
 }
+// A match is "played in the app's timeline" when:
+//  • its date is strictly before current_date (it already happened), OR
+//  • its date equals current_date AND the user has revealed full-time on
+//    that round (revealStages for that round is >= 2).
+// Future matches — and today's matches that haven't been revealed to FT
+// yet — are treated as unplayed, so their scores never leak into popups
+// or tooltips regardless of what the CSV has already pre-simulated.
+function _isMatchPlayedInApp(row,c){
+  if(!c||c.date<0)return false;
+  const d=normalizeDate(row[c.date]);
+  if(!d)return false;
+  const cur=(typeof currentDate==='function')?currentDate():'';
+  if(!cur)return false;
+  if(d<cur)return true;
+  if(d>cur)return false;
+  const rnd=c.rounds>=0?String(row[c.rounds]||'').trim():'';
+  if(!rnd)return false;
+  try{
+    const all=_lgCalendarRounds();
+    const hit=all.find(r=>r.round===rnd&&r.date===d);
+    if(!hit)return false;
+    return (revealStages[hit.key]||0)>=2;
+  }catch(e){return false;}
+}
 function _imMatchRowHTML(row,c,revealScore){
   const homeId=c.home>=0?String(row[c.home]||''):'';
   const awayId=c.away>=0?String(row[c.away]||''):'';
@@ -1752,12 +1778,9 @@ function _imMatchRowHTML(row,c,revealScore){
   const rnd=c.rounds>=0?String(row[c.rounds]||''):'';
   const hs=c.hs>=0?parseInt(row[c.hs]):NaN;
   const aS=c.as>=0?parseInt(row[c.as]):NaN;
-  // Only reveal scores for matches at-or-before the current_date. Future
-  // matches keep their scores hidden in the popups even if the sheet has
-  // a pre-simulated result.
-  const cur=(typeof currentDate==='function')?currentDate():'';
-  const isFuture=d&&cur&&d>cur;
-  const played=!isFuture&&!isNaN(hs)&&!isNaN(aS);
+  // Show the score only when the match has actually been played in the
+  // app's timeline — not just "has a score in the CSV".
+  const played=_isMatchPlayedInApp(row,c)&&!isNaN(hs)&&!isNaN(aS);
   const cls=played?_imMatchOutcomeCls(hs,aS):'';
   const scoreTxt=played?`${hs}-${aS}`:'— : —';
   const scoreCls=played?'im-score':'im-score pending';
@@ -1812,16 +1835,15 @@ function openTeamProfile(teamId,seasonHint){
     const db=c.date>=0?normalizeDate(b[c.date]):'';
     return da<db?-1:da>db?1:0;
   });
-  // Season totals across those matches — only matches at-or-before
-  // current_date are counted, so future pre-simulated scores don't leak.
-  const curIso=(typeof currentDate==='function')?currentDate():'';
+  // Season totals across those matches — only actually-played matches
+  // (per app timeline + reveal state) are counted, so future or not-yet-
+  // revealed pre-simulated scores never leak into the totals.
   let w=0,drw=0,l=0,gf=0,ga=0,played=0;
   matches.forEach(r=>{
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
     if(isNaN(hs)||isNaN(aS))return;
-    const rd=c.date>=0?normalizeDate(r[c.date]):'';
-    if(rd&&curIso&&rd>curIso)return;
+    if(!_isMatchPlayedInApp(r,c))return;
     const h=c.home>=0?String(r[c.home]||''):'';
     const isHome=(h===teamId);
     const my=isHome?hs:aS;const opp=isHome?aS:hs;
@@ -1865,14 +1887,12 @@ function openHeadToHead(aId,bId){
     const dy=c.date>=0?normalizeDate(y[c.date]):'';
     return dx<dy?-1:dx>dy?1:0;
   });
-  const curIsoH2H=(typeof currentDate==='function')?currentDate():'';
   let wA=0,wB=0,drw=0,played=0,gfA=0,gfB=0;
   rows.forEach(r=>{
     const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
     const aS=c.as>=0?parseInt(r[c.as]):NaN;
     if(isNaN(hs)||isNaN(aS))return;
-    const rd=c.date>=0?normalizeDate(r[c.date]):'';
-    if(rd&&curIsoH2H&&rd>curIsoH2H)return;
+    if(!_isMatchPlayedInApp(r,c))return;
     const h=c.home>=0?String(r[c.home]||''):'';
     const aGoals=(h===aId)?hs:aS;
     const bGoals=(h===aId)?aS:hs;
@@ -2120,7 +2140,9 @@ function _tooltipForRound(round){
   if(rndI<0)return '<div class="cal-tt-empty">matches.csv has no rounds column.</div>';
   const rows=m.r.filter(r=>String(r[rndI]||'').trim()===round);
   if(!rows.length)return '<div class="cal-tt-empty">No matches found for this round.</div>';
-  const curIso=(typeof currentDate==='function')?currentDate():'';
+  // Build a compat-cols shim so _isMatchPlayedInApp can read this row. The
+  // helper needs only .date and .rounds column indices.
+  const cShim={date:dateI,rounds:rndI,home:-1,away:-1,hs:-1,as:-1,h1:-1,a1:-1,level:-1,mtype:-1};
   const lines=rows.map(r=>{
     const hId=homeI>=0?String(r[homeI]||'').trim():'';
     const aId=awayI>=0?String(r[awayI]||'').trim():'';
@@ -2130,9 +2152,8 @@ function _tooltipForRound(round){
     const aName=esc(aT.name||aId||'?');
     const hs=hsI>=0?r[hsI]:'';
     const as=asI>=0?r[asI]:'';
-    const rd=dateI>=0?normalizeDate(r[dateI]):'';
-    const isFuture=rd&&curIso&&rd>curIso;
-    const hasScore=!isFuture&&hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as));
+    const played=_isMatchPlayedInApp(r,cShim);
+    const hasScore=played&&hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as));
     const score=hasScore?` <span class="cal-tt-score">${esc(String(hs))}–${esc(String(as))}</span>`:'';
     return `<div class="cal-tt-row"><span class="cal-tt-h">${hName}</span><span class="cal-tt-v">vs</span><span class="cal-tt-a">${aName}</span>${score}</div>`;
   }).join('');
