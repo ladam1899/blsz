@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.5</title>
+<title>League Manager v2026.04.22.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -497,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1518,22 +1518,33 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   } else {
     // Group rows by `level` so each group (1M, 1N, 2A, …) gets its own
     // row-block with its matches on the left and its standings on the right.
-    const groups=new Map(); // level → rows
+    // For league-type rows (match_type=0) whose `level` is blank (e.g. EURO-GR-1),
+    // fall back to grouping by `rounds` so the block still gets a standings
+    // card built from the round's own participants over the season.
+    const groups=new Map(); // key → {mode:'level'|'rounds', key, rows}
     rows.forEach(r=>{
       const lv=c.level>=0?String(r[c.level]||'').trim():'';
-      if(!groups.has(lv))groups.set(lv,[]);
-      groups.get(lv).push(r);
+      const mt=c.mtype>=0?String(r[c.mtype]||'').trim():'';
+      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+      let mode='level',key=lv;
+      if(!lv&&mt==='0'&&rd){mode='rounds';key=rd;}
+      const mapKey=mode+'::'+key;
+      if(!groups.has(mapKey))groups.set(mapKey,{mode,key,rows:[]});
+      groups.get(mapKey).rows.push(r);
     });
     const sortKeys=[...groups.keys()].sort((a,b)=>{
-      const an=parseInt(a),bn=parseInt(b);
+      const ka=groups.get(a).key,kb=groups.get(b).key;
+      const an=parseInt(ka),bn=parseInt(kb);
       if(!isNaN(an)&&!isNaN(bn)&&an!==bn)return an-bn;
-      return String(a).localeCompare(String(b),'hu');
+      return String(ka).localeCompare(String(kb),'hu');
     });
     const season=info.season||seasonFor(info.date);
-    body=sortKeys.map(lv=>{
-      const levelLabel=lv?`<div class="rc-level-label"><span class="rc-level-name">${esc(lv)}</span><span class="rc-level-sub">${esc(info.round)} · ${esc(formatDate(info.date))}</span></div>`:'';
-      const rowsHtml=groups.get(lv).map(r=>matchRowHTML(r,c,season,reveal)).join('');
-      const standCardHtml=lv?_lgLevelStandCardHTML(info,c,lv,season,status,reveal):'';
+    body=sortKeys.map(k=>{
+      const g=groups.get(k);
+      const label=g.key;
+      const levelLabel=label?`<div class="rc-level-label"><span class="rc-level-name">${esc(label)}</span><span class="rc-level-sub">${esc(info.round)} · ${esc(formatDate(info.date))}</span></div>`:'';
+      const rowsHtml=g.rows.map(r=>matchRowHTML(r,c,season,reveal)).join('');
+      const standCardHtml=label?_lgLevelStandCardHTML(info,c,label,season,status,reveal,g.mode):'';
       return `<div class="rc-level-block">
         <div class="rc-matches">${levelLabel}${rowsHtml}</div>
         <div class="rc-standings">${standCardHtml}</div>
@@ -1572,17 +1583,32 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
 // cutoff and that have a full-time score recorded. The cutoff respects the
 // round's status (past/current/future) AND the app's `current_date` — so
 // future (not-yet-played) match scores never leak into the standings.
-function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal){
-  if(c.rounds<0||c.level<0||!level)return '';
+function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
+  if(c.rounds<0||!level)return '';
+  const mode=groupMode||'level';
+  if(mode==='level'&&c.level<0)return '';
   const season=seasonHint||info.season||seasonFor(info.date)||'';
   const curIso=(typeof currentDate==='function')?currentDate():'';
   const roundDate=info.date;
   const revealDone=reveal==='full'||reveal===2;
-  // All season+level matches: used to determine the full roster of teams
-  // that will appear in this level over the course of the season.
+  // All season rows for this group: used to determine the full roster of teams
+  // that will appear in this group over the course of the season. In 'level'
+  // mode this is every row whose `level` matches; in 'rounds' mode it is
+  // every row whose `rounds` matches (for league-type groups that have no
+  // `level` value, e.g. EURO-GR-1).
+  // In 'rounds' mode, pool together every round in the same competition
+  // group — e.g. EURO-GR-1, EURO-GR-2, EURO-GR-3 all share the prefix
+  // "EURO-GR" and therefore feed the same standings table.
+  const _roundPrefix=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?m[1]:String(code||'');};
+  const groupPrefix=mode==='rounds'?_roundPrefix(level):'';
   const seasonLevelRows=DB.matches.r.filter(r=>{
-    const lv=String(r[c.level]||'').trim();
-    if(lv!==level)return false;
+    if(mode==='rounds'){
+      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+      if(_roundPrefix(rd)!==groupPrefix)return false;
+    } else {
+      const lv=c.level>=0?String(r[c.level]||'').trim():'';
+      if(lv!==level)return false;
+    }
     const d=c.date>=0?normalizeDate(r[c.date]):'';
     if(!d)return false;
     if(season&&seasonFor(d)!==season)return false;
@@ -1626,8 +1652,9 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal){
     else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
   });
   const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf||String(a.name).localeCompare(String(b.name),'hu'));
+  const hdrLabel=mode==='rounds'?(groupPrefix||level):level;
   let html=`<div class="rc-stand-card">
-    <div class="rc-stand-hdr">${esc(level)}<span class="sc">${table.length} team${table.length===1?'':'s'}</span></div>`;
+    <div class="rc-stand-hdr">${esc(hdrLabel)}<span class="sc">${table.length} team${table.length===1?'':'s'}</span></div>`;
   if(!table.length){
     html+=`<div class="empty" style="padding:8px 2px;font-size:11px;color:var(--muted)">No matches played yet.</div>`;
   } else {
@@ -1666,14 +1693,14 @@ function matchRowHTML(row,c,season,reveal){
   const h1=c.h1>=0?row[c.h1]:'';const a1=c.a1>=0?row[c.a1]:'';
   const hasFull=hsF!==''&&asF!==''&&!isNaN(parseInt(hsF))&&!isNaN(parseInt(asF));
   const has1H=h1!==''&&a1!==''&&!isNaN(parseInt(h1))&&!isNaN(parseInt(a1));
-  // Row-level future-date gate: never leak a score from the CSV for a match
-  // whose own date is past the app's current_date, regardless of what the
-  // round-level reveal says. This keeps the League view in sync with the
-  // user's timeline even if a row's date has drifted from its round header.
-  const curIsoRow=(typeof currentDate==='function')?currentDate():'';
-  const rowDate=c.date>=0?normalizeDate(row[c.date]):'';
-  const rowIsFuture=!!(curIsoRow&&rowDate&&rowDate>curIsoRow);
-  if(rowIsFuture)reveal='hidden';
+  // The round-level `reveal` value is authoritative for this view:
+  //   past   → 'full'   (show the full-time score)
+  //   future → 'hidden' (show a dash)
+  //   current → 0|1|2   (controlled by the reveal stages)
+  // We intentionally do NOT apply a second row-level "future date" check
+  // here — that used to hide Play-saved scores when a row's stored date
+  // was later than `current_date` (which happens easily after manually
+  // scrubbing the date backwards). Trust the round's reveal.
   const isFull=reveal==='full'||reveal===2;
   const is1H=reveal===1;
   let scoreCls='m-score',scoreTxt='— : —';
@@ -2847,10 +2874,23 @@ async function _playSaveToMatches(){
   const homeTot=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
   const awayTot=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
   const stadium=_playNeutral?_playNeutralStadium:_playHomeStadium();
+  const roundCode=_playRound||'FRIENDLY';
+  // When the user picks a real calendar round (not FRIENDLY), the match
+  // should be filed under that round's scheduled date — otherwise the
+  // standings / Matches view won't see the saved row as part of the round.
+  let scheduledDate=currentDate();
+  if(roundCode&&roundCode!=='FRIENDLY'){
+    try{
+      const cal=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
+      const hit=cal.find(r=>String(r.round||'').trim()===roundCode);
+      if(hit&&hit.date)scheduledDate=hit.date;
+    }catch(e){/* fall back to currentDate() */}
+  }
   const rowObj={
-    date:currentDate(),
-    rounds:_playRound||'FRIENDLY',
+    date:scheduledDate,
+    rounds:roundCode,
     level:'',
+    match_type:'0',
     match_number:String(_playNextMatchNumber()),
     stadion_name:stadium||'',
     home_id:_playHome,
@@ -2877,11 +2917,31 @@ async function _playSaveToMatches(){
     extra_away_def:String(d.extra_away_def),
     pen_away:String(d.pen_away)
   };
-  // Build the row array in the order of DB.matches.h — unknown cols default to ''.
-  const newRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
-  DB.matches.r.push(newRow);
+  // Upsert by (rounds, home_id, away_id) when the user picked a real round,
+  // so an existing skeleton row (e.g. auto-generated by Generate Season, or
+  // added manually) gets filled in with scores instead of being duplicated.
+  // FRIENDLY rows are always appended — users may want repeat friendlies.
+  const cH=_lgMatchCols();
+  let rowIdx=-1;
+  if(roundCode&&roundCode!=='FRIENDLY'&&cH.rounds>=0&&cH.home>=0&&cH.away>=0){
+    rowIdx=DB.matches.r.findIndex(r=>
+      String(r[cH.rounds]||'').trim()===roundCode&&
+      String(r[cH.home]||'').trim()===String(_playHome).trim()&&
+      String(r[cH.away]||'').trim()===String(_playAway).trim()
+    );
+  }
+  if(rowIdx>=0){
+    // Merge: keep the match_number from the existing row (don't renumber).
+    const existingMN=cH.mn>=0?String(DB.matches.r[rowIdx][cH.mn]||'').trim():'';
+    if(existingMN)rowObj.match_number=existingMN;
+    DB.matches.r[rowIdx]=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
+  } else {
+    // Build the row array in the order of DB.matches.h — unknown cols default to ''.
+    const newRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
+    DB.matches.r.push(newRow);
+  }
   _playStage='saved';
-  _playData.calcLog.push(`<b>Saved row #${rowObj.match_number}</b> (rounds=${esc(rowObj.rounds)}, stadium=${esc(stadium||'—')})`);
+  _playData.calcLog.push(`<b>${rowIdx>=0?'Updated':'Saved'} row #${rowObj.match_number}</b> (rounds=${esc(rowObj.rounds)}, date=${esc(scheduledDate)}, stadium=${esc(stadium||'—')})`);
   renderPlayView();
   try{
     await saveSheet('matches');
