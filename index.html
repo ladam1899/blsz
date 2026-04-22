@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.4</title>
+<title>League Manager v2026.04.22.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -497,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2417,6 +2417,28 @@ let _playNeutral=false;        // neutral venue → home-bonus not applied
 let _playNeutralStadium='';    // stadium name chosen from dropdown when neutral
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
 let _playStage='ready';
+let _playRound='FRIENDLY';     // round code written into matches.csv for this match
+// Return the set of round codes the user may pick from in the Play view's
+// Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
+// EXCLUDED because those are produced by the Generate Season action (MB)
+// or by the corresponding auto-generators (KK / NK cups). The result is
+// sorted by calendar date so the user scans upcoming first.
+function _playAvailableRounds(){
+  const all=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
+  const skip=(code)=>{
+    const s=String(code||'').toUpperCase();
+    return s.startsWith('MB-')||s.startsWith('KK')||s.startsWith('NK');
+  };
+  const byRound=new Map();
+  all.forEach(r=>{
+    const code=String(r.round||'').trim();
+    if(!code||skip(code))return;
+    // Keep the earliest date for each distinct round code.
+    const prev=byRound.get(code);
+    if(!prev||String(r.date||'')<String(prev.date||''))byRound.set(code,r);
+  });
+  return [...byRound.values()].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
+}
 // Accumulates scores + every rand draw so we can render a calculation breakdown
 // and persist the exact numbers into matches.csv later.
 let _playData=null;
@@ -2549,6 +2571,7 @@ function renderPlayView(){
             <button class="play-opt-btn ${_playNeutral?'active':''}" onclick="_playSetNeutral(true)" title="No home-support bonus applied" ${locked?'disabled':''}>⚖ Neutral</button>
           </div>
         </div>
+        ${_playRoundPickerHTML(locked)}
         ${_playNeutral?_playStadiumPickerHTML(locked):''}
       </div>
       ${_playMode==='manual'?_playManualHTML():''}
@@ -2593,6 +2616,34 @@ function _playStadiumPickerHTML(locked){
     <label>Neutral stadium:</label>
     <select class="play-stadium-sel" onchange="_playSetNeutralStadium(this.value)" ${locked?'disabled':''}>
       ${stadiums.length?opts:`<option value="">— no stadiums in teams.csv —</option>`}
+    </select>
+  </div>`;
+}
+// Dropdown listing the round codes a user can attach this match to. Only
+// non-auto-generated rounds are offered (rounds starting with MB-, KK or NK
+// are filtered out by _playAvailableRounds). FRIENDLY is always first.
+function _playRoundPickerHTML(locked){
+  const rounds=typeof _playAvailableRounds==='function'?_playAvailableRounds():[];
+  const codes=new Set();
+  const picks=[];
+  rounds.forEach(r=>{
+    const code=String(r.round||'').trim();
+    if(!code||codes.has(code))return;
+    codes.add(code);
+    picks.push({code,date:r.date||'',competition:r.competition||'',season:r.season||''});
+  });
+  if(!codes.has(_playRound)&&_playRound!=='FRIENDLY')_playRound='FRIENDLY';
+  const friendlySel=(_playRound==='FRIENDLY')?' selected':'';
+  const options=[`<option value="FRIENDLY"${friendlySel}>FRIENDLY — custom / off-calendar match</option>`];
+  picks.forEach(p=>{
+    const sel=(p.code===_playRound)?' selected':'';
+    const meta=[p.competition,p.date,p.season].filter(Boolean).join(' · ');
+    options.push(`<option value="${esc(p.code)}"${sel}>${esc(p.code)}${meta?' — '+esc(meta):''}</option>`);
+  });
+  return`<div class="play-stadium-row">
+    <label>Round:</label>
+    <select class="play-stadium-sel" onchange="_playSetRound(this.value)" ${locked?'disabled':''} title="Which round this match is written into (MB / KK / NK rounds are auto-generated and excluded here)">
+      ${options.join('')}
     </select>
   </div>`;
 }
@@ -2646,6 +2697,7 @@ function _playSetAway(v){if(_playStage!=='ready')return;_playAway=v;_playReset()
 function _playSwap(){if(_playStage!=='ready')return;const t=_playHome;_playHome=_playAway;_playAway=t;_playReset();}
 function _playSetType(t){if(_playStage!=='ready')return;_playType=t;_playReset();}
 function _playSetMode(m){if(_playStage!=='ready')return;_playMode=m;_playReset();}
+function _playSetRound(v){if(_playStage!=='ready')return;_playRound=String(v||'FRIENDLY').trim()||'FRIENDLY';renderPlayView();}
 function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;renderPlayView();}
 function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;}
 function _playReset(){_playStage='ready';_playData=_emptyPlayData();_playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};renderPlayView();}
@@ -2797,7 +2849,7 @@ async function _playSaveToMatches(){
   const stadium=_playNeutral?_playNeutralStadium:_playHomeStadium();
   const rowObj={
     date:currentDate(),
-    rounds:'FRIENDLY',
+    rounds:_playRound||'FRIENDLY',
     level:'',
     match_number:String(_playNextMatchNumber()),
     stadion_name:stadium||'',
@@ -2829,7 +2881,7 @@ async function _playSaveToMatches(){
   const newRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
   DB.matches.r.push(newRow);
   _playStage='saved';
-  _playData.calcLog.push(`<b>Saved row #${rowObj.match_number}</b> (rounds=FRIENDLY, stadium=${esc(stadium||'—')})`);
+  _playData.calcLog.push(`<b>Saved row #${rowObj.match_number}</b> (rounds=${esc(rowObj.rounds)}, stadium=${esc(stadium||'—')})`);
   renderPlayView();
   try{
     await saveSheet('matches');
