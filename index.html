@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.9</title>
+<title>League Manager v2026.04.22.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -497,7 +497,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1556,7 +1556,9 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     body=sortKeys.map(k=>{
       const g=groups.get(k);
       const label=g.key;
-      const levelLabel=label?`<div class="rc-level-label"><span class="rc-level-name">${esc(label)}</span><span class="rc-level-sub">${esc(info.round)} · ${esc(formatDate(info.date))}</span></div>`:'';
+      // Just the group/level name — the round code and date are already
+      // shown in the round-card header above, so no sub-line here.
+      const levelLabel=label?`<div class="rc-level-label"><span class="rc-level-name">${esc(label)}</span></div>`:'';
       const rowsHtml=g.rows.map(r=>matchRowHTML(r,c,season,reveal)).join('');
       const standCardHtml=label?_lgLevelStandCardHTML(info,c,label,season,status,reveal,g.mode):'';
       return `<div class="rc-level-block">
@@ -1649,9 +1651,11 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     return _rdSeasonMap.get(rd)||seasonFor(_effDate(r,d));
   };
   const seasonLevelRows=DB.matches.r.filter(r=>{
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    const rPrefix=_roundPrefix(rd);
+    const sameTournament=!!groupPrefix&&rPrefix===groupPrefix;
     if(mode==='rounds'){
-      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
-      if(_roundPrefix(rd)!==groupPrefix)return false;
+      if(!sameTournament)return false;
     } else {
       const lv=c.level>=0?String(r[c.level]||'').trim():'';
       if(lv!==level)return false;
@@ -1659,7 +1663,11 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     const d=c.date>=0?normalizeDate(r[c.date]):'';
     const ed=_effDate(r,d);
     if(!ed)return false;
-    if(season&&_rowSeason(r,d)!==season)return false;
+    // Season filter only applies to rows outside the card's tournament. For
+    // same-prefix rows the prefix itself scopes the pool correctly, even
+    // when the tournament straddles the mid-June season boundary (EURO
+    // group: GR-1 in spring half, GR-2/3 in autumn half — all one pool).
+    if(!sameTournament&&season&&_rowSeason(r,d)!==season)return false;
     return true;
   });
   const included=seasonLevelRows.filter(r=>{
