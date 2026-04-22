@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.11</title>
+<title>League Manager v2026.04.22.12</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.12</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1229,11 +1229,6 @@ function _lgMatchCols(){
     home:idx('home_id'),away:idx('away_id'),
     hs:idx('home_score_full_time'),as:idx('away_score_full_time'),
     h1:idx('home_score_first_half'),a1:idx('away_score_first_half'),
-    h2a:idx('second_home_att'),h2d:idx('second_home_def'),
-    a2a:idx('second_away_att'),a2d:idx('second_away_def'),
-    hEa:idx('extra_home_att'),hEd:idx('extra_home_def'),
-    aEa:idx('extra_away_att'),aEd:idx('extra_away_def'),
-    hPen:idx('pen_home'),aPen:idx('pen_away'),
     notes:idx('notes')
   };
 }
@@ -1828,12 +1823,10 @@ function matchRowHTML(row,c,season,reveal){
   </div>`;
 }
 function _lgBuildPeriodLine(row,c){
-  const gi=(k)=>(c[k]!==undefined&&c[k]>=0)?parseInt(row[c[k]]):NaN;
-  const h1=gi('h1'),a1=gi('a1');
-  const hsF=gi('hs'),asF=gi('as');
-  const h2a=gi('h2a'),a2a=gi('a2a');
-  const hEa=gi('hEa'),aEa=gi('aEa');
-  const hPen=gi('hPen'),aPen=gi('aPen');
+  const h1=c.h1>=0?parseInt(row[c.h1]):NaN;
+  const a1=c.a1>=0?parseInt(row[c.a1]):NaN;
+  const hsF=c.hs>=0?parseInt(row[c.hs]):NaN;
+  const asF=c.as>=0?parseInt(row[c.as]):NaN;
   const mtype=c.mtype>=0?String(row[c.mtype]||'').trim():'';
   // League / group / first-leg matches (match_type = 0): show ONLY the
   // half-time score in parentheses, nothing else.
@@ -1841,32 +1834,29 @@ function _lgBuildPeriodLine(row,c){
     if(!isNaN(h1)&&!isNaN(a1))return `(${h1}-${a1})`;
     return '';
   }
-  // Knockout or other types — build the breakdown from per-period columns
-  // so ET/pen goals don't bleed into the 2H number. home_score_full_time
-  // already includes ET + pen (per the simulation formula), so we prefer
-  // second_home_att/second_away_att for the true 2H figure when available.
-  const et=(!isNaN(hEa)&&!isNaN(aEa))?(hEa>0||aEa>0):false;
-  const pen=(!isNaN(hPen)&&!isNaN(aPen))?(hPen>0||aPen>0):false;
-  let h2=NaN,a2=NaN;
-  if(!isNaN(h2a)&&!isNaN(a2a)){
-    h2=h2a;a2=a2a;
-  } else if(!isNaN(hsF)&&!isNaN(asF)&&!isNaN(h1)&&!isNaN(a1)){
-    // Fallback: derive 2H from FT minus 1H minus ET minus pen.
-    h2=hsF-h1-(isNaN(hEa)?0:hEa)-(isNaN(hPen)?0:hPen);
-    a2=asF-a1-(isNaN(aEa)?0:aEa)-(isNaN(aPen)?0:aPen);
-  }
-  const regH=(!isNaN(h1)&&!isNaN(h2))?(h1+h2):(!isNaN(hsF)?hsF:NaN);
-  const regA=(!isNaN(a1)&&!isNaN(a2))?(a1+a2):(!isNaN(asF)?asF:NaN);
+  // Knockout or other types — parse the per-period breakdown from the
+  // `notes` field, which the Play engine writes as e.g.
+  //   "1H 3-0; 2H 0-1; FT 3-1[; ET 0-0; AET 3-1; PEN 5-4]".
+  // The dedicated score columns only store full-time (incl. ET+pen) and
+  // half-time totals, and the per-period att/def columns are random-roll
+  // values used by the simulator — NOT goal counts — so the notes string
+  // is the only authoritative source for 2H / ET / AET / PEN goals.
+  const notes=c.notes>=0?String(row[c.notes]||''):'';
+  const parsed={};
+  notes.replace(/^\s*\[auto\]\s*/i,'').split(/;/).forEach(seg=>{
+    const m=seg.trim().match(/^([A-Za-z]+)\s+(-?\d+)\s*[-:]\s*(-?\d+)$/);
+    if(m)parsed[m[1].toUpperCase()]={h:parseInt(m[2]),a:parseInt(m[3])};
+  });
   const parts=[];
-  if(!isNaN(h1)&&!isNaN(a1))parts.push(`1H ${h1}:${a1}`);
-  if(!isNaN(h2)&&!isNaN(a2))parts.push(`2H ${h2}:${a2}`);
-  if(!isNaN(regH)&&!isNaN(regA))parts.push(`FT ${regH}:${regA}`);
-  if(et){
-    parts.push(`ET ${hEa}:${aEa}`);
-    if(!isNaN(regH)&&!isNaN(regA))parts.push(`AET ${regH+hEa}:${regA+aEa}`);
-  }
-  if(pen)parts.push(`PEN ${hPen}:${aPen}`);
-  return parts.join(' · ');
+  const pp=(k)=>{const v=parsed[k];if(!v||isNaN(v.h)||isNaN(v.a))return;parts.push(`${k} ${v.h}:${v.a}`);};
+  pp('1H');pp('2H');pp('FT');pp('ET');pp('AET');pp('PEN');
+  if(parts.length)return parts.join(' · ');
+  // Fallback when notes are missing/malformed: at least show 1H and FT
+  // from the score columns (knowing FT here may include ET+pen).
+  const fbParts=[];
+  if(!isNaN(h1)&&!isNaN(a1))fbParts.push(`1H ${h1}:${a1}`);
+  if(!isNaN(hsF)&&!isNaN(asF))fbParts.push(`FT ${hsF}:${asF}`);
+  return fbParts.join(' · ');
 }
 
 // ── INFO MODAL: team profile + head-to-head ──────────────────
