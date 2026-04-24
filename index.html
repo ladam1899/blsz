@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.24.4</title>
+<title>League Manager v2026.04.24.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1852,26 +1852,42 @@ function _lgBuildPeriodLine(row,c){
     return '';
   }
   // Knockout or other types — parse the per-period breakdown from the
-  // `notes` field, which the Play engine writes as e.g.
-  //   "1H 3-0; 2H 0-1; FT 3-1[; ET 0-0; AET 3-1; PEN 5-4]".
-  // The dedicated score columns only store full-time (incl. ET+pen) and
-  // half-time totals, and the per-period att/def columns are random-roll
-  // values used by the simulator — NOT goal counts — so the notes string
-  // is the only authoritative source for 2H / ET / AET / PEN goals.
+  // `notes` field. Two historical shapes are accepted:
+  //   New:  "(h1-a1) FT: r-r [ET: cumH-cumA] [PEN: hpen-apen] [AGG: aH-aA]"
+  //   Old:  "1H h-a; 2H h-a; FT h-a; ET h-a; AET h-a; PEN h-a"
+  // We regex-extract every label we care about from anywhere in the string.
   const notes=c.notes>=0?String(row[c.notes]||''):'';
+  const cleaned=notes.replace(/^\s*\[auto\]\s*/i,'');
   const parsed={};
-  notes.replace(/^\s*\[auto\]\s*/i,'').split(/;/).forEach(seg=>{
-    const m=seg.trim().match(/^([A-Za-z]+)\s+(-?\d+)\s*[-:]\s*(-?\d+)$/);
-    if(m)parsed[m[1].toUpperCase()]={h:parseInt(m[2]),a:parseInt(m[3])};
-  });
+  // Parenthesised HT  →  "(3-0)"
+  const mHT=cleaned.match(/\((-?\d+)\s*[-:]\s*(-?\d+)\)/);
+  if(mHT)parsed['HT']={h:parseInt(mHT[1]),a:parseInt(mHT[2])};
+  // Labelled fragments — accept both "FT 1-2" (legacy) and "FT: 1-2" (new).
+  const labelRe=/\b(1H|2H|HT|FT|ET|AET|PEN|AGG|agg)[:\s]+(-?\d+)\s*[-:]\s*(-?\d+)/g;
+  let mm;
+  while((mm=labelRe.exec(cleaned))){
+    const k=mm[1].toUpperCase();
+    parsed[k]={h:parseInt(mm[2]),a:parseInt(mm[3])};
+  }
   const parts=[];
-  const pp=(k)=>{const v=parsed[k];if(!v||isNaN(v.h)||isNaN(v.a))return;parts.push(`${k} ${v.h}:${v.a}`);};
-  pp('1H');pp('2H');pp('FT');pp('ET');pp('AET');pp('PEN');
+  const pp=(labelKey,displayLabel)=>{
+    const v=parsed[labelKey];if(!v||isNaN(v.h)||isNaN(v.a))return;
+    parts.push(`${displayLabel||labelKey} ${v.h}:${v.a}`);
+  };
+  // HT first (either "HT" from legacy "1H" or parens), then the labelled pieces.
+  pp('HT','HT');
+  pp('1H','1H');
+  pp('2H','2H');
+  pp('FT','FT');
+  pp('ET','ET');
+  pp('AET','AET');
+  pp('PEN','PEN');
+  pp('AGG','AGG');
   if(parts.length)return parts.join(' · ');
-  // Fallback when notes are missing/malformed: at least show 1H and FT
-  // from the score columns (knowing FT here may include ET+pen).
+  // Fallback when notes are missing/malformed: at least show HT and FT from
+  // the score columns (knowing FT here may include ET+pen for legacy rows).
   const fbParts=[];
-  if(!isNaN(h1)&&!isNaN(a1))fbParts.push(`1H ${h1}:${a1}`);
+  if(!isNaN(h1)&&!isNaN(a1))fbParts.push(`HT ${h1}:${a1}`);
   if(!isNaN(hsF)&&!isNaN(asF))fbParts.push(`FT ${hsF}:${asF}`);
   return fbParts.join(' · ');
 }
@@ -3023,22 +3039,22 @@ function _playNextStep(){
 // ── Compose notes + next match_number + write row to matches.csv ──
 function _playNotes(){
   const d=_playData;if(!d)return'';
-  const homeScore=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
-  const awayScore=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
   const parts=[];
-  parts.push(`1H ${d.h1}-${d.a1}`);
-  parts.push(`2H ${d.h2}-${d.a2}`);
   const regHome=(d.h1||0)+(d.h2||0), regAway=(d.a1||0)+(d.a2||0);
-  parts.push(`FT ${regHome}-${regAway}`);
+  // New format (matches _buildSimulatedMatchRow):
+  //   (h1-a1)                                    — HT always, in parens
+  //   FT: regHome-regAway                        — 90-min score
+  //   ET: regHome+het - regAway+aet  (if ET)     — cumulative after ET
+  //   PEN: hpen-apen                 (if pens)   — shootout only
+  parts.push(`(${d.h1||0}-${d.a1||0})`);
+  parts.push(`FT: ${regHome}-${regAway}`);
   if(d.het!==null&&d.het!==undefined){
-    parts.push(`ET ${d.het}-${d.aet}`);
-    parts.push(`AET ${regHome+d.het}-${regAway+d.aet}`);
+    parts.push(`ET: ${regHome+(d.het||0)}-${regAway+(d.aet||0)}`);
   }
   if(d.hpen!==null&&d.hpen!==undefined){
-    parts.push(`PEN ${d.hpen}-${d.apen}`);
-    parts.push(`agg ${homeScore}-${awayScore}`);
+    parts.push(`PEN: ${d.hpen}-${d.apen}`);
   }
-  return parts.join('; ');
+  return parts.join(' ');
 }
 function _playNextMatchNumber(){
   const d=DB.matches;
@@ -3340,18 +3356,27 @@ function _nkFindMatchRow(rounds,matchNum){
         di=_hi('date'),noi=_hi('notes');
   if(ri<0||hi<0||ai<0||hsi<0||asi<0)return null;
   const wantRnd=String(rounds||'').trim().toUpperCase();
-  const wantMn=String(matchNum);
+  const wantMnStr=String(matchNum).trim();
+  const wantMnNum=parseInt(wantMnStr,10);
   for(let i=0;i<m.r.length;i++){
     const r=m.r[i];
     if(String(r[ri]||'').trim().toUpperCase()!==wantRnd)continue;
-    if(String(r[mni]||'').trim()!==wantMn)continue;
+    const gotMnStr=String(r[mni]||'').trim();
+    const gotMnNum=parseInt(gotMnStr,10);
+    // Tolerate zero-padding: "01" should equal "1" (and vice versa). Fall back
+    // to string compare when either side is non-numeric.
+    const mnMatches=(!isNaN(gotMnNum)&&!isNaN(wantMnNum))
+      ? gotMnNum===wantMnNum
+      : gotMnStr===wantMnStr;
+    if(!mnMatches)continue;
     const hs=parseInt(r[hsi]),as=parseInt(r[asi]);
     if(isNaN(hs)||isNaN(as))return null;
     // Also parse ET/PEN from notes in case this was a mt=1 single-leg
-    // with ET/PEN recorded.
+    // with ET/PEN recorded. Accepts both the legacy "ET 1-0" (space) and the
+    // new "ET: 1-0" (colon) shape.
     const notes=noi>=0?String(r[noi]||''):'';
-    const mET=notes.match(/ET\s+(\d+)-(\d+)/i);
-    const mPEN=notes.match(/PEN\s+(\d+)-(\d+)/i);
+    const mET=notes.match(/ET[:\s]+(\d+)-(\d+)/i);
+    const mPEN=notes.match(/PEN[:\s]+(\d+)-(\d+)/i);
     return{
       home_id:String(r[hi]||'').trim(),away_id:String(r[ai]||'').trim(),
       h_ft:hs,a_ft:as,
@@ -3401,6 +3426,27 @@ function _nkFindLeg2For(leg1Rounds,leg1MatchNum){
       const mn=mni>=0?String(r[mni]||'').trim():'';
       const parsed=_nkFindMatchRow(leg2Rounds,mn);
       return parsed?{leg1,leg2:parsed}:null;
+    }
+  }
+  return null;
+}
+// Reverse of _nkFindLeg2For — given a leg-2 row's home/away, find the leg-1
+// row with the same pair but reversed. Returns the parsed leg-1 row or null.
+// Used while SIMULATING leg 2 so we can embed AGG in the leg-2 notes.
+function _nkFindLeg1BySameTeamsReversed(leg1Rounds,leg2HomeId,leg2AwayId){
+  const m=DB.matches;
+  const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),mni=_hi('match_number');
+  if(ri<0||hi<0||ai<0)return null;
+  const wantRnd=String(leg1Rounds||'').trim().toUpperCase();
+  for(let i=0;i<m.r.length;i++){
+    const r=m.r[i];
+    if(String(r[ri]||'').trim().toUpperCase()!==wantRnd)continue;
+    const h=String(r[hi]||'').trim(),a=String(r[ai]||'').trim();
+    // Leg 2 home was leg 1's away, and leg 2 away was leg 1's home.
+    if(h===leg2AwayId&&a===leg2HomeId){
+      const mn=mni>=0?String(r[mni]||'').trim():'';
+      return _nkFindMatchRow(leg1Rounds,mn);
     }
   }
   return null;
@@ -3734,25 +3780,49 @@ function _buildSimulatedMatchRow(ctx){
     const p1=simPeriodDetailed(H,A,hSk.attack_1h,hSk.defence_1h,aSk.attack_1h,aSk.defence_1h);
     const p2=simPeriodDetailed(H,A,hSk.attack_2h,hSk.defence_2h,aSk.attack_2h,aSk.defence_2h);
     h1=p1.homeG;a1=p1.awayG;h2=p2.homeG;a2=p2.awayG;
-    notesParts.push(`1H ${h1}-${a1}`);
-    notesParts.push(`2H ${h2}-${a2}`);
     let p3=null,pp=null;
     const mt=String(ctx.mt||'0');
-    const ftTied=(h1+h2)===(a1+a2);
+    const ftH=h1+h2,ftA=a1+a2;
+    const ftTied=ftH===ftA;
     const needET=(mt==='1'||mt==='11')&&ftTied;
     if(needET){
       p3=simPeriodDetailed(H,A,hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
       het=p3.homeG;aet=p3.awayG;
-      notesParts.push(`ET ${het}-${aet}`);
-      if((h1+h2+het)===(a1+a2+aet)){
+      if((ftH+het)===(ftA+aet)){
         pp=simPenaltiesDetailed(hSk,aSk,neutral);
         hpen=pp.hpen;apen=pp.apen;
-        notesParts.push(`PEN ${hpen}-${apen}`);
       }
     }
-    const fth=h1+h2+het+hpen,fta=a1+a2+aet+apen;
-    if(needET)notesParts.push(`AET ${h1+h2+het}-${a1+a2+aet}`);
-    notesParts.push(`FT ${fth}-${fta}`);
+    // `home_score_full_time` / `away_score_full_time` keep their historical
+    // meaning: they sum everything (90' + ET + PEN) so the rest of the app
+    // (standings, Play panel, etc.) can still read a single "final" score.
+    const fth=ftH+het+hpen,fta=ftA+aet+apen;
+    // ─── New note formula (per user spec) ──────────────────────────────
+    //   Always:  "(h1-a1)"                            — first half in parens
+    //   Always:  "FT: (h1+h2)-(a1+a2)"                — 90-minute score
+    //   If ET:   "ET: (+het)-(+aet)"                  — cumulative after ET
+    //   If PEN:  "PEN: hpen-apen"                     — shootout score only
+    //   If leg2: "AGG: aggH-aggA"                     — 180' aggregate
+    // ───────────────────────────────────────────────────────────────────
+    notesParts.push(`(${h1}-${a1})`);
+    notesParts.push(`FT: ${ftH}-${ftA}`);
+    if(p3)notesParts.push(`ET: ${ftH+het}-${ftA+aet}`);
+    if(pp)notesParts.push(`PEN: ${hpen}-${apen}`);
+    // AGG only for NK two-legged second legs (NKW-5-2 / NKW-6-2) — find the
+    // matching leg-1 row by "same teams, reversed" and sum the 90' scores.
+    const leg1Rounds=(typeof _NK_LEG2_OF==='object'&&_NK_LEG2_OF)
+      ? Object.keys(_NK_LEG2_OF).find(k=>_NK_LEG2_OF[k]===ctx.rounds)
+      : null;
+    if(leg1Rounds&&ctx.homeId&&ctx.awayId){
+      const leg1=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId);
+      if(leg1){
+        // leg-1 HOME is this row's AWAY. Aggregate from THIS row's home view:
+        //   myHomeAgg = myFT_home + leg1.away   (away of leg1 = home of leg2)
+        //   myAwayAgg = myFT_away + leg1.home
+        const aggH=ftH+leg1.a_ft, aggA=ftA+leg1.h_ft;
+        notesParts.push(`AGG: ${aggH}-${aggA}`);
+      }
+    }
     const obj={
       date:ctx.date||'',
       rounds:ctx.rounds||'',
@@ -3766,7 +3836,7 @@ function _buildSimulatedMatchRow(ctx){
       away_score_full_time:String(fta),
       home_score_first_half:String(h1),
       away_score_first_half:String(a1),
-      notes:'[auto] '+notesParts.join('; '),
+      notes:'[auto] '+notesParts.join(' '),
       first_home_att:p1?String(p1.hAttRnd):'',
       first_home_def:p1?String(p1.hDefRnd):'',
       second_home_att:p2?String(p2.hAttRnd):'',
