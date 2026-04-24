@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.24.3</title>
+<title>League Manager v2026.04.24.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1269,7 +1269,15 @@ function _lgRoundStatus(info,cur){
 // Split a round code like "MB-B-1" / "CHL-Q1-1" into {type, num}. Returns
 // null when the code doesn't end in "-<integer>".
 function _lgRoundTypeAndNumber(round){
-  const m=String(round||'').match(/^(.+)-(\d+)$/);
+  // Normalise legacy NK formats so the Type dropdown never shows "NK-W-1" /
+  // "NK-L-1" alongside the canonical "NKW-…" / "NKL-…". We also collapse the
+  // NKL-5-2 (W-R5 2nd leg) alias into NKW-5-2 since from the UI's perspective
+  // it's part of the W semifinal pair, not a separate L bracket round.
+  const r=String(round||'').trim()
+    .replace(/^NK-W-/i,'NKW-')
+    .replace(/^NK-L-/i,'NKL-')
+    .replace(/^NKL-5-2(?=-|$)/i,'NKW-5-2');
+  const m=r.match(/^(.+)-(\d+)$/);
   if(!m)return null;
   return{type:m[1],num:m[2]};
 }
@@ -1609,6 +1617,12 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   if(c.rounds<0||!level)return '';
   const mode=groupMode||'level';
   if(mode==='level'&&c.level<0)return '';
+  // NK (Nemzeti Kupa) is pure knockout — every round (including the W-R5/R6
+  // two-legged ties that use match_type=0 to signal "no ET/pens", not
+  // "league round") is eliminatory. Standings tables would be meaningless
+  // here, so skip them for any round whose code starts with NKW- or NKL-.
+  if(/^NK[WL]-/i.test(String(info.round||'')))return '';
+  if(mode==='rounds'&&/^NK[WL]-/i.test(String(level||'')))return '';
   const season=seasonHint||info.season||seasonFor(info.date)||'';
   const curIso=(typeof currentDate==='function')?currentDate():'';
   const roundDate=info.date;
@@ -3192,10 +3206,10 @@ function _parsePlaceToken(tok,currentRnd){
   if(em)return{kind:'kkrom_emh',bucket:em[1],place:parseInt(em[2])};
   // "NKW-X-Y-N" / "NKL-X-Y-N" / "NK-W-X-Y-N" / "NK-L-X-Y-N" → NK cup match
   // identifier. Branch ∈ {W,L}, round X, leg Y, match-number N. Semantics
-  // depend on the CALLING round (see _resolvePlaceTok): in an NKW row this
-  // always means "winner" (aggregate for 2-leg ties); in an NKL row it means
-  // "loser" — except when the calling row itself is a W-bracket 2nd leg
-  // stored in NKL namespace (NKL-X-2), which still wants "winner".
+  // depend on the CALLING round (see _resolvePlaceTok): an NKW caller means
+  // "winner" (aggregate for 2-leg ties); an NKL caller means "loser".
+  // Both W-R5 and W-R6 2nd legs live in the NKW namespace (NKW-5-2 /
+  // NKW-6-2), so no special-case is needed here.
   const nk=s.match(/^NK-?([WL])-(\d+)-(\d+)-(\d+)$/i);
   if(nk)return{kind:'nk_match',branch:nk[1].toUpperCase(),round:parseInt(nk[2]),leg:parseInt(nk[3]),matchNum:parseInt(nk[4])};
   return null;
@@ -3302,10 +3316,18 @@ function _kkromCrossRanking(bucket){
 // Two-legged ties in NK use these rounds-code pairs. Leg 1's round code is the
 // "canonical" reference (e.g. tokens `NKW-5-1-N` refer to leg-1's match N and
 // resolve to the aggregate winner/loser).
-const _NK_LEG2_OF={'NKW-5-1':'NKL-5-2','NKW-6-1':'NKW-6-2'};
-// Returns a normalised NK rounds code: "NK-W-..." → "NKW-...", "NK-L-..." → "NKL-..."
+const _NK_LEG2_OF={'NKW-5-1':'NKW-5-2','NKW-6-1':'NKW-6-2'};
+// Returns a normalised NK rounds code:
+//   "NK-W-..." → "NKW-...", "NK-L-..." → "NKL-...", and the legacy
+//   "NKL-5-2" (W-R5 2nd leg stored under the L namespace in older drafts)
+//   is rewritten to "NKW-5-2" so both W-R5 and W-R6 use symmetric leg-1/
+//   leg-2 naming in the NKW namespace.
 function _normNkRounds(rnd){
-  return String(rnd||'').trim().replace(/^NK-W-/i,'NKW-').replace(/^NK-L-/i,'NKL-').toUpperCase();
+  return String(rnd||'').trim()
+    .replace(/^NK-W-/i,'NKW-')
+    .replace(/^NK-L-/i,'NKL-')
+    .replace(/^NKL-5-2(?=-|$)/i,'NKW-5-2')
+    .toUpperCase();
 }
 // Finds a single matches.csv row by (rounds, match_number). Returns an object
 // with parsed score fields, or null.
@@ -3472,13 +3494,12 @@ function _resolvePlaceTok(tok,ctx){
   }
   if(p.kind==='nk_match'){
     // `NK<branch>-<round>-<leg>-<matchNum>` — resolves to the team that came
-    // out of that match according to the caller's branch context.
+    // out of that match according to the caller's branch context. Both W-R5
+    // and W-R6 2nd legs now live in the NKW namespace (NKW-5-2 / NKW-6-2),
+    // so a simple "caller is NKL-?" test suffices for loser semantics.
     const ref='NK'+p.branch+'-'+p.round+'-'+p.leg;     // referenced round code
     const callerRnd=String(ctx.rounds||'').trim().toUpperCase();
-    // True when the caller is a W-bracket 2nd leg stored in NKL namespace
-    // (e.g. NKL-5-2). Those rows want "winner" semantics, same as NKW rounds.
-    const callerIsWLeg2=/^NKL-\d+-2$/i.test(callerRnd);
-    const callerIsL=/^NKL-/i.test(callerRnd)&&!callerIsWLeg2;
+    const callerIsL=/^NKL-/i.test(callerRnd);
     const wantLoser=callerIsL;                          // L bracket → losers
     // Does the referenced (ref) round have a paired 2nd leg? If yes, we look
     // up aggregate winner/loser; otherwise single-leg.
@@ -3828,7 +3849,7 @@ async function generateSeasonFromDraw(targetSeason){
         kkabcByRnd=new Map(),kkjklByRnd=new Map(),kkgorByRnd=new Map();
   // NK phases are bucketed by a phase-key string (e.g. 'NKW-1-1') rather than
   // a round-number, because the round/leg structure isn't a simple 1..N series
-  // — e.g. 'NKL-5-2' is a W-bracket 2nd leg stored in the L namespace.
+  // — e.g. W-R5 and W-R6 each have a leg 1 AND leg 2 in the NKW namespace.
   const nkByKey=new Map();
   const _pushByRnd=(map,n,row)=>{if(!map.has(n))map.set(n,[]);map.get(n).push(row);};
   const _pushNk=(key,row)=>{if(!nkByKey.has(key))nkByKey.set(key,[]);nkByKey.get(key).push(row);};
@@ -3844,8 +3865,11 @@ async function generateSeasonFromDraw(targetSeason){
     if((m=rnd.match(/^KKJKL-(\d+)$/i))){_pushByRnd(kkjklByRnd,parseInt(m[1]),r);return;}
     if((m=rnd.match(/^KKGOR-(\d+)$/i))){_pushByRnd(kkgorByRnd,parseInt(m[1]),r);return;}
     // NK: accept both "NK-W-X-Y" and "NKW-X-Y" (draw.csv has mixed forms).
+    // Also remap legacy "NKL-5-2" (W-R5 leg 2 stored in the L namespace in
+    // older drafts) to "NKW-5-2" so the W-R5 2nd leg sits alongside NKW-6-2.
     if((m=rnd.match(/^NK-?([WL])-(\d+)-(\d+)$/i))){
-      const key='NK'+m[1].toUpperCase()+'-'+parseInt(m[2])+'-'+parseInt(m[3]);
+      let key='NK'+m[1].toUpperCase()+'-'+parseInt(m[2])+'-'+parseInt(m[3]);
+      if(key==='NKL-5-2')key='NKW-5-2';
       _pushNk(key,r);return;
     }
   });
@@ -4022,7 +4046,7 @@ async function generateSeasonFromDraw(targetSeason){
   // Dependency order (each stage reads the previous ones' rows from DB.matches):
   //   R1 W → R2 W → R3 W → R4 W →
   //   L-R5 (R4 losers) →
-  //   W-R5 leg 1 → W-R5 leg 2 (NKL-5-2, same teams reversed) →
+  //   W-R5 leg 1 → W-R5 leg 2 (same teams reversed) →
   //   L-R6 (W-R5 agg losers + L-R5 winners) →
   //   W-R6 leg 1 → W-R6 leg 2 →
   //   L-R7 (L-R6 winners) →
@@ -4030,7 +4054,7 @@ async function generateSeasonFromDraw(targetSeason){
   //   W final (W-R6 agg winners) → L final / 3rd-place (L-R8 winners)
   const NK_PHASES_ORDER=[
     'NKW-1-1','NKW-2-1','NKW-3-1','NKW-4-1',
-    'NKL-5-1','NKW-5-1','NKL-5-2','NKL-6-1',
+    'NKL-5-1','NKW-5-1','NKW-5-2','NKL-6-1',
     'NKW-6-1','NKW-6-2','NKL-7-1','NKL-8-1',
     'NKW-7-1','NKL-9-1'
   ];
