@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.22.12</title>
+<title>League Manager v2026.04.24.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.22.12</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3146,18 +3146,47 @@ function _prevSeasonStr(s){
 //   • "1M 7" / "1N 3" / "2A 2" / "2B 5" / "2C 4" / "3NY 1" / "3K 2" / "3É 3" / "3D 4"
 //                       → final table lookup of that MB-B group
 //   • "III 2" / "VII 5" / … → running standings of that MB-R roman-numeral level
-function _parsePlaceToken(tok){
+function _parsePlaceToken(tok,currentRnd){
   const s=String(tok==null?'':tok).trim();
   if(!s)return null;
+  // Plain integer → prev-season overall place (MB-B base rows).
   if(/^\d+$/.test(s))return{kind:'prev_overall',place:parseInt(s)};
-  const h=s.match(/^[Hh]([0-9])$/);
-  if(h)return{kind:'running_h',place:h[1]==='0'?10:parseInt(h[1])};
+  // "MB-<N>" → same meaning as plain integer (used by KKQ / KKARA draws).
+  const mbN=s.match(/^MB-(\d+)$/i);
+  if(mbN)return{kind:'prev_overall',place:parseInt(mbN[1])};
+  // "KKQ<R>-<N>" → winner of KKQ-R match number N.
+  const kkq=s.match(/^KKQ([123])-(\d+)$/i);
+  if(kkq)return{kind:'kkq_winner',roundNum:parseInt(kkq[1]),matchNum:parseInt(kkq[2])};
+  // "R<group>-<place>" → final table lookup of a KKARA group (group = 1..9).
+  const rkk=s.match(/^R(\d+)-(\d+)$/i);
+  if(rkk)return{kind:'kkara_group',group:parseInt(rkk[1]),place:parseInt(rkk[2])};
+  // "4K|4NY|4É|4D" → user-picked MB-4 team.
   const m4=s.match(/^(4K|4NY|4É|4D)(?:\s+(\d+))?$/);
   if(m4)return{kind:'mb4',group:m4[1],place:m4[2]?parseInt(m4[2]):1};
-  const mg=s.match(/^(1M|1N|2A|2B|2C|3NY|3K|3É|3D)\s+(\d+)$/);
-  if(mg)return{kind:'mbb_group',group:mg[1],place:parseInt(mg[2])};
+  // Space-separated Roman numeral + integer → MB-R running-standings lookup.
   const mr=s.match(/^(I|II|III|IV|V|VI|VII|VIII|IX|X)\s+(\d+)$/);
   if(mr)return{kind:'mbr_roman',level:mr[1],place:parseInt(mr[2])};
+  // Space-separated MB-B group code + integer → MB-B final table lookup.
+  const mg=s.match(/^(1M|1N|2A|2B|2C|3NY|3K|3É|3D)\s+(\d+)$/);
+  if(mg)return{kind:'mbb_group',group:mg[1],place:parseInt(mg[2])};
+  // "X1" / "XI2" / … / "XV3" (no space) → KKROM group X..XV direct lookup.
+  const kkrDir=s.match(/^(X|XI|XII|XIII|XIV|XV)([1-9])$/);
+  if(kkrDir)return{kind:'kkrom_direct',level:kkrDir[1],place:parseInt(kkrDir[2])};
+  // "<letter>-<place>" with letter A..I → KKABC group lookup (used by KKGOR).
+  const kkabcLet=s.match(/^([A-I])-([1-9])$/);
+  if(kkabcLet)return{kind:'kkabc_letter',letter:kkabcLet[1],place:parseInt(kkabcLet[2])};
+  // "H<digit>" is context-dependent:
+  //   • inside a KKABC draw row → cross-KKROM ranking of 3rd-placed teams
+  //   • inside an MB-R draw row → running standings of the current level
+  const h=s.match(/^[Hh]([0-9])$/);
+  if(h){
+    const place=h[1]==='0'?10:parseInt(h[1]);
+    if(/^KKABC-/i.test(currentRnd||''))return{kind:'kkrom_emh',bucket:'H',place};
+    return{kind:'running_h',place};
+  }
+  // "E<digit>" / "M<digit>" → cross-KKROM ranking of 1st / 2nd placed teams.
+  const em=s.match(/^([EM])([1-9])$/);
+  if(em)return{kind:'kkrom_emh',bucket:em[1],place:parseInt(em[2])};
   return null;
 }
 
@@ -3206,10 +3235,62 @@ function _mbRLevelRunningTable(level,uptoRoundNum){
   });
 }
 
+// ── KK helper tables ──────────────────────────────────────────
+// Winner of a specific KKQ-<roundNum> match (by match_number). Returns team_id
+// or '' if not found / not yet simulated.
+function _kkqMatchWinner(roundNum,matchNum){
+  const m=DB.matches;
+  const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const ri=_hi('rounds'),mni=_hi('match_number'),hi=_hi('home_id'),ai=_hi('away_id'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(ri<0||mni<0||hi<0||ai<0||hsi<0||asi<0)return '';
+  const want='KKQ-'+roundNum;
+  for(let i=0;i<m.r.length;i++){
+    const r=m.r[i];
+    if(String(r[ri]||'').trim().toUpperCase()!==want.toUpperCase())continue;
+    if(String(r[mni]||'').trim()!==String(matchNum))continue;
+    const hs=parseInt(r[hsi]),as=parseInt(r[asi]);
+    const hid=String(r[hi]||'').trim(),aid=String(r[ai]||'').trim();
+    if(isNaN(hs)||isNaN(as))return '';
+    // match_type=1 guarantees no draws — winner = higher score.
+    if(hs>as)return hid;
+    if(hs<as)return aid;
+    return '';
+  }
+  return '';
+}
+// Final table for a KKARA group (level = '1'..'9').
+function _kkaraGroupTable(group){
+  const lvl=String(group);
+  return _tableForMatches(ctx=>/^KKARA-/i.test(ctx.rounds)&&ctx.level===lvl);
+}
+// Final table for a KKROM group (level = 'I'..'XV').
+function _kkromGroupTable(level){
+  return _tableForMatches(ctx=>/^KKROM-/i.test(ctx.rounds)&&ctx.level===level);
+}
+// Final table for a KKABC group (level = 'A'..'I').
+function _kkabcGroupTable(letter){
+  return _tableForMatches(ctx=>/^KKABC-/i.test(ctx.rounds)&&ctx.level===letter);
+}
+// Cross-group ranking of Nth-placed teams across KKROM groups I..IX.
+// bucket 'E' = group winners, 'M' = 2nd placed, 'H' = 3rd placed.
+// Returns an array of team-table rows sorted by pts / gd / gf desc.
+const _KKROM_EMH_GROUPS=['I','II','III','IV','V','VI','VII','VIII','IX'];
+function _kkromCrossRanking(bucket){
+  const idx=(bucket==='E')?0:(bucket==='M')?1:2;
+  const rows=[];
+  _KKROM_EMH_GROUPS.forEach(lvl=>{
+    const tbl=_kkromGroupTable(lvl);
+    if(tbl[idx])rows.push(tbl[idx]);
+  });
+  rows.sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+  return rows;
+}
+
 // Resolve a single place-token into a team_id using context maps.
 // ctx: { prevOverall:Map, mb4:Map, mbbGroupCache:Object, currentLevel, currentRoundNum }
 function _resolvePlaceTok(tok,ctx){
-  const p=_parsePlaceToken(tok);
+  const p=_parsePlaceToken(tok,ctx&&ctx.rounds);
   if(!p)return{id:'',reason:'unparsed "'+tok+'"'};
   if(p.kind==='prev_overall'){
     const id=ctx.prevOverall?ctx.prevOverall.get(p.place):'';
@@ -3235,6 +3316,35 @@ function _resolvePlaceTok(tok,ctx){
     const tbl=_mbRLevelRunningTable(p.level,ctx.currentRoundNum);
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'running '+p.level+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
+  }
+  if(p.kind==='kkq_winner'){
+    const id=_kkqMatchWinner(p.roundNum,p.matchNum);
+    return id?{id}:{id:'',reason:'KKQ'+p.roundNum+' match '+p.matchNum+' winner not yet known'};
+  }
+  if(p.kind==='kkara_group'){
+    const cache=ctx.kkaraCache||(ctx.kkaraCache={});
+    const key=String(p.group);
+    const tbl=cache[key]||(cache[key]=_kkaraGroupTable(key));
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'kkara group '+p.group+' place '+p.place+' (size '+tbl.length+')'};
+  }
+  if(p.kind==='kkrom_direct'){
+    const cache=ctx.kkromCache||(ctx.kkromCache={});
+    const tbl=cache[p.level]||(cache[p.level]=_kkromGroupTable(p.level));
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'kkrom '+p.level+' place '+p.place+' (size '+tbl.length+')'};
+  }
+  if(p.kind==='kkrom_emh'){
+    const cache=ctx.kkromEmhCache||(ctx.kkromEmhCache={});
+    const tbl=cache[p.bucket]||(cache[p.bucket]=_kkromCrossRanking(p.bucket));
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'kkrom EMH '+p.bucket+p.place+' (size '+tbl.length+')'};
+  }
+  if(p.kind==='kkabc_letter'){
+    const cache=ctx.kkabcCache||(ctx.kkabcCache={});
+    const tbl=cache[p.letter]||(cache[p.letter]=_kkabcGroupTable(p.letter));
+    const row=tbl[p.place-1];
+    return row?{id:row.id}:{id:'',reason:'kkabc '+p.letter+' place '+p.place+' (size '+tbl.length+')'};
   }
   return{id:'',reason:'unknown kind'};
 }
@@ -3565,16 +3675,31 @@ async function generateSeasonFromDraw(targetSeason){
   console.log(`[GenerateSeason] prev season '${prev}' placeMap size=${prevOverall.size}`);
   console.log(`[GenerateSeason] calMap size=${calMap.size} (first 5)`,[...calMap.entries()].slice(0,5));
 
-  // Partition draw rows into MB-B and MB-R buckets. Other competitions (KKS,
-  // UCL, …) are skipped until we model them.
+  // Partition draw rows by competition phase. Rows that don't match any
+  // known phase (UCL, UEFA, NKWS, NATIONAL TEAM, …) are skipped for now.
   const mbB=[],mbR=[];
+  const kkqByRnd=new Map(),kkaraByRnd=new Map(),kkromByRnd=new Map(),
+        kkabcByRnd=new Map(),kkjklByRnd=new Map(),kkgorByRnd=new Map();
+  const _pushByRnd=(map,n,row)=>{if(!map.has(n))map.set(n,[]);map.get(n).push(row);};
   d.r.forEach(r=>{
     const rnd=String(r[ri]||'').trim();
-    if(/^MB-B-/i.test(rnd))mbB.push(r);
-    else if(/^MB-R-/i.test(rnd))mbR.push(r);
+    if(/^MB-B-/i.test(rnd)){mbB.push(r);return;}
+    if(/^MB-R-/i.test(rnd)){mbR.push(r);return;}
+    let m;
+    if((m=rnd.match(/^KKQ-(\d+)$/i))){_pushByRnd(kkqByRnd,parseInt(m[1]),r);return;}
+    if((m=rnd.match(/^KKARA-(\d+)$/i))){_pushByRnd(kkaraByRnd,parseInt(m[1]),r);return;}
+    if((m=rnd.match(/^KKROM-(\d+)$/i))){_pushByRnd(kkromByRnd,parseInt(m[1]),r);return;}
+    if((m=rnd.match(/^KKABC-(\d+)$/i))){_pushByRnd(kkabcByRnd,parseInt(m[1]),r);return;}
+    if((m=rnd.match(/^KKJKL-(\d+)$/i))){_pushByRnd(kkjklByRnd,parseInt(m[1]),r);return;}
+    if((m=rnd.match(/^KKGOR-(\d+)$/i))){_pushByRnd(kkgorByRnd,parseInt(m[1]),r);return;}
   });
-  if(!mbB.length&&!mbR.length){
-    toast('draw.csv has no MB-B or MB-R rows','warn');return;
+  const _flatCount=(map)=>{let n=0;for(const arr of map.values())n+=arr.length;return n;};
+  const kkqCount=_flatCount(kkqByRnd),kkaraCount=_flatCount(kkaraByRnd),
+        kkromCount=_flatCount(kkromByRnd),kkabcCount=_flatCount(kkabcByRnd),
+        kkjklCount=_flatCount(kkjklByRnd),kkgorCount=_flatCount(kkgorByRnd);
+  const kkTotal=kkqCount+kkaraCount+kkromCount+kkabcCount+kkjklCount+kkgorCount;
+  if(!mbB.length&&!mbR.length&&!kkTotal){
+    toast('draw.csv has no MB-B, MB-R, or KK rows','warn');return;
   }
 
   // Collect the MB-team-ids so the MB-4 picker can exclude them.
@@ -3624,11 +3749,17 @@ async function generateSeasonFromDraw(targetSeason){
   });
   const roundNums=[...mbrByRound.keys()].sort((a,b)=>a-b);
 
-  const totalPlanned=mbbPlan.length+mbR.length;
+  const totalPlanned=mbbPlan.length+mbR.length+kkTotal;
   const lines=[
     `Generate ${totalPlanned} match rows for season ${targetSeason}?`,
     `• MB-B: ${mbbPlan.length} rows`,
     `• MB-R: ${mbR.length} rows across ${roundNums.length} rounds (${roundNums.length?'R'+roundNums[0]+'→R'+roundNums[roundNums.length-1]:'none'})`,
+    kkqCount?`• KKQ: ${kkqCount} rows across ${kkqByRnd.size} rounds`:'',
+    kkaraCount?`• KKARA: ${kkaraCount} rows across ${kkaraByRnd.size} rounds (9 groups × 5 teams round-robin)`:'',
+    kkromCount?`• KKROM: ${kkromCount} rows across ${kkromByRnd.size} rounds (15 groups × 3 teams round-robin)`:'',
+    kkabcCount?`• KKABC: ${kkabcCount} rows across ${kkabcByRnd.size} rounds (groups A-I from KKROM I-IX cross-ranking)`:'',
+    kkjklCount?`• KKJKL: ${kkjklCount} rows across ${kkjklByRnd.size} rounds (groups J-L from KKROM X-XV)`:'',
+    kkgorCount?`• KKGOR: ${kkgorCount} rows across ${kkgorByRnd.size} rounds (9 Greek-letter groups from KKABC)`:'',
     `• Previous season '${prev}' → ${prevOverall.size} overall places resolved`,
     `• Calendar for '${targetSeason}' → ${calMap.size} rounds mapped`,
     needsMB4?`• MB-4 picks: ${[...mb4Picks.entries()].map(([g,t])=>`${g}=${t}`).join(', ')}`:`• MB-4: not referenced by this draw`,
@@ -3678,9 +3809,63 @@ async function generateSeasonFromDraw(targetSeason){
     });
   }
 
+  // ── PHASE 3: KK cup phases ─────────────────────────────────────
+  // Each phase runs round-by-round so later rounds' tokens can resolve
+  // against the latest simulated results in DB.matches. Caches live on
+  // the token-context object and are invalidated (reset) between phases
+  // so a new phase rebuilds its lookup tables from fresh DB.matches.
+  const kkUnresolved=[];
+  const _runKkPhase=(phaseName,byRnd,extraCtx)=>{
+    const nums=[...byRnd.keys()].sort((a,b)=>a-b);
+    // Token caches are scoped to this phase's entire run. They're plain
+    // memo maps; within a round, every row shares them so repeated lookups
+    // (e.g. the same KKROM group referenced by many KKABC rows) are cheap.
+    const kkaraCache={},kkromCache={},kkromEmhCache={},kkabcCache={};
+    for(const n of nums){
+      const rows=byRnd.get(n);
+      rows.forEach(r=>{
+        const rnd=String(r[ri]||'').trim();
+        const lvl=li>=0?String(r[li]||'').trim():'';
+        const mt=mti>=0?String(r[mti]||'0').trim():'0';
+        const mn=mni>=0?String(r[mni]||'').trim():'';
+        const hpTok=String(r[hpi]||'').trim();
+        const apTok=String(r[api]||'').trim();
+        const tokCtx=Object.assign({
+          prevOverall,mb4:mb4Picks,mbbGroupCache,
+          kkaraCache,kkromCache,kkromEmhCache,kkabcCache,
+          currentLevel:lvl,currentRoundNum:n,rounds:rnd
+        },extraCtx||{});
+        const hh=_resolvePlaceTok(hpTok,tokCtx);
+        const aa=_resolvePlaceTok(apTok,tokCtx);
+        if(!hh.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'home',tok:hpTok,reason:hh.reason});
+        if(!aa.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
+        const cal=calMap.get(rnd);
+        if(!cal)missingDates.add(rnd);
+        const{row,simulated}=_buildSimulatedMatchRow({
+          rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
+        });
+        if(!simulated)blank++;
+        const op=_upsertMatchRow(row);
+        if(op==='updated')upd++;else ins++;
+      });
+    }
+  };
+  // Order matters — each stage's output feeds the next.
+  if(kkqByRnd.size)   _runKkPhase('KKQ',   kkqByRnd);
+  if(kkaraByRnd.size) _runKkPhase('KKARA', kkaraByRnd);
+  if(kkromByRnd.size) _runKkPhase('KKROM', kkromByRnd);
+  // KKABC (groups A-I) and KKJKL (groups J-L) both consume KKROM tables
+  // and don't depend on each other, so either order is fine.
+  if(kkabcByRnd.size) _runKkPhase('KKABC', kkabcByRnd);
+  if(kkjklByRnd.size) _runKkPhase('KKJKL', kkjklByRnd);
+  if(kkgorByRnd.size) _runKkPhase('KKGOR', kkgorByRnd);
+
   console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, missingDates=${missingDates.size}`);
   if(mbrUnresolved.length){
     console.warn(`[GenerateSeason] ${mbrUnresolved.length} MB-R unresolved sides. Sample:`,mbrUnresolved.slice(0,10));
+  }
+  if(kkUnresolved.length){
+    console.warn(`[GenerateSeason] ${kkUnresolved.length} KK unresolved sides. Sample:`,kkUnresolved.slice(0,10));
   }
   try{
     await saveSheet('matches');
