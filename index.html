@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.27.1</title>
+<title>League Manager v2026.04.27.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3542,13 +3542,19 @@ function _resolvePlaceTok(tok,ctx){
   }
   if(p.kind==='nk_match'){
     // `NK<branch>-<round>-<leg>-<matchNum>` — resolves to the team that came
-    // out of that match according to the caller's branch context. Both W-R5
-    // and W-R6 2nd legs now live in the NKW namespace (NKW-5-2 / NKW-6-2),
-    // so a simple "caller is NKL-?" test suffices for loser semantics.
+    // out of that match according to the caller's branch + the referenced
+    // match's branch:
+    //   W caller, W ref  → WINNER  (advancing within the W bracket)
+    //   L caller, W ref  → LOSER   (W-bracket team dropping into L bracket)
+    //   L caller, L ref  → WINNER  (advancing within the L bracket)
+    //   W caller, L ref  → not used in practice; treated as WINNER for safety
+    // Both W-R5 and W-R6 2nd legs live in the NKW namespace (NKW-5-2 /
+    // NKW-6-2), so the branch test alone suffices for aggregate semantics.
     const ref='NK'+p.branch+'-'+p.round+'-'+p.leg;     // referenced round code
     const callerRnd=String(ctx.rounds||'').trim().toUpperCase();
     const callerIsL=/^NKL-/i.test(callerRnd);
-    const wantLoser=callerIsL;                          // L bracket → losers
+    const refIsW=p.branch==='W';
+    const wantLoser=callerIsL&&refIsW;                  // only when L caller drops a W-bracket team
     // Does the referenced (ref) round have a paired 2nd leg? If yes, we look
     // up aggregate winner/loser; otherwise single-leg.
     const isTwoLeg=Object.prototype.hasOwnProperty.call(_NK_LEG2_OF,ref);
