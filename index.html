@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.24.5</title>
+<title>League Manager v2026.04.27.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -503,7 +503,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.24.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -633,7 +633,7 @@ const ED_DEFAULTS={
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
-  draw:       ['rounds','level','match_type','match_number','home_team_place','away_team_place'],
+  draw:       ['rounds','level','match_type','match_number','home_team','away_team','notes'],
   state:      ['key','value']
 };
 
@@ -3155,9 +3155,11 @@ async function _playSaveToMatches(){
 //  SEASON GENERATOR — draw.csv + calendar.csv + previous results → matches.csv
 // ══════════════════════════════════════════════════════════════
 // Builds one matches.csv row per draw.csv row for a given target season.
-//  • home_team_place / away_team_place are overall positions 1..80 from the
-//    previous season's final table — resolved via results.csv with
-//    season=<prev> and a preferred competition='overall'.
+//  • home_team / away_team (legacy: home_team_place / away_team_place) carry
+//    EITHER a previous-season MB place integer OR a token string (e.g.
+//    `NKW-4-1-8`, `KKQ3-9`, `R5-3`, `III 2`, …). Place integers are resolved
+//    via results.csv with season=<prev> and a preferred competition='overall';
+//    tokens go through `_parsePlaceToken` → `_resolvePlaceTok`.
 //  • rounds joins directly to calendar.csv to fill `date` for the target
 //    season. Rows whose round has no calendar entry for this season are
 //    written with date blank and reported in the preview.
@@ -3172,7 +3174,7 @@ function _prevSeasonStr(s){
   return`${y}_${String((y+1)%100).padStart(2,'0')}`;
 }
 // ── PLACE-TOKEN PARSER ─────────────────────────────────────────
-// draw.csv `home_team_place` / `away_team_place` values can be:
+// draw.csv `home_team` / `away_team` (legacy: `_place` suffix) values can be:
 //   • a plain integer (MB-B base rows → previous-season overall place)
 //   • "H<digit>"       → running standings of CURRENT row's level (H0=10)
 //   • "4K|4NY|4É|4D [N]" → one of the user-picked MB-4 groups (place defaults to 1)
@@ -3642,7 +3644,13 @@ function _mbTeamIdsInUse(prevOverall){
   const used=new Set();
   if(!d||!d.r.length)return used;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const ri=_hi('rounds'),hpi=_hi('home_team_place'),api=_hi('away_team_place');
+  // Accept either the legacy `home_team_place` / `away_team_place` headers OR
+  // the newer `home_team` / `away_team` (the column carries both numeric MB
+  // places AND token strings like `NKW-4-1-8`, so the shorter name is more
+  // accurate). Same fallback applies in generateSeasonFromDraw below.
+  const ri=_hi('rounds');
+  let hpi=_hi('home_team_place');if(hpi<0)hpi=_hi('home_team');
+  let api=_hi('away_team_place');if(api<0)api=_hi('away_team');
   if(ri<0||hpi<0||api<0)return used;
   d.r.forEach(r=>{
     const rnd=String(r[ri]||'').trim();
@@ -3899,8 +3907,14 @@ async function generateSeasonFromDraw(targetSeason){
   const d=DB.draw;
   if(!d.r.length){toast('draw.csv is empty','warn');return;}
   const _dhi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  // Accept either `home_team_place`/`away_team_place` (legacy) OR
+  // `home_team`/`away_team` (current — also tolerates token strings like
+  // `NKW-4-1-8`, `KKQ3-9`, `R5-3`, …). The cell content drives interpretation,
+  // not the column header.
   const ri=_dhi('rounds'),li=_dhi('level'),mti=_dhi('match_type'),
-        mni=_dhi('match_number'),hpi=_dhi('home_team_place'),api=_dhi('away_team_place');
+        mni=_dhi('match_number');
+  let hpi=_dhi('home_team_place');if(hpi<0)hpi=_dhi('home_team');
+  let api=_dhi('away_team_place');if(api<0)api=_dhi('away_team');
   if(ri<0||hpi<0||api<0){
     toast(`draw.csv missing required columns. headers: [${d.h.join(', ')}]`,'err');
     return;
