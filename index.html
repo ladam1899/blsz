@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.27.2</title>
+<title>League Manager v2026.04.27.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -315,15 +315,28 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .teams-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,107,58,.18);}
 .teams-search-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
 .teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
-.team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;transition:border-color .15s;position:relative;}
-.team-card:hover{border-color:var(--border2);}
+.team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;transition:border-color .15s,background .15s;position:relative;cursor:pointer;}
+.team-card:hover{border-color:var(--border2);background:var(--surface2);}
 .team-card-logo{width:54px;height:54px;border-radius:8px;margin-bottom:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;color:#fff;}
 .team-card-logo img{width:100%;height:100%;object-fit:contain;}
 .team-card-name{font-weight:600;font-size:15px;margin-bottom:3px;}
-.team-card-id{font-size:10px;color:var(--dimmed);font-family:'JetBrains Mono',monospace;margin-bottom:8px;letter-spacing:.04em;}
+.team-card-group{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:var(--muted);background:var(--surface2);padding:2px 6px;border-radius:4px;letter-spacing:.05em;font-family:'JetBrains Mono',monospace;vertical-align:middle;border:1px solid var(--border);}
+.team-card:hover .team-card-group{background:var(--surface);}
+.team-card-id{font-size:10px;color:var(--dimmed);font-family:'JetBrains Mono',monospace;margin-bottom:6px;letter-spacing:.04em;}
+.team-card-stars{margin:0 0 8px;font-size:14px;line-height:1;}
 .team-card-meta{font-size:11px;color:var(--muted);line-height:1.7;}
 .team-card-colors{display:flex;gap:3px;margin-top:10px;}
 .tcc-dot{width:18px;height:18px;border-radius:4px;border:1px solid var(--border);}
+/* Skill stars — half star = 15 skill points, full star = 30. Rendered as a row
+   of <i class="star"> with optional `.full` / `.half` modifiers. The empty
+   star is the ::before pseudo (always shown); ::after overlays the gold fill
+   clipped to width:100% (full) or width:50% (half). */
+.star-row{display:inline-flex;gap:1px;line-height:1;}
+.star{display:inline-block;width:1em;height:1em;color:#d9d9d9;position:relative;font-style:normal;}
+.star::before{content:'\2605';display:block;}
+.star.full::after,.star.half::after{content:'\2605';color:#f5b400;position:absolute;left:0;top:0;height:100%;overflow:hidden;}
+.star.full::after{width:100%;}
+.star.half::after{width:50%;}
 
 /* PLAY VIEW */
 .play-wrap{max-width:760px;margin:0 auto;padding:24px 16px;}
@@ -503,7 +516,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1996,6 +2009,15 @@ function openTeamProfile(teamId,seasonHint){
   if(location)meta.push(`<div class="im-row"><span class="im-k">Location</span><b>${esc(location)}</b></div>`);
   if(foundation)meta.push(`<div class="im-row"><span class="im-k">Founded</span><b>${esc(foundation)}</b></div>`);
   meta.push(`<div class="im-row"><span class="im-k">ID</span><b>${esc(t.id)}</b></div>`);
+  // Skill rating — same star row used on the Teams view, computed for the
+  // half-season of the popup's season (autumn half so it matches the season
+  // overview rather than the in-progress spring half).
+  const skHalf=season?(season+'_A'):(typeof halfSeasonFor==='function'?halfSeasonFor(currentDate()):'');
+  const skRow=teamSkillsFor(t.id,skHalf);
+  const skPts=skRow&&typeof skRow.skills!=='undefined'?skRow.skills:0;
+  const skLevel=_teamMBGroup(t.id,season);
+  if(skLevel)meta.push(`<div class="im-row"><span class="im-k">Division</span><b>${esc(skLevel)}</b></div>`);
+  meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)} <span class="sc">${skPts}</span></b></div>`);
   // All season matches for this team
   const matches=DB.matches.r.filter(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
@@ -2486,6 +2508,49 @@ function renderCalendarGrid(){
 //   _renderTeamsGrid()      → fills the grid (called on keystrokes too)
 let _teamsQuery='';
 
+// Convert a raw skill-points value (0-100ish) into a 5-star HTML row.
+// Convention: a HALF star ≈ 15 skill points, a FULL star ≈ 30 skill points.
+// We round to the nearest half-star (so 14 pts → ½, 22 pts → ½, 23 pts → 1, …).
+// The result is clamped to the [0, 5*2] half-star range so a freakishly high
+// stat doesn't blow out the row.
+function _starRowHTML(skillPoints,maxStars){
+  const max=maxStars||5;
+  const halves=Math.max(0,Math.min(max*2,Math.round((Number(skillPoints)||0)/15)));
+  const full=Math.floor(halves/2);
+  const half=halves%2;
+  const empty=max-full-half;
+  let s='<span class="star-row" aria-label="'+(halves/2).toFixed(1)+' / '+max+' stars">';
+  for(let i=0;i<full;i++)s+='<i class="star full"></i>';
+  if(half)s+='<i class="star half"></i>';
+  for(let i=0;i<empty;i++)s+='<i class="star"></i>';
+  return s+'</span>';
+}
+
+// Looks up which MB-B division (level code: 1M, 1N, 2A, 2B, 2C, 3NY, 3K, 3É,
+// 3D, 4K, 4NY, 4É, 4D) a team belongs to in the given season. Scans
+// matches.csv for any row where `rounds` starts MB-B- AND the team is the
+// home or away side. Returns the first matching `level` value, or '' if no
+// MB-B match has been generated yet for this team this season.
+function _teamMBGroup(teamId,season){
+  if(!teamId)return '';
+  const c=_lgMatchCols();
+  if(c.rounds<0||c.level<0||(c.home<0&&c.away<0))return '';
+  for(let i=0;i<DB.matches.r.length;i++){
+    const r=DB.matches.r[i];
+    const rnd=String(r[c.rounds]||'').trim();
+    if(!/^MB-B-/i.test(rnd))continue;
+    const h=c.home>=0?String(r[c.home]||'').trim():'';
+    const a=c.away>=0?String(r[c.away]||'').trim():'';
+    if(h!==teamId&&a!==teamId)continue;
+    if(season){
+      const date=c.date>=0?normalizeDate(r[c.date]):'';
+      if(!date||seasonFor(date)!==season)continue;
+    }
+    return String(r[c.level]||'').trim();
+  }
+  return '';
+}
+
 function _collectTeamCards(){
   const d=DB.teams;
   const ii=d.h.findIndex(h=>h==='id'||h==='team_id');
@@ -2496,6 +2561,11 @@ function _collectTeamCards(){
   const sti=d.h.findIndex(h=>h==='stadium'||h==='stadion');
   const li=d.h.indexOf('location');
   const fi=d.h.indexOf('foundation');
+  // Used by both the [group-code] badge and the half-star skill rating.
+  // Resolved once per render so we don't re-derive them inside the row map.
+  const curIso=(typeof currentDate==='function')?currentDate():'';
+  const curSeason=curIso?seasonFor(curIso):'';
+  const curHalf=curIso?halfSeasonFor(curIso):'';
   return d.r.map(row=>{
     const id=ii>=0?row[ii]:'';
     const rawFull=(ni>=0&&row[ni])||'';
@@ -2510,9 +2580,13 @@ function _collectTeamCards(){
     const loc=li>=0?row[li]:'';
     const found=fi>=0?row[fi]:'';
     const logo=logoFor(id,null);
-    // Blob of searchable text — lowercased once so filtering stays cheap per keystroke.
-    const searchBlob=[id,full,long,stadium,loc,found].join(' ').toLowerCase();
-    return {id,displayName,color,color2,color3,stadium,loc,found,logo,searchBlob};
+    const level=id?_teamMBGroup(id,curSeason):'';
+    const skills=id?teamSkillsFor(id,curHalf):defaultSkills();
+    // Blob of searchable text — lowercased once so filtering stays cheap per
+    // keystroke. Includes the MB-B level so users can search by group code
+    // (e.g. typing "1M" filters to MB1 Magyar teams).
+    const searchBlob=[id,full,long,stadium,loc,found,level].join(' ').toLowerCase();
+    return {id,displayName,color,color2,color3,stadium,loc,found,logo,level,skillPoints:skills.skills,searchBlob};
   });
 }
 
@@ -2528,10 +2602,15 @@ function _renderTeamsGrid(){
     grid.innerHTML='<div class="empty" style="grid-column:1/-1">No teams match that search.</div>';
     return;
   }
-  grid.innerHTML=filtered.map(c=>`<div class="team-card">
+  // Whole card is clickable → opens the team profile popup (which already
+  // lists the season's matches, just like the matches view does). The color
+  // dots intentionally don't get their own click handler — the card-level
+  // listener catches them too.
+  grid.innerHTML=filtered.map(c=>`<div class="team-card" onclick="openTeamProfile('${esc(c.id)}')" title="Open ${esc(c.displayName)} profile">
     <div class="team-card-logo" style="background:${c.logo?'#fff':safeColor(c.color)}">${c.logo?`<img src="${c.logo}" alt="">`:esc((c.displayName||c.id).slice(0,3).toUpperCase())}</div>
-    <div class="team-card-name">${esc(c.displayName)}</div>
+    <div class="team-card-name">${esc(c.displayName)}${c.level?` <span class="team-card-group" title="MB-B division">[${esc(c.level)}]</span>`:''}</div>
     <div class="team-card-id">${esc(c.id)}</div>
+    <div class="team-card-stars" title="Skill rating: ${c.skillPoints||0} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)">${_starRowHTML(c.skillPoints)}</div>
     <div class="team-card-meta">
       ${c.stadium?`🏟 ${esc(c.stadium)}<br>`:''}
       ${c.loc?`📍 ${esc(c.loc)}<br>`:''}
