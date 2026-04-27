@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.27.3</title>
+<title>League Manager v2026.04.27.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -142,6 +142,14 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .m-logo{width:22px;height:22px;border-radius:4px;object-fit:contain;background:var(--surface2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace;}
 .m-logo img{width:100%;height:100%;object-fit:contain;border-radius:4px;}
 .m-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.m-name-block{display:flex;flex-direction:column;min-width:0;gap:2px;}
+.m-side.home .m-name-block{align-items:flex-end;}
+.m-side.away .m-name-block{align-items:flex-start;}
+.m-side-meta{display:flex;align-items:center;gap:5px;font-size:10px;line-height:1;color:var(--muted);}
+.m-side.home .m-side-meta{justify-content:flex-end;}
+.m-side.away .m-side-meta{justify-content:flex-start;}
+.m-mini-group{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:1px 4px;}
+.m-side-meta .star-row{font-size:9px;}
 .m-score{text-align:center;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.05em;color:var(--text);background:var(--surface2);border-radius:6px;padding:3px 0;}
 .m-score.live{background:var(--green);color:#fff;}
 .m-score.pending{color:var(--dimmed);}
@@ -197,7 +205,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .st-row.sr-eliminate{background:rgba(239,68,68,.10);}
 .st-row.sr-eliminate:hover{background:rgba(239,68,68,.18);}
 .team-cell{display:flex;align-items:center;gap:6px;min-width:0;}
-.team-cell .team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
+.team-cell .team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.team-cell .team-name-block{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
+.team-cell .team-name-meta{display:flex;align-items:center;gap:4px;font-size:9px;line-height:1;color:var(--muted);}
+.team-cell .team-name-meta .star-row{font-size:9px;}
 .team-badge-sm{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;}
 .team-badge-sm img{width:100%;height:100%;object-fit:contain;}
 
@@ -516,7 +527,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1788,9 +1799,19 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       const logo=logoFor(t.id,season);
       const tid=esc(t.id).replace(/'/g,'&#39;');
       const ttl=esc(t.name).replace(/'/g,'&#39;');
+      // Mini meta = MB-B group + skill stars under the team name. Group is
+      // looked up against the season; skill snapshot uses the autumn half so
+      // every row in a table is comparable.
+      const mbg=_teamMBGroup(t.id,season);
+      const sk=teamSkillsFor(t.id,season?season+'_A':'');
+      const skPts=sk&&typeof sk.skills!=='undefined'?sk.skills:0;
+      const metaParts=[];
+      if(mbg)metaParts.push(`<span class="m-mini-group" title="MB-B division">[${esc(mbg)}]</span>`);
+      metaParts.push(`<span title="${skPts} pts (½ ★ ≈ 15 pts, ★ ≈ 30 pts)">${_starRowHTML(skPts)}</span>`);
+      const metaLine=`<div class="team-name-meta">${metaParts.join('')}</div>`;
       html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
-        <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span></div></td>
+        <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><div class="team-name-block"><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span>${metaLine}</div></div></td>
         <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
         <td class="n">${gd}</td><td class="pts">${t.pts}</td>
       </tr>`;
@@ -1837,16 +1858,33 @@ function matchRowHTML(row,c,season,reveal){
   const awayClickable=awayId?`class="m-name m-link" onclick="openTeamProfile('${aid}','${sEsc}')" title="Open team profile — ${esc(away.name)}"`:`class="m-name"`;
   const homeLogoClick=homeId?`onclick="openTeamProfile('${hid}','${sEsc}')" style="cursor:pointer"`:'';
   const awayLogoClick=awayId?`onclick="openTeamProfile('${aid}','${sEsc}')" style="cursor:pointer"`:'';
+  // Per-side meta line under the team name: MB-B division [tag] + skill
+  // stars. Skill snapshot uses the half-season of the match's date so the
+  // stars reflect the team's strength at the time of the game.
+  const rowDate=c.date>=0?normalizeDate(row[c.date]):'';
+  const halfS=rowDate?(typeof halfSeasonFor==='function'?halfSeasonFor(rowDate):''):(season?season+'_A':'');
+  const _sideMeta=(tid)=>{
+    if(!tid)return '';
+    const lvl=_teamMBGroup(tid,season);
+    const sk=teamSkillsFor(tid,halfS);
+    const pts=sk&&typeof sk.skills!=='undefined'?sk.skills:0;
+    const bits=[];
+    if(lvl)bits.push(`<span class="m-mini-group" title="MB-B division">[${esc(lvl)}]</span>`);
+    bits.push(`<span title="${pts} pts (½ ★ ≈ 15 pts, ★ ≈ 30 pts)">${_starRowHTML(pts)}</span>`);
+    return `<div class="m-side-meta">${bits.join('')}</div>`;
+  };
+  const homeMeta=_sideMeta(homeId);
+  const awayMeta=_sideMeta(awayId);
   return`<div>
     <div class="m-row">
       <div class="m-side home">
-        <span ${homeClickable}>${esc(home.name)}</span>
+        <div class="m-name-block"><span ${homeClickable}>${esc(home.name)}</span>${homeMeta}</div>
         ${hl?`<div class="m-logo" style="background:#fff" ${homeLogoClick}><img src="${hl}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(home.color)}" ${homeLogoClick}>${esc((home.id||'').slice(0,2).toUpperCase())}</div>`}
       </div>
       <div class="${scoreCls}" ${scoreClick} ${canH2H?'title="Head-to-head history"':''}>${esc(scoreTxt)}</div>
       <div class="m-side away">
         ${al?`<div class="m-logo" style="background:#fff" ${awayLogoClick}><img src="${al}" alt=""></div>`:`<div class="m-logo" style="background:${safeColor(away.color)}" ${awayLogoClick}>${esc((away.id||'').slice(0,2).toUpperCase())}</div>`}
-        <span ${awayClickable}>${esc(away.name)}</span>
+        <div class="m-name-block"><span ${awayClickable}>${esc(away.name)}</span>${awayMeta}</div>
       </div>
     </div>
     ${periodLine?`<div class="m-periods">${periodLine}</div>`:''}
@@ -2017,7 +2055,7 @@ function openTeamProfile(teamId,seasonHint){
   const skPts=skRow&&typeof skRow.skills!=='undefined'?skRow.skills:0;
   const skLevel=_teamMBGroup(t.id,season);
   if(skLevel)meta.push(`<div class="im-row"><span class="im-k">Division</span><b>${esc(skLevel)}</b></div>`);
-  meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)} <span class="sc">${skPts}</span></b></div>`);
+  meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)}</b></div>`);
   // All season matches for this team
   const matches=DB.matches.r.filter(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
