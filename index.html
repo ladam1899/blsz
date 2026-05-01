@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.04.27.4</title>
+<title>League Manager v2026.05.01.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -527,7 +527,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.04.27.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.01.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -825,6 +825,10 @@ async function loadAll(){
     setSS('ok');
     detectSeason();
     renderView();
+    // Offer to restore any unsynced local backups from a previous session.
+    // (No-op when localStorage is empty.) Wrapped in setTimeout so the
+    // prompt doesn't block the initial render.
+    setTimeout(()=>{try{_lmRecoverPrompt();}catch(e){console.warn('[recover]',e);}},100);
   }catch(e){setSS('err');toast('Load error: '+e.message,'err');}
 }
 async function refreshAll(){
@@ -4705,20 +4709,170 @@ function edUndo(){
   DB[s.tab].h=s.h;DB[s.tab].r=s.r;
   edSelected.clear();edSchedSave();edRender();toast('Undo applied','');
 }
-function edSchedSave(){clearTimeout(edSaveTimer);edSaveTimer=setTimeout(()=>edForceSave(),1500);}
-async function edForceSave(){
-  clearTimeout(edSaveTimer);
-  await saveSheet(edTab);
-  edLastSaved=new Date();edModified=0;edUpdateSB();
-  toast('Saved to Drive','');
+// ──────────────────────────────────────────────────────────────
+//  RELIABLE AUTOSAVE
+// ──────────────────────────────────────────────────────────────
+// The earlier save flow had several reliability problems: a single global
+// debounce timer that always saved the CURRENT tab (so editing tab A then
+// switching to B before the 1.5 s timer fired silently lost A's edits);
+// no retry on network errors; no localStorage backup; no warning when the
+// page was about to unload with pending writes; uncaught exceptions on
+// Drive failures left edModified at 0 even when nothing was persisted.
+//
+// New approach:
+//   • Per-sheet dirty counters (edDirty) instead of one global modified count.
+//   • A single debounced flush that walks ALL dirty sheets — never loses a
+//     sheet just because the active tab changed.
+//   • Synchronous localStorage backup on every keystroke (instant, free,
+//     survives reloads even if Drive is unreachable).
+//   • Retry-with-backoff on save failure.
+//   • beforeunload / visibilitychange / pagehide hooks fire a final flush.
+//   • Recovery prompt on next load if any localStorage backup is present.
+const edDirty=Object.create(null);   // {sheetName: pendingEditCount}
+let edSaveState='idle';              // 'idle' | 'saving' | 'error'
+let edSaveError='';
+let edSaveAttempt=0;                  // consecutive failures (drives backoff)
+const _LM_BACKUP_KEY='lm:backup:v1';
+
+function _lmReadBackups(){
+  try{return JSON.parse(localStorage.getItem(_LM_BACKUP_KEY)||'{}');}
+  catch(e){return{};}
 }
+function _lmWriteBackups(o){
+  try{localStorage.setItem(_LM_BACKUP_KEY,JSON.stringify(o));return true;}
+  catch(e){console.warn('[backup] localStorage write failed:',e.message||e);return false;}
+}
+function _lmBackupSheet(sheet){
+  if(!DB[sheet])return;
+  const all=_lmReadBackups();
+  all[sheet]={at:Date.now(),h:DB[sheet].h,r:DB[sheet].r};
+  _lmWriteBackups(all);
+}
+function _lmClearBackup(sheet){
+  const all=_lmReadBackups();
+  if(all[sheet]){delete all[sheet];_lmWriteBackups(all);}
+}
+function _lmTotalDirty(){
+  let n=0;for(const k in edDirty)n+=edDirty[k]||0;return n;
+}
+
+// Call this AFTER the in-memory edit has been applied. It increments the
+// dirty count, takes a synchronous localStorage backup, schedules the
+// debounced Drive flush, and updates the status bar.
+function edSchedSave(){
+  edDirty[edTab]=(edDirty[edTab]||0)+1;
+  edModified=_lmTotalDirty();
+  _lmBackupSheet(edTab);
+  clearTimeout(edSaveTimer);
+  // Slightly tighter debounce than before (800 ms) so quick edits still
+  // round-trip to Drive sooner, while still coalescing batch operations.
+  edSaveTimer=setTimeout(()=>edFlushDirty(),800);
+  edUpdateSB();
+}
+
+// Save every dirty sheet to Drive in sequence. Each sheet's dirty counter
+// is decremented (not zeroed) so edits made while the await was in flight
+// are preserved. On failure: retry with exponential backoff.
+async function edFlushDirty(){
+  clearTimeout(edSaveTimer);edSaveTimer=null;
+  const sheets=Object.keys(edDirty).filter(s=>edDirty[s]>0&&DB[s]);
+  if(!sheets.length){
+    // Nothing to do — clear any "saving" indicator if it was sticky.
+    if(edSaveState==='saving'){edSaveState='idle';edUpdateSB();}
+    return;
+  }
+  edSaveState='saving';edUpdateSB();
+  let failed=null;
+  for(const sheet of sheets){
+    const snapshotCount=edDirty[sheet]||0;
+    try{
+      await saveSheet(sheet);
+      // Subtract the snapshot count rather than zeroing — this preserves any
+      // edit that arrived during the await, so we'll save it on the next pass.
+      edDirty[sheet]=Math.max(0,(edDirty[sheet]||0)-snapshotCount);
+      if(edDirty[sheet]===0)_lmClearBackup(sheet);
+    }catch(e){
+      failed=e;
+      console.warn('[save] failed for',sheet,e);
+    }
+  }
+  edModified=_lmTotalDirty();
+  if(failed){
+    edSaveAttempt++;
+    edSaveState='error';
+    edSaveError=failed.message||String(failed);
+    // Backoff: 2 s, 6 s, 18 s, then capped at 60 s.
+    const delay=Math.min(60000,2000*Math.pow(3,Math.min(edSaveAttempt-1,3)));
+    edSaveTimer=setTimeout(()=>edFlushDirty(),delay);
+    edUpdateSB();
+    toast(`⚠ Save failed (attempt ${edSaveAttempt}) — retrying in ${Math.round(delay/1000)} s. ${edSaveError}`,'err');
+  }else{
+    edSaveAttempt=0;edSaveState='idle';edSaveError='';edLastSaved=new Date();
+    edUpdateSB();
+    // If new edits arrived during the save, schedule another flush.
+    if(_lmTotalDirty()>0){clearTimeout(edSaveTimer);edSaveTimer=setTimeout(()=>edFlushDirty(),800);}
+  }
+}
+
+// Compatibility shim — older callers (Save Now button, generateSeasonFromDraw,
+// etc.) still call edForceSave(). Now it just triggers an immediate flush.
+async function edForceSave(){return edFlushDirty();}
+
 function edUpdateSB(){
   const d=DB[edTab];
   document.getElementById('edRows').textContent=d.r.length;
   document.getElementById('edSel').textContent=edSelected.size;
-  document.getElementById('edMod').textContent=edModified;
-  document.getElementById('edSaved').textContent=edLastSaved?'Saved '+edLastSaved.toLocaleTimeString():'';
+  document.getElementById('edMod').textContent=_lmTotalDirty();
+  const sb=document.getElementById('edSaved');
+  if(!sb)return;
+  if(edSaveState==='saving'){
+    sb.textContent='⏳ Saving…';sb.style.color='';
+  }else if(edSaveState==='error'){
+    sb.textContent=`⚠ Save failed — retrying${edSaveAttempt>1?` (attempt ${edSaveAttempt})`:''}. ${edSaveError||''}`;
+    sb.style.color='var(--red,#c0392b)';
+  }else{
+    sb.textContent=edLastSaved?'Saved '+edLastSaved.toLocaleTimeString():'';
+    sb.style.color='';
+  }
 }
+
+// Recovery prompt — runs once after loadAll(). If localStorage holds backups
+// (i.e. a previous session's save never confirmed), let the user re-apply
+// them. Cancelling discards the backup.
+async function _lmRecoverPrompt(){
+  const all=_lmReadBackups();
+  const sheets=Object.keys(all).filter(s=>DB[s]&&all[s]&&Array.isArray(all[s].r));
+  if(!sheets.length)return;
+  const summary=sheets.map(s=>`• ${s}: ${all[s].r.length} rows · saved locally ${new Date(all[s].at).toLocaleString()}`).join('\n');
+  const msg=`We found unsynced local backups for the sheet(s) below — they were edited but the changes never confirmed they reached Drive.\n\n${summary}\n\nRecover these backups now? (Cancel to discard them and keep what's on Drive.)`;
+  if(confirm(msg)){
+    sheets.forEach(s=>{
+      DB[s].h=[...all[s].h];
+      DB[s].r=all[s].r.map(r=>[...r]);
+      edDirty[s]=(edDirty[s]||0)+1;
+    });
+    edModified=_lmTotalDirty();
+    edUpdateSB();
+    toast(`Recovering ${sheets.length} sheet(s) — saving now…`,'');
+    edFlushDirty();
+  }else{
+    sheets.forEach(s=>_lmClearBackup(s));
+    toast('Discarded local backups','');
+  }
+}
+
+// Lifecycle hooks: keep edits from disappearing when the tab closes / hides.
+window.addEventListener('beforeunload',e=>{
+  if(_lmTotalDirty()>0||edSaveState==='saving'||edSaveState==='error'){
+    // Modern browsers ignore custom strings but still show a generic prompt.
+    e.preventDefault();e.returnValue='Unsaved changes have not yet reached Drive.';
+    return e.returnValue;
+  }
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'&&_lmTotalDirty()>0)edFlushDirty();
+});
+window.addEventListener('pagehide',()=>{if(_lmTotalDirty()>0)edFlushDirty();});
 function edImportCSV(e){
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
