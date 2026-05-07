@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.01.1</title>
+<title>League Manager v2026.05.02.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -506,6 +506,31 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   .teams-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
   .m-row{grid-template-columns:1fr 20px 58px 20px 1fr;}
 }
+
+/* Half-season transition popup */
+.hs-trans-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+.hs-trans-tbl th,.hs-trans-tbl td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;}
+.hs-trans-tbl th:first-child,.hs-trans-tbl td:first-child{text-align:left;}
+.hs-trans-tbl tbody tr:hover{background:var(--surface2);}
+.hs-delta-up{color:var(--green-m);font-weight:600;}
+.hs-delta-down{color:var(--red);font-weight:600;}
+.hs-delta-zero{color:var(--muted);}
+.hs-trans-hdr{font-size:12px;color:var(--muted);margin:6px 0 10px;}
+.hs-trans-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);}
+.hs-trans-btn{padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-family:'Inter',sans-serif;}
+.hs-trans-btn:hover{background:var(--surface2);}
+.hs-trans-btn.primary{background:var(--green);color:#fff;border-color:var(--green);}
+.hs-trans-btn.primary:hover{background:var(--green-m);}
+
+/* delta badge on team cards */
+.team-delta-badge{
+  position:absolute;top:8px;right:8px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  border-radius:4px;padding:2px 5px;line-height:1;
+  background:var(--surface);border:1px solid var(--border);
+}
+.team-delta-badge.up{color:var(--green-m);border-color:var(--green-m);}
+.team-delta-badge.down{color:var(--red);border-color:var(--red);}
 </style>
 </head>
 <body>
@@ -527,7 +552,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.01.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.02.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1062,6 +1087,311 @@ function teamSkillsFor(teamId,halfSeason){
 }
 function defaultSkills(){return{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};}
 
+// ── HALF-SEASON SKILL TRANSITION ─────────────────────────────
+// When current_date crosses a half-season boundary (Jun 14 ↔ Jun 15, or
+// Dec 31 ↔ Jan 1), pool every per-period rnd value stored in matches.csv
+// for the outgoing half, average per team, derive a skill delta, and offer
+// to upsert the new value into team_skills.csv for the incoming half.
+const _HS_HOME_RND_COLS=[
+  'first_home_att','first_home_def',
+  'second_home_att','second_home_def',
+  'extra_home_att','extra_home_def',
+  'pen_home'
+];
+const _HS_AWAY_RND_COLS=[
+  'first_away_att','first_away_def',
+  'second_away_att','second_away_def',
+  'extra_away_att','extra_away_def',
+  'pen_away'
+];
+const _HS_MIN_MATCHES=10;
+let _hsLatestDeltas=Object.create(null);   // teamId → number, populated on apply
+const _hsSeenTransitions=new Set();        // dismissed/applied half labels for this session
+
+// Pure label arithmetic: spring rolls back to same season's autumn;
+// autumn rolls back to previous season's spring. Returns '' on parse fail.
+function _prevHalfSeason(hs){
+  if(!hs)return'';
+  const m=String(hs).match(/^(\d{4})_(\d{2})_([AS])$/);
+  if(!m)return'';
+  const y1=parseInt(m[1],10),y2suffix=m[2],half=m[3];
+  if(half==='S')return`${y1}_${y2suffix}_A`;
+  // half==='A' → previous season's spring. Previous season's spring has
+  // first-year = y1-1, suffix = the autumn's first-year mod 100 padded.
+  const prevY1=y1-1;
+  const prevSuffix=String(y1%100).padStart(2,'0');
+  return`${prevY1}_${prevSuffix}_S`;
+}
+
+// Return the inclusive ISO date window for a half-season label.
+// Autumn YYYY_YY_A → Jun 15 of YYYY through Dec 31 of YYYY.
+// Spring YYYY_YY_S → Jan 1 of (YYYY+1) through Jun 14 of (YYYY+1).
+function _halfSeasonRange(hs){
+  if(!hs)return null;
+  const m=String(hs).match(/^(\d{4})_(\d{2})_([AS])$/);
+  if(!m)return null;
+  const y1=parseInt(m[1],10),half=m[3];
+  if(half==='A'){
+    return{startISO:`${y1}-06-15`,endISO:`${y1}-12-31`};
+  } else {
+    const y2=y1+1;
+    return{startISO:`${y2}-01-01`,endISO:`${y2}-06-14`};
+  }
+}
+
+// Walk DB.matches.r once and produce {teamId → {avg, matchCount}} for the
+// given half-season window. Empty rnd cells are skipped, not treated as 0.
+function _collectHalfSeasonStats(fromHalf){
+  const out=new Map();
+  const range=_halfSeasonRange(fromHalf);
+  if(!range)return out;
+  const d=DB.matches;
+  if(!d||!d.h.length||!d.r.length)return out;
+  const idx=(n)=>d.h.findIndex(x=>String(x||'').trim().toLowerCase()===n);
+  const di=idx('date'),hi=idx('home_id'),ai=idx('away_id');
+  if(di<0||hi<0||ai<0)return out;
+  // Resolve rnd-column indexes once.
+  const homeIdx=_HS_HOME_RND_COLS.map(idx);
+  const awayIdx=_HS_AWAY_RND_COLS.map(idx);
+  const ensure=(id)=>{
+    let s=out.get(id);
+    if(!s){s={sum:0,n:0,matches:new Set()};out.set(id,s);}
+    return s;
+  };
+  d.r.forEach((row,ri)=>{
+    const date=normalizeDate(row[di]);
+    if(!date||date<range.startISO||date>range.endISO)return;
+    const hid=String(row[hi]||'').trim();
+    const aid=String(row[ai]||'').trim();
+    if(hid){
+      const s=ensure(hid);
+      s.matches.add(ri);
+      homeIdx.forEach(ci=>{
+        if(ci<0)return;
+        const raw=row[ci];
+        if(raw===''||raw==null)return;
+        const v=parseFloat(raw);
+        if(!isNaN(v)){s.sum+=v;s.n++;}
+      });
+    }
+    if(aid){
+      const s=ensure(aid);
+      s.matches.add(ri);
+      awayIdx.forEach(ci=>{
+        if(ci<0)return;
+        const raw=row[ci];
+        if(raw===''||raw==null)return;
+        const v=parseFloat(raw);
+        if(!isNaN(v)){s.sum+=v;s.n++;}
+      });
+    }
+  });
+  const result=new Map();
+  out.forEach((s,id)=>{
+    result.set(id,{
+      avg:s.n>0?(s.sum/s.n):null,
+      matchCount:s.matches.size,
+      sampleCount:s.n
+    });
+  });
+  return result;
+}
+
+// Build the proposal list for moving from prevHalf into toHalf.
+function _proposeHalfSeasonTransition(toHalf){
+  const fromHalf=_prevHalfSeason(toHalf);
+  const stats=_collectHalfSeasonStats(fromHalf);
+  const proposals=[];
+  const teams=DB.teams;
+  if(!teams||!teams.r.length)return{fromHalf,toHalf,proposals};
+  const ti=teams.h.findIndex(h=>h==='id'||h==='team_id');
+  const ni=teams.h.findIndex(h=>h==='name'||h==='team_name'||h==='team_names'||h==='full_name');
+  const lni=teams.h.indexOf('long_name');
+  if(ti<0)return{fromHalf,toHalf,proposals};
+  teams.r.forEach(row=>{
+    const id=String(row[ti]||'').trim();
+    if(!id)return;
+    const rawFull=(ni>=0&&row[ni])||'';
+    const rawLong=lni>=0?row[lni]:'';
+    const{full,long}=splitTeamNames(rawFull,rawLong);
+    const name=full||long||id;
+    const oldRow=teamSkillsFor(id,fromHalf);
+    const oldSkill=Number(oldRow.skills)||0;
+    const oldHome=Number(oldRow.home)||0;
+    const st=stats.get(id);
+    const matchCount=st?st.matchCount:0;
+    const avg=st&&st.avg!=null?st.avg:null;
+    let delta=null,newSkill=oldSkill,applied=false;
+    if(matchCount>=_HS_MIN_MATCHES&&avg!=null){
+      delta=(avg-50)/10;
+      newSkill=Math.round((oldSkill+delta)*10)/10;
+      applied=true;
+    }
+    proposals.push({teamId:id,name,oldSkill,oldHome,matchCount,avg,delta,newSkill,applied});
+  });
+  proposals.sort((a,b)=>a.name.localeCompare(b.name));
+  return{fromHalf,toHalf,proposals};
+}
+
+// Format a delta with sign and one decimal. Returns "—" if null.
+function _hsFmtDelta(delta){
+  if(delta==null||isNaN(delta))return'<span class="hs-delta-zero">—</span>';
+  const cls=delta>0?'hs-delta-up':(delta<0?'hs-delta-down':'hs-delta-zero');
+  const sign=delta>0?'+':'';
+  return`<span class="${cls}">${sign}${delta.toFixed(1)}</span>`;
+}
+
+function _hsFmtNum(n,dp){
+  if(n==null||isNaN(n))return'—';
+  return Number(n).toFixed(dp==null?1:dp);
+}
+
+// Open the modal proposing skill changes for `toHalf`.
+function openHalfSeasonTransitionPopup(toHalf,opts){
+  opts=opts||{};
+  const data=_proposeHalfSeasonTransition(toHalf);
+  const{fromHalf,proposals}=data;
+  // Stash on the window so the Apply button can read it without re-computing
+  // (and without losing the user's idea of "what they saw" if data changes).
+  window._hsCurrentTransition={toHalf,fromHalf,proposals};
+
+  const titleHtml=`Half-season transition <span class="im-sub">${esc(seasonLabel(fromHalf.slice(0,7))||fromHalf)} ${fromHalf.endsWith('_A')?'autumn':'spring'} → ${esc(seasonLabel(toHalf.slice(0,7))||toHalf)} ${toHalf.endsWith('_A')?'autumn':'spring'}</span>`;
+
+  const hasAnyData=proposals.some(p=>p.matchCount>0);
+  let bodyHtml='';
+  if(!hasAnyData){
+    bodyHtml=`<div class="hs-trans-hdr">No matches were played during the outgoing half-season window (${esc(fromHalf)}). No skill changes to propose.</div>
+    <div class="hs-trans-actions">
+      <button class="hs-trans-btn primary" onclick="closeInfoModal()">OK</button>
+    </div>`;
+  } else {
+    const rowsHtml=proposals.map(p=>{
+      const newCls=p.applied&&p.delta!=null?(p.delta>0?'hs-delta-up':(p.delta<0?'hs-delta-down':'')):'';
+      return`<tr>
+        <td>${esc(p.name)}</td>
+        <td>${p.matchCount}</td>
+        <td>${_hsFmtNum(p.avg,1)}</td>
+        <td>${p.applied?_hsFmtDelta(p.delta):'<span class="hs-delta-zero">—</span>'}</td>
+        <td>${_hsFmtNum(p.oldSkill,1)}</td>
+        <td class="${newCls}">${_hsFmtNum(p.newSkill,1)}</td>
+      </tr>`;
+    }).join('');
+    bodyHtml=`<div class="hs-trans-hdr">
+      For each team, every per-period rnd value (1H / 2H / ET / PEN, attack & defence, home & away) recorded in <code>matches.csv</code> for matches dated ${esc(_halfSeasonRange(fromHalf).startISO)} → ${esc(_halfSeasonRange(fromHalf).endISO)} is averaged.
+      <br>Δ = (avg − 50) ÷ 10. New skill = old skill + Δ, rounded to 1 decimal. Teams with fewer than ${_HS_MIN_MATCHES} matches keep their old skill.
+    </div>
+    <table class="hs-trans-tbl">
+      <thead><tr><th>Team</th><th>Matches</th><th>Avg perf</th><th>Δ</th><th>Old skill</th><th>New skill</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div class="hs-trans-actions">
+      <button class="hs-trans-btn" onclick="_hsDismissTransition('skip')">Skip</button>
+      <button class="hs-trans-btn" onclick="_hsDismissTransition('later')">Edit later</button>
+      <button class="hs-trans-btn primary" onclick="_hsApplyTransitionFromPopup()">Apply</button>
+    </div>`;
+  }
+  document.getElementById('infoModalTitle').innerHTML=titleHtml;
+  document.getElementById('infoModalBody').innerHTML=bodyHtml;
+  document.getElementById('infoModal').classList.add('open');
+}
+
+function _hsDismissTransition(reason){
+  const cur=window._hsCurrentTransition;
+  if(cur&&cur.toHalf)_hsSeenTransitions.add(cur.toHalf);
+  window._hsCurrentTransition=null;
+  closeInfoModal();
+  if(reason==='skip')toast('Half-season transition skipped','');
+  else if(reason==='later')toast('Half-season transition deferred','');
+}
+
+function _hsApplyTransitionFromPopup(){
+  const cur=window._hsCurrentTransition;
+  if(!cur){closeInfoModal();return;}
+  applyHalfSeasonTransition(cur.toHalf,cur.proposals);
+  _hsSeenTransitions.add(cur.toHalf);
+  window._hsCurrentTransition=null;
+  closeInfoModal();
+}
+
+// Upsert one row per applied proposal into team_skills.csv. Updates only
+// `skills`; carries `home` from the previous row; leaves other columns blank
+// (or copies from prev row if present in the data we already read).
+async function applyHalfSeasonTransition(toHalf,proposals){
+  const d=DB.team_skills;
+  if(!d){toast('team_skills sheet missing','warn');return;}
+  // Make sure the schema includes the columns we write. If headers are
+  // empty (no rows ever), seed them with the canonical schema.
+  if(!d.h||!d.h.length){
+    d.h=['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'];
+  }
+  const tIdx=()=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+  const hsIdx=()=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='half_season');
+  const skIdx=()=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='skills');
+  const homeIdx=()=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='home');
+  // Add any missing required columns (preserves existing data).
+  const required=['team_id','skills','home','half_season'];
+  required.forEach(name=>{
+    const found=d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+    if(found<0){
+      d.h.push(name);
+      d.r.forEach(r=>r.push(''));
+    }
+  });
+  let ti=tIdx(),hsi=hsIdx(),ski=skIdx(),hmi=homeIdx();
+  let writes=0;
+  proposals.forEach(p=>{
+    if(!p.applied)return;
+    // Locate existing row for (team_id, toHalf).
+    let existing=null;
+    for(const r of d.r){
+      if(String(r[ti]||'').trim()===p.teamId&&String(r[hsi]||'').trim()===toHalf){existing=r;break;}
+    }
+    if(existing){
+      existing[ski]=String(p.newSkill);
+    } else {
+      const row=new Array(d.h.length).fill('');
+      row[ti]=p.teamId;
+      row[hsi]=toHalf;
+      row[ski]=String(p.newSkill);
+      if(hmi>=0)row[hmi]=String(p.oldHome||0);
+      d.r.push(row);
+    }
+    if(typeof p.delta==='number')_hsLatestDeltas[p.teamId]=p.delta;
+    writes++;
+  });
+  if(!writes){toast('No changes applied','');return;}
+  // Mark the sheet dirty using the project's edDirty pattern (edSchedSave
+  // operates on edTab, not on a passed-in sheet name — see edSchedSave).
+  if(typeof edDirty==='object'&&edDirty){
+    edDirty['team_skills']=(edDirty['team_skills']||0)+1;
+    if(typeof edModified!=='undefined')edModified=_lmTotalDirty();
+    if(typeof _lmBackupSheet==='function')_lmBackupSheet('team_skills');
+    if(typeof edUpdateSB==='function')edUpdateSB();
+  }
+  toast(`Applied ${writes} skill update${writes===1?'':'s'} for ${toHalf}`,'');
+  // Re-render so badges show up immediately.
+  if(typeof renderTeamsView==='function'&&currentView==='teams')renderTeamsView();
+  if(typeof edRender==='function'&&document.getElementById('edPanel')&&document.getElementById('edPanel').classList.contains('open'))edRender();
+  // Push to Drive.
+  try{await edFlushDirty();}catch(e){console.warn('[hs] flush failed',e);}
+}
+
+// Auto-trigger hook called by lgSetCurrentDate / advanceToNextRound.
+// Only fires when moving FORWARD in time AND the half-season label changes.
+// Session-level guard prevents re-firing for the same target half.
+function _maybeFireHalfSeasonTransition(oldIso,newIso){
+  if(!oldIso||!newIso)return;
+  const ohs=halfSeasonFor(oldIso),nhs=halfSeasonFor(newIso);
+  if(!ohs||!nhs||ohs===nhs)return;
+  if(newIso<=oldIso)return;
+  if(_hsSeenTransitions.has(nhs))return;
+  // Defer slightly so the date-setter's own re-render runs first.
+  setTimeout(()=>{
+    try{openHalfSeasonTransitionPopup(nhs,{trigger:'auto'});}
+    catch(e){console.warn('[hs] popup failed',e);}
+  },50);
+}
+
 // ── SIMULATION ────────────────────────────────────────────────
 // Randomized match simulation (each run can produce a different score).
 //   H = home.skills + (neutral ? 0 : home.home)   // home-side base
@@ -1538,9 +1868,11 @@ function lgSearchChange(v){
 }
 function lgSetCurrentDate(d){
   const iso=normalizeDate(d);if(!iso){toast('Invalid date','warn');return;}
+  const oldIso=currentDate();
   setState('current_date',iso,true);
   lgSelRound=null;
   toast(`Current date → ${iso}`,'');
+  _maybeFireHalfSeasonTransition(oldIso,iso);
   renderLeagueView();
 }
 function lgJumpToDate(d){if(!d)return;lgSetCurrentDate(d);}
@@ -2170,6 +2502,7 @@ async function advanceToNextRound(){
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
+  _maybeFireHalfSeasonTransition(cur,next.date);
   renderLeagueView();
 }
 
@@ -2648,7 +2981,13 @@ function _renderTeamsGrid(){
   // lists the season's matches, just like the matches view does). The color
   // dots intentionally don't get their own click handler — the card-level
   // listener catches them too.
-  grid.innerHTML=filtered.map(c=>`<div class="team-card" onclick="openTeamProfile('${esc(c.id)}')" title="Open ${esc(c.displayName)} profile">
+  grid.innerHTML=filtered.map(c=>{
+    const _delta=_hsLatestDeltas[c.id];
+    const _badgeHTML=(typeof _delta==='number'&&Math.abs(_delta)>=0.1)
+      ? `<span class="team-delta-badge ${_delta>0?'up':'down'}" title="last half-season skill change">${_delta>0?'+':''}${_delta.toFixed(1)}</span>`
+      : '';
+    return `<div class="team-card" onclick="openTeamProfile('${esc(c.id)}')" title="Open ${esc(c.displayName)} profile">
+    ${_badgeHTML}
     <div class="team-card-logo" style="background:${c.logo?'#fff':safeColor(c.color)}">${c.logo?`<img src="${c.logo}" alt="">`:esc((c.displayName||c.id).slice(0,3).toUpperCase())}</div>
     <div class="team-card-name">${esc(c.displayName)}${c.level?` <span class="team-card-group" title="MB-B division">[${esc(c.level)}]</span>`:''}</div>
     <div class="team-card-id">${esc(c.id)}</div>
@@ -2663,7 +3002,8 @@ function _renderTeamsGrid(){
       ${c.color2?`<div class="tcc-dot" style="background:${safeColor(c.color2)}" title="Secondary"></div>`:''}
       ${c.color3?`<div class="tcc-dot" style="background:${safeColor(c.color3)}" title="Tertiary"></div>`:''}
     </div>
-  </div>`).join('');
+  </div>`;
+  }).join('');
 }
 
 function _onTeamsSearch(v){
