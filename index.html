@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.11.1</title>
+<title>League Manager v2026.05.11.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -403,11 +403,28 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 }
 
 /* RESULTS VIEW */
-.results-wrap{max-width:900px;margin:0 auto;padding:20px 16px;}
+.results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
+.results-flat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.results-flat table{width:100%;border-collapse:collapse;}
+.results-flat td{padding:8px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.results-flat tr:last-child td{border-bottom:none;}
+.results-flat tr:hover td{background:var(--surface2);}
+.res-flat-name{display:flex;align-items:center;gap:10px;font-weight:500;}
+.res-flat-place{display:flex;align-items:center;gap:8px;justify-content:flex-end;white-space:nowrap;}
+.res-league-tag{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.03em;}
+.res-league-tag .comp-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
 .results-season-bar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
 .results-season-bar label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
 .results-season-sel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-family:'Inter',sans-serif;font-size:13px;color:var(--text);outline:none;cursor:pointer;}
 .results-season-sel:focus{border-color:var(--green);}
+.results-bar{display:flex;align-items:flex-end;gap:14px;margin-bottom:20px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;}
+.results-bar-field{display:flex;flex-direction:column;gap:4px;min-width:140px;}
+.results-bar-field.grow{flex:1;min-width:180px;}
+.results-bar-field label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+.results-sel,.results-search{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:7px 10px;font-family:'Inter',sans-serif;font-size:13px;color:var(--text);outline:none;}
+.results-sel{cursor:pointer;}
+.results-sel:focus,.results-search:focus{border-color:var(--green);}
+.results-empty{text-align:center;padding:40px 16px;color:var(--muted);font-size:13px;border:1px dashed var(--border2);border-radius:var(--r2);}
 .results-comps{display:flex;flex-direction:column;gap:20px;}
 .results-comp{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
 .results-comp-title{padding:14px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em;}
@@ -527,7 +544,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4468,6 +4485,56 @@ function _promptGenerateSeason(){
 //  RESULTS VIEW
 // ══════════════════════════════════════════════════════════════
 let _resultsSeason=null;
+let _resultsLeague='';   // '' = all leagues/competitions
+let _resultsSearch='';   // team name/id substring filter
+
+// Decide whether all the matches that feed (season, competition) have been
+// played already (date <= current_date AND a full-time score is recorded).
+// Returns true if the results block is allowed to show. Manual / unknown
+// competitions (overall, MB, anything without a matching prefix) default to
+// visible so user-typed rows are never hidden.
+function _resultMatchesReady(season, competition){
+  const c=String(competition||'').trim();
+  if(!c) return true;
+  const lc=c.toLowerCase();
+  if(lc==='overall'||lc==='mb') return true;
+  const m=DB.matches; if(!m||!m.r||!m.r.length) return true;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),hsi=_hi('home_score_full_time');
+  if(di<0||ri<0||hsi<0) return true;
+  // Build per-competition filter
+  let pred=null;
+  if(c==='NK'){
+    pred=(rd,lv)=>rd==='NKW-7-1'||rd==='NKL-9-1';
+  } else {
+    const kk=c.match(/^(KKARA|KKROM|KKABC|KKJKL|KKGOR)-(.+)$/);
+    if(kk){
+      const pref=kk[1]+'-', lvEq=kk[2];
+      pred=(rd,lv)=>rd.startsWith(pref)&&lv===lvEq;
+    } else if(/^(I|II|III|IV|V|VI|VII|VIII|IX|X)$/.test(c)){
+      pred=(rd,lv)=>rd.startsWith('MB-R-')&&lv===c;
+    } else {
+      // MB-B group label (1M / 1N / 2A / ... / 4D) or MB-4 single-team groups.
+      pred=(rd,lv)=>rd.startsWith('MB-B-')&&lv===c;
+    }
+  }
+  const rows=m.r.filter(r=>{
+    const rd=String(r[ri]||'').trim();
+    const lv=li>=0?String(r[li]||'').trim():'';
+    if(!pred(rd,lv)) return false;
+    const dt=String(r[di]||'').trim();
+    if(season && typeof seasonFor==='function' && dt && seasonFor(dt)!==season) return false;
+    return true;
+  });
+  if(!rows.length) return true;
+  const cur=(typeof currentDate==='function')?currentDate():'';
+  return rows.every(r=>{
+    const dt=String(r[di]||'').trim();
+    const sc=String(r[hsi]||'').trim();
+    return dt && (!cur || dt<=cur) && sc!=='';
+  });
+}
+
 function renderResultsView(){
   const rd=DB.results;
   const app=document.getElementById('app');
@@ -4493,45 +4560,100 @@ function renderResultsView(){
     const pa=parseInt(pli>=0?a[pli]:0)||0, pb=parseInt(pli>=0?b[pli]:0)||0;
     return pa-pb;
   }));
+
+  // Hide competitions whose matches are not yet all played.
+  const readyComps=Object.keys(byComp).filter(c=>_resultMatchesReady(_resultsSeason,c));
+  // Sort the league dropdown options alphabetically for predictable navigation.
+  const sortedLeagues=readyComps.slice().sort();
+  if(_resultsLeague && !sortedLeagues.includes(_resultsLeague)) _resultsLeague='';
+
   const seasonOpts=allSeasons.map(s=>`<option value="${esc(s)}"${s===_resultsSeason?' selected':''}>${esc(seasonLabel(s))}</option>`).join('');
+  const leagueOpts=`<option value=""${_resultsLeague===''?' selected':''}>All leagues</option>`+
+    sortedLeagues.map(c=>`<option value="${esc(c)}"${c===_resultsLeague?' selected':''}>${esc(c)}</option>`).join('');
+
   let html=`<div class="results-wrap">
-    <div class="results-season-bar">
-      <label>Season</label>
-      <select class="results-season-sel" onchange="selectResultsSeason(this.value)">${seasonOpts}</select>
-    </div>
-    <div class="results-comps">`;
-  Object.entries(byComp).forEach(([comp,rows])=>{
-    const col=compColor(comp);const total=rows.length;
-    html+=`<div class="results-comp">
-      <div class="results-comp-title"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(comp)}</div>
-      <table class="results-table"><tbody>`;
+    <div class="results-bar">
+      <div class="results-bar-field">
+        <label>Season</label>
+        <select class="results-sel" onchange="selectResultsSeason(this.value)">${seasonOpts}</select>
+      </div>
+      <div class="results-bar-field">
+        <label>League</label>
+        <select class="results-sel" onchange="selectResultsLeague(this.value)">${leagueOpts}</select>
+      </div>
+      <div class="results-bar-field grow">
+        <label>Team</label>
+        <input id="resultsSearch" class="results-search" type="search" placeholder="Search team…" value="${esc(_resultsSearch)}" oninput="setResultsSearch(this.value)">
+      </div>
+    </div>`;
+
+  const q=String(_resultsSearch||'').trim().toLowerCase();
+  // Apply league dropdown filter, then flatten every (comp, row) pair into a
+  // single list so the UI is a flat table: one row per (team, league) entry.
+  const compsToRender=sortedLeagues.filter(c=>!_resultsLeague||c===_resultsLeague);
+  const flat=[];
+  compsToRender.forEach(comp=>{
+    const rows=byComp[comp]||[];
+    const total=rows.length;
     rows.forEach(row=>{
-      const place=parseInt(pli>=0?row[pli]:0)||0;
-      const teamId=tidi>=0?row[tidi]:'';
+      const teamId=tidi>=0?String(row[tidi]||'').trim():'';
+      if(!teamId) return; // skip empty rows so we never render blank trailing entries
       const team=teamById(teamId);
-      const logo=logoFor(teamId,_resultsSeason);
+      const longName=String(team.long_name||'').trim()||String(team.name||'').trim()||String(team.full_name||'').trim()||teamId;
+      if(q){
+        const hay=(teamId+' '+longName+' '+(team.name||'')+' '+(team.full_name||'')).toLowerCase();
+        if(!hay.includes(q)) return;
+      }
+      const place=parseInt(pli>=0?row[pli]:0)||0;
+      flat.push({comp,total,teamId,team,longName,place});
+    });
+  });
+  // Sort by competition then place so reading is predictable.
+  flat.sort((a,b)=>{
+    if(a.comp!==b.comp) return a.comp<b.comp?-1:1;
+    return (a.place||999)-(b.place||999);
+  });
+  if(!flat.length){
+    html+=`<div class="results-empty">No results to show for the current filters.<br><small>Auto-generated rankings stay hidden until every match in that competition is played.</small></div>`;
+  } else {
+    html+=`<div class="results-flat"><table><tbody>`;
+    flat.forEach(e=>{
+      const logo=logoFor(e.teamId,_resultsSeason);
       let badgeCls='rpos-mid';
-      if(place===1)badgeCls='rpos-1';
-      else if(place===2)badgeCls='rpos-2';
-      else if(place===3)badgeCls='rpos-3';
-      else if(place<=Math.ceil(total*0.25))badgeCls='rpos-up';
-      else if(place>=total-1)badgeCls='rpos-dn';
+      if(e.place===1) badgeCls='rpos-1';
+      else if(e.place===2) badgeCls='rpos-2';
+      else if(e.place===3) badgeCls='rpos-3';
+      else if(e.place && e.total && e.place<=Math.ceil(e.total*0.25)) badgeCls='rpos-up';
+      else if(e.place && e.total && e.place>=e.total-1) badgeCls='rpos-dn';
+      const compCol=compColor(e.comp);
       html+=`<tr>
-        <td class="rpos"><span class="rpos-badge ${badgeCls}">${place||'—'}</span></td>
         <td>
-          <div class="res-team-cell">
-            <div class="res-team-badge" style="background:${logo?'#fff':safeColor(team.color)}">${logo?`<img src="${logo}" alt="">`:esc((team.name||teamId).slice(0,3).toUpperCase())}</div>
-            ${esc(team.name)}
+          <div class="res-flat-name">
+            <div class="res-team-badge" style="background:${logo?'#fff':safeColor(e.team.color)}">${logo?`<img src="${logo}" alt="">`:esc((e.team.name||e.teamId).slice(0,3).toUpperCase())}</div>
+            ${esc(e.longName)}
+          </div>
+        </td>
+        <td>
+          <div class="res-flat-place">
+            <span class="res-league-tag"><span class="comp-dot" style="background:${safeColor(compCol)}"></span>${esc(e.comp)}</span>
+            <span class="rpos-badge ${badgeCls}">${e.place||'—'}</span>
           </div>
         </td>
       </tr>`;
     });
     html+=`</tbody></table></div>`;
-  });
-  html+='</div></div>';
+  }
+  html+='</div>';
   app.innerHTML=html;
+  // Preserve focus + caret on the search input so typing isn't interrupted.
+  if(q){
+    const el=document.getElementById('resultsSearch');
+    if(el){el.focus();const v=el.value;el.setSelectionRange(v.length,v.length);}
+  }
 }
 function selectResultsSeason(s){_resultsSeason=s;renderResultsView();}
+function selectResultsLeague(c){_resultsLeague=c||'';renderResultsView();}
+function setResultsSearch(q){_resultsSearch=q||'';renderResultsView();}
 
 // ══════════════════════════════════════════════════════════════
 //  ROUND EDIT PANEL
