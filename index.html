@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.11.3</title>
+<title>League Manager v2026.05.11.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -544,7 +544,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4488,6 +4488,105 @@ let _resultsSeason=null;
 let _resultsLeague='';   // '' = all leagues/competitions
 let _resultsSearch='';   // team name/id substring filter
 
+// Classify a match row into a "competition" label, matching the labels used
+// in results.csv. Returns null for matches that don't belong to a ranked
+// competition (e.g. KKQ knockouts, individual NK rounds — the NK podium is
+// special-cased below).
+function _inferCompetitionForMatch(rounds, level){
+  const r=String(rounds||'').trim();
+  const l=String(level||'').trim();
+  if(/^MB-B-/i.test(r)) return l||null;     // MB-B: level IS the comp ('1M', '2A', '4K', …)
+  if(/^MB-R-/i.test(r)) return l||null;     // MB-R: Roman level ('I'..'X')
+  const kk=r.match(/^(KKARA|KKROM|KKABC|KKJKL|KKGOR)-/i);
+  if(kk) return kk[1].toUpperCase()+'-'+l;  // e.g. 'KKARA-5', 'KKROM-I'
+  return null;
+}
+
+// Build all competition standings for a season directly from matches.csv.
+// Returns { [competition]: { table:[{id,p,w,d,l,gf,ga,gd,pts}, …], ready:bool } }.
+// `ready` means every feeder match has a date <= current_date AND a recorded
+// full-time score. `_resultMatchesReady` reaches the same conclusion via the
+// raw match list, but here we also use the row list to actually compute the
+// table — so the view can display the standings even when results.csv was
+// never auto-written.
+function _buildSeasonStandings(season){
+  const out={};
+  const m=DB.matches;
+  if(!m||!m.r||!m.r.length) return out;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
+        hi=_hi('home_id'),ai=_hi('away_id'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(di<0||ri<0||hi<0||ai<0||hsi<0||asi<0) return out;
+  const cur=(typeof currentDate==='function')?currentDate():'';
+  // Group rows by inferred competition (only league/group competitions).
+  const byComp={};
+  m.r.forEach(row=>{
+    const date=String(row[di]||'').trim();
+    if(!date) return;
+    if(season && typeof seasonFor==='function' && seasonFor(date)!==season) return;
+    const comp=_inferCompetitionForMatch(row[ri], li>=0?row[li]:'');
+    if(!comp) return;
+    if(!byComp[comp]) byComp[comp]=[];
+    byComp[comp].push(row);
+  });
+  Object.entries(byComp).forEach(([comp, rows])=>{
+    const stats={};
+    let ready=true;
+    rows.forEach(row=>{
+      const h=String(row[hi]||'').trim(), a=String(row[ai]||'').trim();
+      const hsRaw=String(row[hsi]||'').trim(), asRaw=String(row[asi]||'').trim();
+      const dt=String(row[di]||'').trim();
+      if(cur && dt && dt>cur) ready=false;
+      if(!h||!a||hsRaw===''||asRaw===''){ ready=false; return; }
+      const hs=parseInt(hsRaw), as=parseInt(asRaw);
+      if(isNaN(hs)||isNaN(as)){ ready=false; return; }
+      if(!stats[h]) stats[h]={id:h,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+      if(!stats[a]) stats[a]={id:a,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+      stats[h].p++; stats[a].p++;
+      stats[h].gf+=hs; stats[h].ga+=as; stats[a].gf+=as; stats[a].ga+=hs;
+      if(hs>as){ stats[h].w++; stats[h].pts+=3; stats[a].l++; }
+      else if(hs<as){ stats[a].w++; stats[a].pts+=3; stats[h].l++; }
+      else { stats[h].d++; stats[a].d++; stats[h].pts++; stats[a].pts++; }
+    });
+    const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga}))
+      .sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+    if(table.length) out[comp]={table,ready};
+  });
+  // NK podium: 1=W-final winner, 2=W-final loser, 3=3rd-place winner, 4=loser.
+  if(typeof _nkSingleLegWinner==='function'&&typeof _nkSingleLegLoser==='function'){
+    const findRow=(rnd,mn)=>{
+      for(const row of m.r){
+        if(String(row[ri]||'').trim()!==rnd) continue;
+        const mni=_hi('match_number');
+        if(mni>=0 && String(row[mni]||'').trim()!==String(mn)) continue;
+        const dt=String(row[di]||'').trim();
+        if(season && typeof seasonFor==='function' && dt && seasonFor(dt)!==season) continue;
+        return row;
+      }
+      return null;
+    };
+    const wRow=findRow('NKW-7-1','1'), lRow=findRow('NKL-9-1','1');
+    if(wRow||lRow){
+      const wWin=_nkSingleLegWinner('NKW-7-1','1');
+      const wLos=_nkSingleLegLoser ('NKW-7-1','1');
+      const lWin=_nkSingleLegWinner('NKL-9-1','1');
+      const lLos=_nkSingleLegLoser ('NKL-9-1','1');
+      const podium=[wWin,wLos,lWin,lLos];
+      let ready=true;
+      [wRow,lRow].forEach(r=>{
+        if(!r){ ready=false; return; }
+        const dt=String(r[di]||'').trim();
+        const sc=String(r[hsi]||'').trim();
+        if(!dt||(cur&&dt>cur)||sc==='') ready=false;
+      });
+      const table=podium.map(id=>id?{id,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,gd:0}:null).filter(Boolean);
+      if(table.length) out['NK']={table,ready};
+    }
+  }
+  return out;
+}
+
 // Decide whether all the matches that feed (season, competition) have been
 // played already (date <= current_date AND a full-time score is recorded).
 // Returns true if the results block is allowed to show. Manual / unknown
@@ -4537,33 +4636,72 @@ function _resultMatchesReady(season, competition){
 
 function renderResultsView(){
   const rd=DB.results;
+  const m=DB.matches;
   const app=document.getElementById('app');
-  if(!rd.r.length){
+  const _rhi=(name)=>rd.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const si=_rhi('season'),compi=_rhi('competition'),pli=_rhi('place'),tidi=_rhi('team_id');
+
+  // Season dropdown: union of seasons found in results.csv AND matches.csv,
+  // so the user can switch to a freshly-generated season even when nothing
+  // has been auto-written to results.csv yet.
+  const seasonSet=new Set();
+  if(si>=0) rd.r.forEach(r=>{const s=String(r[si]||'').trim(); if(s) seasonSet.add(s);});
+  const _mhi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const mdi=_mhi('date');
+  if(mdi>=0 && typeof seasonFor==='function'){
+    m.r.forEach(r=>{
+      const d=String(r[mdi]||'').trim();
+      if(!d) return;
+      const s=seasonFor(d);
+      if(s) seasonSet.add(s);
+    });
+  }
+  const allSeasons=[...seasonSet].sort().reverse();
+  if(!allSeasons.length){
     app.innerHTML=`<div class="results-wrap"><div class="res-no-data">
-      No results yet.<br><small>Add season data via ⚙ Data Editor → Results tab.</small>
+      No results yet.<br><small>Add season data via ⚙ Data Editor → Results tab, or run Generate Season from the Matches tab.</small>
       <br><small>Columns: <code>season, competition, place, team_id</code></small>
     </div></div>`;
     return;
   }
-  const _hi=(name)=>rd.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const si=_hi('season'),compi=_hi('competition'),pli=_hi('place'),tidi=_hi('team_id');
-  const allSeasons=[...new Set(rd.r.map(r=>si>=0?r[si]:''))].filter(Boolean).sort().reverse();
   if(!_resultsSeason||!allSeasons.includes(_resultsSeason))_resultsSeason=allSeasons[0]||'';
-  const seasonRows=rd.r.filter(r=>si<0||r[si]===_resultsSeason);
-  const byComp={};
-  seasonRows.forEach(row=>{
-    const comp=compi>=0?row[compi]:'Unknown';
-    if(!byComp[comp])byComp[comp]=[];
-    byComp[comp].push(row);
-  });
-  Object.keys(byComp).forEach(c=>byComp[c].sort((a,b)=>{
-    const pa=parseInt(pli>=0?a[pli]:0)||0, pb=parseInt(pli>=0?b[pli]:0)||0;
-    return pa-pb;
-  }));
 
-  // Hide competitions whose matches are not yet all played.
+  // 1) Auto-compute standings from matches.csv for the selected season.
+  const autoStandings=_buildSeasonStandings(_resultsSeason);
+  // 2) Manual / persisted results.csv rows for this season — used both as the
+  //    source for competitions we can't auto-build (overall, MB, etc.) and as
+  //    an override/cache when auto-compute returns the same table.
+  const byComp={};
+  rd.r.forEach(row=>{
+    if(si>=0 && String(row[si]||'').trim()!==_resultsSeason) return;
+    const comp=compi>=0?String(row[compi]||'').trim():'Unknown';
+    if(!comp) return;
+    const teamId=tidi>=0?String(row[tidi]||'').trim():'';
+    if(!teamId) return; // skip blank rows
+    if(!byComp[comp]) byComp[comp]=[];
+    byComp[comp].push({
+      teamId,
+      place:parseInt(pli>=0?row[pli]:0)||0,
+      _src:'manual'
+    });
+  });
+  // Merge auto-computed standings, but only if the competition is fully
+  // "ready" (every feeder match played past current_date with a score).
+  // If a manual block already exists for the same competition we keep the
+  // manual one — that lets the user override the auto-computed table.
+  Object.entries(autoStandings).forEach(([comp, info])=>{
+    if(!info.ready) return;
+    if(byComp[comp]) return;
+    byComp[comp]=info.table.map((s,i)=>({teamId:s.id, place:i+1, _src:'auto'}));
+  });
+  // Sort each competition's rows by place.
+  Object.keys(byComp).forEach(c=>byComp[c].sort((a,b)=>(a.place||999)-(b.place||999)));
+
+  // Apply the readiness filter to manual rows too. Manual rows for known
+  // competitions (MB-B groups, MB-R levels, KK groups, NK) stay hidden until
+  // their matches play out — same rule the user asked for. `overall`/`MB`
+  // and unrecognised labels are always visible.
   const readyComps=Object.keys(byComp).filter(c=>_resultMatchesReady(_resultsSeason,c));
-  // Sort the league dropdown options alphabetically for predictable navigation.
   const sortedLeagues=readyComps.slice().sort();
   if(_resultsLeague && !sortedLeagues.includes(_resultsLeague)) _resultsLeague='';
 
@@ -4595,8 +4733,8 @@ function renderResultsView(){
   compsToRender.forEach(comp=>{
     const rows=byComp[comp]||[];
     const total=rows.length;
-    rows.forEach(row=>{
-      const teamId=tidi>=0?String(row[tidi]||'').trim():'';
+    rows.forEach(entry=>{
+      const teamId=entry.teamId;
       if(!teamId) return; // skip empty rows so we never render blank trailing entries
       const team=teamById(teamId);
       const longName=String(team.long_name||'').trim()||String(team.name||'').trim()||String(team.full_name||'').trim()||teamId;
@@ -4604,8 +4742,7 @@ function renderResultsView(){
         const hay=(teamId+' '+longName+' '+(team.name||'')+' '+(team.full_name||'')).toLowerCase();
         if(!hay.includes(q)) return;
       }
-      const place=parseInt(pli>=0?row[pli]:0)||0;
-      flat.push({comp,total,teamId,team,longName,place});
+      flat.push({comp,total,teamId,team,longName,place:entry.place||0});
     });
   });
   // Sort by competition then place so reading is predictable.
