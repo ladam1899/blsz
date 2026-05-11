@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.11.5</title>
+<title>League Manager v2026.05.11.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -545,7 +545,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1179,10 +1179,14 @@ function sumPeriodScores(row,cols){
 
 // ── VIEW ROUTING ──────────────────────────────────────────────
 function switchView(v){
+  const prev=currentView;
   currentView=v;
   document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));
   document.getElementById('ntab-'+v)?.classList.add('active');
   renderView();
+  // Scroll back to the top whenever the user actually navigates to a new view,
+  // so the sticky bar / first rows are visible without manually scrolling up.
+  if(prev!==v) try{ window.scrollTo({top:0,behavior:'auto'}); }catch(_){}
 }
 function renderView(){
   // Keep the nav pill highlight in sync with currentView (handles the initial
@@ -4488,6 +4492,7 @@ function _promptGenerateSeason(){
 let _resultsSeason=null;
 let _resultsLeague='';   // '' = all leagues/competitions
 let _resultsSearch='';   // team name/id substring filter
+let _resultsSaving=false;// debounce flag — only one in-flight saveSheet('results') at a time
 
 // Classify a match row into a "competition" label, matching the labels used
 // in results.csv. Returns null for matches that don't belong to a ranked
@@ -4646,7 +4651,19 @@ function renderResultsView(){
   // so the user can switch to a freshly-generated season even when nothing
   // has been auto-written to results.csv yet.
   const seasonSet=new Set();
-  if(si>=0) rd.r.forEach(r=>{const s=String(r[si]||'').trim(); if(s) seasonSet.add(s);});
+  const _seasonRe=/^\d{4}_\d{2}$/;
+  if(si>=0){
+    rd.r.forEach(r=>{const s=String(r[si]||'').trim(); if(s) seasonSet.add(s);});
+  } else {
+    // Positional fallback (mirrors `_placeToTeamMap`): if there's no `season`
+    // header, scan every cell for the YYYY_YY signature and pick those up
+    // directly. This lets pre-existing seed files (no header / non-standard
+    // header) still surface their seasons in the dropdown.
+    rd.r.forEach(r=>r.forEach(c=>{
+      const v=String(c||'').trim();
+      if(_seasonRe.test(v)) seasonSet.add(v);
+    }));
+  }
   const _mhi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
   const mdi=_mhi('date');
   if(mdi>=0 && typeof seasonFor==='function'){
@@ -4669,6 +4686,36 @@ function renderResultsView(){
 
   // 1) Auto-compute standings from matches.csv for the selected season.
   const autoStandings=_buildSeasonStandings(_resultsSeason);
+  // PERSIST: every "ready" competition that isn't already in results.csv gets
+  // upserted into DB.results.r and saved back to the user's Drive. This is the
+  // canonical store — the on-the-fly compute is a fallback for in-session
+  // display, but the user has been explicit that nothing should be derived in
+  // memory only: everything must round-trip through their Drive results.csv.
+  if(typeof _upsertResultsRow==='function'){
+    let added=0;
+    Object.entries(autoStandings).forEach(([comp, info])=>{
+      if(!info.ready) return;
+      // Skip if the season+competition already exists in results.csv to avoid
+      // pointlessly rewriting (and to keep manual edits authoritative).
+      const have=(si>=0&&compi>=0)&&rd.r.some(r=>
+        String(r[si]||'').trim()===_resultsSeason &&
+        String(r[compi]||'').trim()===comp);
+      if(have) return;
+      info.table.forEach((s,i)=>{
+        if(!s||!s.id) return;
+        _upsertResultsRow(_resultsSeason, comp, i+1, s.id);
+        added++;
+      });
+    });
+    if(added && typeof saveSheet==='function' && !_resultsSaving){
+      _resultsSaving=true;
+      Promise.resolve().then(async()=>{
+        try{ await saveSheet('results'); }
+        catch(e){ if(typeof toast==='function') toast('⚠ Results save failed: '+(e.message||e),'err'); }
+        finally{ _resultsSaving=false; }
+      });
+    }
+  }
   // 2) Manual / persisted results.csv rows for this season — used both as the
   //    source for competitions we can't auto-build (overall, MB, etc.) and as
   //    an override/cache when auto-compute returns the same table.
