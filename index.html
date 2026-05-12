@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.16</title>
+<title>League Manager v2026.05.12.17</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.16</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.17</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2418,10 +2418,63 @@ async function advanceToNextRound(){
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
+  // Half-season boundary check: if advancing crosses from autumn (date <
+  // Jan-1-of-spring-year) into spring (date >= Jan 1), pause and prompt the
+  // user to refresh team_skills _S rows and run Generate Spring Half. The
+  // user can either Continue (advance the date and remind them to run the
+  // spring generator) or Cancel (leave current_date in autumn).
+  const curSeason=(typeof seasonFor==='function')?seasonFor(cur):'';
+  const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
+  const springYear=(()=>{const m=String(curSeason||nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+  const split=isNaN(springYear)?'':(springYear+'-01-01');
+  const crossesBoundary=split && cur<split && next.date>=split;
+  if(crossesBoundary){
+    const ok=await _confirmHalfBoundary(curSeason||nextSeason, split, next.date);
+    if(!ok){
+      toast('Half-season transition cancelled — current date kept in autumn','warn');
+      return;
+    }
+  }
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
   renderLeagueView();
+}
+
+// Modal shown when ⏭ Next Round would move the date from autumn into spring.
+// Reminds the user to (a) update _S rows in team_skills.csv, then (b) click
+// ▶ Generate Spring Half so the spring matches get simulated with refreshed
+// skills. Resolves to true if the user clicks Continue, false on Cancel.
+function _confirmHalfBoundary(season,splitDate,nextDate){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='panel-overlay open';ov.style.zIndex='500';
+    const md=document.createElement('div');
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:480px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    md.innerHTML=`
+      <h3 style="margin:0 0 6px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — refresh team skills</h3>
+      <p style="margin:0 0 10px;color:var(--text);font-size:13px;">
+        The next round is on <b>${esc(nextDate)}</b>, which crosses into the SPRING half of season <b>${esc(season||'?')}</b> (split at <b>${esc(splitDate)}</b>).
+      </p>
+      <p style="margin:0 0 6px;color:var(--muted);font-size:12px;">Before continuing:</p>
+      <ol style="margin:0 0 12px 18px;color:var(--muted);font-size:12px;line-height:1.6;">
+        <li>Open <b>⚙ Data Editor → team_skills</b> and add/refresh the <code>_S</code> half-season rows for each team that needs different spring skills.</li>
+        <li>Click <b>▶ Generate Spring Half</b> in the Matches toolbar (after the modal closes) to simulate spring scores with the refreshed skills.</li>
+      </ol>
+      <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">
+        Clicking <b>Continue</b> just advances the date — you still need to run Generate Spring Half so the spring scores get filled in. Clicking <b>Cancel</b> keeps current date in autumn.
+      </p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" id="hbCancel" class="tbtn">Cancel</button>
+        <button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue</button>
+      </div>`;
+    document.body.appendChild(ov);
+    document.body.appendChild(md);
+    const cleanup=()=>{ov.remove();md.remove();};
+    md.querySelector('#hbCancel').onclick=()=>{cleanup();resolve(false);};
+    md.querySelector('#hbOk').onclick=()=>{cleanup();resolve(true);};
+    ov.onclick=()=>{cleanup();resolve(false);};
+  });
 }
 
 // ── STANDINGS (right sidebar) ─────────────────────────────────
@@ -4069,11 +4122,16 @@ function _pickMB4Teams(excludeIds){
     const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
     const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
     const fni=fnFull>=0?fnFull:(fnLong>=0?fnLong:fnName);
+    // MB-4 picks must come from the BLSZ organisation only (the federation
+    // we're running this app for). Teams in other orgs are excluded.
+    const oi=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
       const name=fni>=0?String(r[fni]||'').trim():id;
-      return{id,name:name||id};
-    }).filter(o=>o.id&&!excludeIds.has(o.id)).sort((a,b)=>a.name.localeCompare(b.name));
+      const org=oi>=0?String(r[oi]||'').trim():'';
+      return{id,name:name||id,org};
+    }).filter(o=>o.id&&!excludeIds.has(o.id)&&(o.org.toUpperCase()==='BLSZ'))
+      .sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
@@ -4720,8 +4778,11 @@ async function generateSeasonFromDraw(targetSeason, half){
   const mbUsed=_mbTeamIdsInUse(prevOverall);
 
   // Does the draw reference any MB-4 group? If yes, prompt for picks.
+  // MB-R rounds are a SPRING competition, so we only prompt on a spring or
+  // full-season run. Autumn runs skip the modal entirely — the MB-R rows are
+  // written as blank stubs by _buildOrStub and resolved during the spring run.
   let mb4Picks=new Map();
-  const needsMB4=d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
+  const needsMB4=(_half==='S'||_half==='ALL') && d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
     (/^(4K|4NY|4É|4D)(\s|$)/.test(String(r[hpi]||'').trim())||
      /^(4K|4NY|4É|4D)(\s|$)/.test(String(r[api]||'').trim())));
   if(needsMB4){
