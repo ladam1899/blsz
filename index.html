@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.23</title>
+<title>League Manager v2026.05.12.14</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.23</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.14</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -685,15 +685,12 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     <div class="tsep"></div>
     <input class="tsearch" id="edSearch" placeholder="Search…" oninput="edRender()" autocomplete="off">
     <div class="tsep"></div>
-    <label class="tbtn" style="cursor:pointer" title="REPLACE the current sheet's rows with the rows of the uploaded CSV. Headers are taken from the CSV.">
+    <label class="tbtn" style="cursor:pointer">
       📎 Attach CSV
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
     </label>
-    <label class="tbtn" style="cursor:pointer" title="APPEND rows from the uploaded CSV to the current sheet. Existing rows are kept. Duplicate rows (matched by the sheet's natural key — see status bar) are skipped.">
-      ➕ Merge CSV
-      <input type="file" accept=".csv,.txt" style="display:none" onchange="edMergeCSV(event)">
-    </label>
-    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. The SPRING half is generated automatically when current_date crosses Jan 1 via the ⏭ Next Round button (popup will prompt to refresh team_skills _S rows + pick MB-4 teams).">🆕 Generate Season</button>
+    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. After this finishes, refine team_skills for the spring half (_S rows), then run ▶ Generate Spring Half.">🆕 Generate Season (autumn)</button>
+    <button class="tbtn" id="edGenSpringBtn" style="display:none" onclick="_promptGenerateSpring()" title="Generate the SPRING HALF of a season (date >= Jan 1). Reads refreshed _S team_skills rows for the spring sim, and writes the NSZK Super Cup matches (semi + final).">▶ Generate Spring Half</button>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
@@ -2411,370 +2408,16 @@ function openHeadToHead(aId,bId){
   document.getElementById('infoModal').classList.add('open');
 }
 
-// Per-session memo so the popup fires exactly once per season-crossing.
-// If the user cancels, the entry is cleared so the next click re-prompts.
-const _springPopupShown=new Set();
-
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
-  // Half-season boundary trigger: fires when this click crosses Jan 1 of
-  // the next round's season. We compute the Jan-1 split from the NEXT
-  // round's date (so even a Dec→Jan jump across the football season
-  // boundary is handled correctly), then check whether `cur < split` and
-  // `next.date >= split`. That's the exact "I'm crossing the line" event.
-  const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
-  const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-  const split=isNaN(sy)?'':(sy+'-01-01');
-  const isCrossing=!!(split && (!cur || cur<split) && next.date>=split);
-  console.log(`[advanceToNextRound] cur=${cur} next=${next.date} season=${nextSeason} split=${split} crossing=${isCrossing} shown=${_springPopupShown.has(nextSeason)}`);
-  if(isCrossing && !_springPopupShown.has(nextSeason)){
-    _springPopupShown.add(nextSeason);
-    const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
-    if(!ok){
-      _springPopupShown.delete(nextSeason); // allow re-prompt on the next click
-      toast('Half-season transition cancelled — current date kept where it is','warn');
-      return;
-    }
-    // Run the spring generation now (MB-4 picker + sim + NSZK + groups).
-    try{
-      await generateSeasonFromDraw(nextSeason,'S');
-    }catch(e){
-      console.error('[advanceToNextRound] spring sim failed:',e);
-      toast('Spring generation failed — see console','err');
-      return;
-    }
-  }
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
   renderLeagueView();
-}
-
-// Build a tiny HTML preview of every team's autumn (`_A`) vs spring (`_S`)
-// skills snapshot, so the user can SEE which spring rows are missing before
-// confirming the boundary transition. Spring rows missing fall back to autumn
-// by `teamSkillsFor()` rules.
-// The full list of skill columns we COPY from autumn into spring. Only the
-// overall `skills` value gets adjusted at the half boundary; every other
-// per-period column is preserved unchanged so the team keeps its autumn
-// specialisation pattern.
-const _HB_SKILL_COLS=['skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties'];
-// Look up a single skill value for a team in a given half_season. Returns
-// the integer cell value, or NaN if no row matches.
-function _hbReadSkill(teamId, halfTag, col){
-  const d=DB.team_skills; if(!d||!d.r||!d.h)return NaN;
-  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season'), ci=d.h.indexOf(col);
-  if(ti<0||hi<0||ci<0)return NaN;
-  const row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
-  if(!row)return NaN;
-  const n=parseInt(row[ci]);
-  return isNaN(n)?NaN:n;
-}
-// Upsert a single _S team_skills row for `teamId` with the given values map.
-// Existing _S row is updated in place; new row is inserted with all columns
-// from team_skills.h. Returns 'updated' | 'inserted' | 'noop' (noop if values
-// match the existing row exactly).
-function _hbUpsertSpringSkill(teamId, halfTag, values){
-  const d=DB.team_skills; if(!d||!d.h||!d.h.length)return 'noop';
-  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season');
-  if(ti<0||hi<0)return 'noop';
-  let row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
-  if(!row){
-    row=new Array(d.h.length).fill('');
-    row[ti]=teamId; row[hi]=halfTag;
-    d.r.push(row);
-    Object.entries(values).forEach(([k,v])=>{const i=d.h.indexOf(k);if(i>=0)row[i]=String(v);});
-    return 'inserted';
-  }
-  let dirty=false;
-  Object.entries(values).forEach(([k,v])=>{
-    const i=d.h.indexOf(k);if(i<0)return;
-    const cur=String(row[i]||'').trim(), nx=String(v);
-    if(cur!==nx){row[i]=nx;dirty=true;}
-  });
-  return dirty?'updated':'noop';
-}
-
-// Compute per-team autumn MB-B performance for the half-boundary popup.
-// Walks matches.csv for rows whose round starts with MB-B-, has a recorded
-// score, and belongs to `season`. Groups by `level` (the MB-B group, e.g.
-// '1M', '2A', '3NY') and computes each team's points (3-1-0) + GD. Returns
-// Map<team_id, {group, pts, gf, ga, gd, gp, groupAvg, perfDelta}>.
-//   • groupAvg  = mean pts of all teams in the same MB-B group
-//   • perfDelta = round((pts - groupAvg) / 3), clamped ±10
-function _hbAutumnPerformance(season){
-  const out=new Map();
-  const m=DB.matches; if(!m||!m.r||!m.h)return out;
-  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
-        hi=_hi('home_id'),ai=_hi('away_id'),
-        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
-  if(di<0||ri<0||li<0||hi<0||ai<0||hsi<0||asi<0)return out;
-  // Group rows by MB-B group.
-  const byGroup={};
-  m.r.forEach(r=>{
-    const date=String(r[di]||'').trim();
-    if(!date)return;
-    if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
-    const rnd=String(r[ri]||'').trim();
-    if(!/^MB-B-/i.test(rnd))return;
-    const lvl=String(r[li]||'').trim(); if(!lvl)return;
-    const hs=parseInt(r[hsi]), as=parseInt(r[asi]);
-    if(isNaN(hs)||isNaN(as))return;
-    const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
-    if(!h||!a)return;
-    if(!byGroup[lvl])byGroup[lvl]={};
-    const g=byGroup[lvl];
-    if(!g[h])g[h]={id:h,pts:0,gf:0,ga:0,gp:0};
-    if(!g[a])g[a]={id:a,pts:0,gf:0,ga:0,gp:0};
-    g[h].gp++; g[a].gp++;
-    g[h].gf+=hs; g[h].ga+=as; g[a].gf+=as; g[a].ga+=hs;
-    if(hs>as){g[h].pts+=3;}
-    else if(hs<as){g[a].pts+=3;}
-    else{g[h].pts++; g[a].pts++;}
-  });
-  Object.entries(byGroup).forEach(([level,teams])=>{
-    const arr=Object.values(teams);
-    if(!arr.length)return;
-    const avg=arr.reduce((s,t)=>s+t.pts,0)/arr.length;
-    arr.forEach(t=>{
-      const gd=t.gf-t.ga;
-      let perfDelta=Math.round((t.pts-avg)/3);
-      if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
-      out.set(t.id,{
-        group:level, pts:t.pts, gf:t.gf, ga:t.ga, gd, gp:t.gp,
-        groupAvg:Math.round(avg*10)/10, perfDelta
-      });
-    });
-  });
-  return out;
-}
-
-// Half-boundary popup: shows an editable table where every team in
-// teams.csv has one row, with each editable skill column showing its
-// AUTUMN value and an integer adjustment input. Spring value = autumn +
-// adjustment (clamped 0..100, or -20..+20 for `home`). On Continue:
-//   1. write the resulting _S rows into team_skills.csv (upsert),
-//   2. resolve true so advanceToNextRound runs the spring sim.
-// Returns false on Cancel.
-function _confirmHalfBoundary(season,splitDate,nextDate){
-  return new Promise(resolve=>{
-    const aTag=season+'_A', sTag=season+'_S';
-    // Build the team list. Prefer teams.csv (so every team in the league
-    // gets a row, regardless of whether team_skills has a row yet). Falls
-    // back to the team_skills row list if teams.csv is empty for some reason.
-    const teamsArr=(function(){
-      const td=DB.teams;
-      const arr=[];
-      if(td&&td.r&&td.h){
-        const idi=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
-        if(idi>=0){
-          td.r.forEach(r=>{
-            const id=String(r[idi]||'').trim();
-            if(!id)return;
-            const tb=(typeof teamById==='function')?teamById(id):{name:id};
-            arr.push({tid:id,name:String(tb.name||id)});
-          });
-        }
-      }
-      // Fallback: collect from team_skills if teams.csv produced nothing.
-      if(!arr.length){
-        const t=DB.team_skills;
-        const seen=new Set();
-        if(t&&t.r&&t.h){
-          const ti=t.h.indexOf('team_id');
-          if(ti>=0){
-            t.r.forEach(r=>{
-              const id=String(r[ti]||'').trim();
-              if(id&&!seen.has(id)){seen.add(id);arr.push({tid:id,name:id});}
-            });
-          }
-        }
-      }
-      return arr.sort((a,b)=>a.name.localeCompare(b.name));
-    })();
-
-    // Read autumn baseline (every column) and the suggested perf delta per
-    // team. Per-period columns are copied verbatim from autumn → spring;
-    // ONLY `skills` is edited. Teams without an _A row fall back to
-    // defaultSkills() so they remain editable.
-    const _defaults=(typeof defaultSkills==='function')?defaultSkills():{
-      skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50
-    };
-    const _perfMap=_hbAutumnPerformance(season);
-    const _autAll={}, _autSource={};
-    teamsArr.forEach(tt=>{
-      _autAll[tt.tid]={};
-      _autSource[tt.tid]='A';
-      let anyReal=false;
-      _HB_SKILL_COLS.forEach(k=>{
-        const raw=_hbReadSkill(tt.tid,aTag,k);
-        if(!isNaN(raw)){_autAll[tt.tid][k]=raw; anyReal=true;}
-        else _autAll[tt.tid][k]=parseInt(_defaults[k])||0;
-      });
-      if(!anyReal) _autSource[tt.tid]='default';
-    });
-    // Existing spring `skills` for each team (if any) → seed the input.
-    // If there is an existing _S row, the initial adjustment = (S - A).
-    // Otherwise we PRE-FILL with the suggested perfDelta so a single Continue
-    // press accepts the auto-calculated change.
-    const _initAdj=(tid)=>{
-      const s=_hbReadSkill(tid,sTag,'skills');
-      const a=_autAll[tid].skills;
-      if(!isNaN(s)&&!isNaN(a)) return s-a;
-      const perf=_perfMap.get(tid);
-      return perf?perf.perfDelta:0;
-    };
-    const _clampSkills=(v)=>Math.max(0,Math.min(100,v));
-
-    // Build one row per team.
-    const rowsHtml=teamsArr.map(tt=>{
-      const a=_autAll[tt.tid].skills;
-      const perf=_perfMap.get(tt.tid);
-      const adj=_initAdj(tt.tid);
-      const newVal=_clampSkills(a+adj);
-      const ptsStr=perf?String(perf.pts):'—';
-      const avgStr=perf?String(perf.groupAvg):'—';
-      const grpStr=perf?perf.group:'';
-      const perfStr=perf?(perf.perfDelta>0?'+':'')+String(perf.perfDelta):'—';
-      const perfCls=perf?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'';
-      const aCls='hb-aut'+(_autSource[tt.tid]==='default'?' hb-aut-default':'');
-      const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Autumn `skills` value';
-      return `<tr data-row="${esc(tt.tid)}">
-        <td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>
-        <td class="hb-group">${esc(grpStr)}</td>
-        <td>${esc(ptsStr)}</td>
-        <td class="hb-avg">${esc(avgStr)}</td>
-        <td class="hb-perf ${perfCls}" title="Performance vs group average — auto-suggested change">${esc(perfStr)}</td>
-        <td class="${aCls}" title="${esc(aTitle)}">${esc(String(a))}</td>
-        <td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:60px"></td>
-        <td class="hb-spr" data-out="${esc(tt.tid)}">${esc(String(newVal))}</td>
-      </tr>`;
-    }).join('');
-
-    const ov=document.createElement('div');
-    ov.className='panel-overlay open';ov.style.zIndex='500';
-    const md=document.createElement('div');
-    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
-    md.innerHTML=`
-      <h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>
-      <p style="margin:0 0 10px;color:var(--text);font-size:12px;">
-        Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from the autumn row.
-        <span style="color:var(--muted)">The Perf Δ column is a suggestion calculated from autumn MB-B group performance — round((team pts − group avg) / 3), clamped ±10. The Your Δ field is pre-filled with it; change it to anything you want.</span>
-      </p>
-      <div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">
-        <table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">
-          <thead>
-            <tr style="background:var(--surface2)">
-              <th class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:6px 10px">Team</th>
-              <th title="Autumn MB-B group">Group</th>
-              <th title="Autumn points in MB-B group">Aut. pts</th>
-              <th title="Average points in this team's MB-B group">Grp avg</th>
-              <th title="Suggested change based on autumn performance">Perf Δ</th>
-              <th title="Autumn `skills` value">Aut. skills</th>
-              <th title="Your manual adjustment (integer)">Your Δ</th>
-              <th title="New spring skills = autumn + your Δ (clamped 0..100)">New skills</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml||'<tr><td colspan="8" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>
-        </table>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;align-items:center;">
-        <span id="hbSummary" style="font-size:11px;color:var(--muted)"></span>
-        <span>
-          <button type="button" id="hbReset" class="tbtn" title="Reset every Your Δ back to the suggested Perf Δ">Reset to suggestion</button>
-          <button type="button" id="hbZero" class="tbtn" title="Set every Your Δ to 0 (spring = autumn)">Zero all</button>
-          <button type="button" id="hbCancel" class="tbtn">Cancel</button>
-          <button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue — save &amp; generate spring</button>
-        </span>
-      </div>`;
-    const styleTag=document.createElement('style');
-    styleTag.textContent=`
-      .hb-table thead th{padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border);font-weight:700;text-align:center;white-space:nowrap;}
-      .hb-table thead th.hb-team{text-align:left;}
-      .hb-table tbody td{padding:4px 8px;text-align:center;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;}
-      .hb-table tbody td.hb-team{position:sticky;left:0;background:var(--surface);text-align:left;font-family:'Inter',sans-serif;font-weight:500;white-space:nowrap;}
-      .hb-table tbody tr:hover td{background:var(--surface2);}
-      .hb-table tbody tr:hover td.hb-team{background:var(--surface2);}
-      .hb-table td.hb-aut{color:var(--muted);}
-      .hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}
-      .hb-table td.hb-avg{color:var(--muted);}
-      .hb-table td.hb-group{color:var(--muted);font-size:11px;}
-      .hb-table td.hb-perf{font-weight:700;}
-      .hb-table td.hb-perf.hb-perf-up{color:#16a34a;}
-      .hb-table td.hb-perf.hb-perf-down{color:#dc2626;}
-      .hb-table td.hb-perf.hb-perf-zero{color:var(--muted);}
-      .hb-table td.hb-spr{font-weight:700;}
-      .hb-table td.hb-spr.changed{color:var(--blue);}
-      .hb-table td.hb-adj input{padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;}
-      .hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}
-    `;
-    document.head.appendChild(styleTag);
-    document.body.appendChild(ov);
-    document.body.appendChild(md);
-
-    const inputs=md.querySelectorAll('input[type=number][data-tid]');
-    const updateAll=()=>{
-      let changed=0;
-      inputs.forEach(inp=>{
-        const tid=inp.dataset.tid;
-        let v=parseInt(inp.value); if(isNaN(v))v=0;
-        if(v>100)v=100; if(v<-100)v=-100;
-        const a=_autAll[tid].skills;
-        const out=md.querySelector(`td.hb-spr[data-out="${tid}"]`);
-        if(out){
-          const s=_clampSkills(a+v);
-          out.textContent=String(s);
-          if(v!==0)out.classList.add('changed'); else out.classList.remove('changed');
-        }
-        if(v!==0)changed++;
-      });
-      const s=md.querySelector('#hbSummary');
-      if(s)s.textContent=`${changed} of ${teamsArr.length} teams adjusted from autumn`;
-    };
-    inputs.forEach(inp=>inp.addEventListener('input',updateAll));
-    md.querySelector('#hbReset').onclick=()=>{
-      // Restore the perf-Δ suggestion for every row.
-      inputs.forEach(i=>{
-        const perf=_perfMap.get(i.dataset.tid);
-        i.value=perf?perf.perfDelta:0;
-      });
-      updateAll();
-    };
-    md.querySelector('#hbZero').onclick=()=>{
-      inputs.forEach(i=>{i.value='0';});
-      updateAll();
-    };
-    updateAll();
-
-    const cleanup=()=>{ov.remove();md.remove();styleTag.remove();};
-    md.querySelector('#hbCancel').onclick=()=>{cleanup();resolve(false);};
-    md.querySelector('#hbOk').onclick=()=>{
-      // Save _S rows. Each row: copy every per-period column from autumn,
-      // override skills with autumn + your Δ, clamped.
-      let upd=0,ins=0,noop=0;
-      teamsArr.forEach(tt=>{
-        const inp=md.querySelector(`input[data-tid="${tt.tid}"]`);
-        let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
-        const values={};
-        _HB_SKILL_COLS.forEach(k=>{
-          if(k==='skills'){values[k]=_clampSkills(_autAll[tt.tid].skills+adj);}
-          else{values[k]=_autAll[tt.tid][k];}
-        });
-        const op=_hbUpsertSpringSkill(tt.tid,sTag,values);
-        if(op==='inserted')ins++; else if(op==='updated')upd++; else noop++;
-      });
-      try{ if(typeof saveSheet==='function') saveSheet('team_skills'); }catch(e){}
-      toast(`Spring skills: ${ins} inserted · ${upd} updated · ${noop} unchanged`,'');
-      cleanup();
-      resolve(true);
-    };
-    // Don't dismiss on backdrop click — too easy to lose unsaved edits.
-  });
 }
 
 // ── STANDINGS (right sidebar) ─────────────────────────────────
@@ -4422,16 +4065,11 @@ function _pickMB4Teams(excludeIds){
     const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
     const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
     const fni=fnFull>=0?fnFull:(fnLong>=0?fnLong:fnName);
-    // MB-4 picks must come from the BLSZ organisation only (the federation
-    // we're running this app for). Teams in other orgs are excluded.
-    const oi=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
       const name=fni>=0?String(r[fni]||'').trim():id;
-      const org=oi>=0?String(r[oi]||'').trim():'';
-      return{id,name:name||id,org};
-    }).filter(o=>o.id&&!excludeIds.has(o.id)&&(o.org.toUpperCase()==='BLSZ'))
-      .sort((a,b)=>a.name.localeCompare(b.name));
+      return{id,name:name||id};
+    }).filter(o=>o.id&&!excludeIds.has(o.id)).sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
@@ -4817,140 +4455,6 @@ function _writeFinalTable(season, competition, table){
   return n;
 }
 
-// Parse a latitude / longitude cell. Values in teams.csv sometimes carry a
-// leading "(" (e.g. "(47.4892") or other surrounding punctuation when they
-// were copy-pasted from a "lat, lon" formatted source. Returns NaN if no
-// valid number can be extracted.
-function _parseLatLon(v){
-  const s=String(v||'').replace(/[^\d.\-]/g,'');
-  if(!s)return NaN;
-  const n=parseFloat(s);
-  return isNaN(n)?NaN:n;
-}
-// Look up (lat, lon) for a team_id from DB.teams. Returns {lat,lon} where any
-// missing value is NaN.
-function _teamGeo(teamId){
-  const d=DB.teams; if(!d||!d.r) return {lat:NaN,lon:NaN};
-  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const idi=_hi('team_id'); const lai=_hi('latitude'); const loi=_hi('longitude');
-  if(idi<0||lai<0||loi<0) return {lat:NaN,lon:NaN};
-  for(const r of d.r){
-    if(String(r[idi]||'').trim()===String(teamId).trim()){
-      return {lat:_parseLatLon(r[lai]), lon:_parseLatLon(r[loi])};
-    }
-  }
-  return {lat:NaN,lon:NaN};
-}
-
-// Compute the final BLSZ ranking for `season` and write next-season group
-// assignments into results.csv:
-//   • `overall` / `MB` master ranking (sorted by BLSZ pts desc) — used by
-//     plain-integer place tokens in next season's draw.csv.
-//   • `1M` / `1N`            — MB1: top 16 BLSZ teams split odd/even.
-//                              Odd BLSZ place → 1N. Even → 1M. Each gets 8.
-//   • `2A` / `2B` / `2C`     — MB2: BLSZ 17..40 split by (rank-17) mod 3.
-//                              mod==0 → 2A; mod==1 → 2B; mod==2 → 2C. 8 each.
-//   • `3NY` / `3K` / `3É` / `3D` — MB3: BLSZ 41..72 split by location:
-//                              first 8 westernmost teams → 3NY,
-//                              of the remaining 24 the 8 easternmost → 3K,
-//                              of the remaining 16 the 8 northernmost → 3É,
-//                              the last 8 → 3D.
-// Within each group, teams are written into places 1..8 by BLSZ rank ascending
-// so place #1 is the strongest team in that group.
-//
-// Returns the number of results rows written (or 0 if BLSZ projection is empty).
-function _writeNextSeasonGroups(season){
-  if(typeof _blszBuildProjection!=='function') return 0;
-  const proj=_blszBuildProjection(season);
-  // Aggregate per-team total points (matches the BLSZ view's sumCur logic).
-  const totals=new Map();
-  ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
-    Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
-      totals.set(tid,(totals.get(tid)||0)+(info.curPts||0));
-    });
-  });
-  if(!totals.size) return 0;
-  const ranked=[...totals.entries()].map(([tid,pts])=>{
-    const t=(typeof teamById==='function')?teamById(tid):{name:tid};
-    return {tid,pts,name:String(t.name||tid)};
-  }).sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
-  let written=0;
-  // Master "overall" ranking — sufficient for next season's plain-integer
-  // place tokens (e.g. `MB-1`, `MB-2`, …). Also write a duplicate copy under
-  // competition='MB' since the place-map lookup accepts both labels.
-  ranked.forEach((t,i)=>{
-    _upsertResultsRow(season,'overall',i+1,t.tid); written++;
-    _upsertResultsRow(season,'MB',i+1,t.tid); written++;
-  });
-  // ── MB1 (BLSZ 1..16): odd BLSZ rank → 1N, even → 1M ─────────────
-  // BLSZ rank is 1-based, so the BEST team (rank 1) goes to 1N. The user
-  // specified "odd numbers of place shold go to N group".
-  const mb1=ranked.slice(0,16);
-  const m1n=[], m1m=[];
-  mb1.forEach((t,idx)=>{
-    const rank=idx+1;
-    (rank%2===1?m1n:m1m).push(t);
-  });
-  // Within each group: sort by BLSZ rank ascending (already true because we
-  // walked `ranked` in order). Write places 1..8.
-  m1n.forEach((t,i)=>{_upsertResultsRow(season,'1N',i+1,t.tid);written++;});
-  m1m.forEach((t,i)=>{_upsertResultsRow(season,'1M',i+1,t.tid);written++;});
-  // ── MB2 (BLSZ 17..40): split by (rank-17) mod 3 ─────────────────
-  // mod==0 → 2A; mod==1 → 2B; mod==2 → 2C. Yields 8 teams per group when the
-  // pool has exactly 24 teams (the BLSZ has at least this many).
-  const mb2=ranked.slice(16,40);
-  const m2a=[],m2b=[],m2c=[];
-  mb2.forEach((t,idx)=>{
-    const m=idx%3;
-    (m===0?m2a:m===1?m2b:m2c).push(t);
-  });
-  m2a.forEach((t,i)=>{_upsertResultsRow(season,'2A',i+1,t.tid);written++;});
-  m2b.forEach((t,i)=>{_upsertResultsRow(season,'2B',i+1,t.tid);written++;});
-  m2c.forEach((t,i)=>{_upsertResultsRow(season,'2C',i+1,t.tid);written++;});
-  // ── MB3 (BLSZ 41..72): geographic split ─────────────────────────
-  // Stages, in order:
-  //   1. 8 westernmost (lowest longitude) of the full pool → 3NY
-  //   2. 8 easternmost (highest longitude) of the remaining 24 → 3K
-  //   3. 8 northernmost (highest latitude)  of the remaining 16 → 3É
-  //   4. The last 8 → 3D
-  // Ties / missing coords: teams with NaN lat or lon sink to the END of the
-  // sort so they fall into 3D rather than skewing the geographic picks.
-  const mb3=ranked.slice(40,72).map(t=>Object.assign({}, t, _teamGeo(t.tid)));
-  const _pickN=(pool,key,dir,n)=>{
-    // dir: +1 = pick smallest (most western / southern); -1 = largest (most
-    // eastern / northern). NaN values sort to the end either way.
-    const sorted=pool.slice().sort((a,b)=>{
-      const va=a[key], vb=b[key];
-      const aNaN=isNaN(va), bNaN=isNaN(vb);
-      if(aNaN&&bNaN) return 0;
-      if(aNaN) return 1;
-      if(bNaN) return -1;
-      return (va-vb)*dir;
-    });
-    const picked=sorted.slice(0,n);
-    const pickedSet=new Set(picked.map(t=>t.tid));
-    const rest=pool.filter(t=>!pickedSet.has(t.tid));
-    // Sort the picked group back into BLSZ order so place 1 inside the group
-    // is the best-ranked team, not the most-extreme by coordinate.
-    picked.sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
-    return {picked,rest};
-  };
-  let pool=mb3;
-  const sNY=_pickN(pool,'lon',+1,8); pool=sNY.rest;   // most west
-  const sK =_pickN(pool,'lon',-1,8); pool=sK.rest;    // most east of rest
-  const sÉ =_pickN(pool,'lat',-1,8); pool=sÉ.rest;    // most north of rest
-  const sD =pool.slice().sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
-  sNY.picked.forEach((t,i)=>{_upsertResultsRow(season,'3NY',i+1,t.tid);written++;});
-  sK .picked.forEach((t,i)=>{_upsertResultsRow(season,'3K', i+1,t.tid);written++;});
-  sÉ .picked.forEach((t,i)=>{_upsertResultsRow(season,'3É', i+1,t.tid);written++;});
-  sD       .forEach((t,i)=>{_upsertResultsRow(season,'3D', i+1,t.tid);written++;});
-  console.log(`[NextSeasonGroups] season=${season} written=${written} `+
-    `1M=${m1m.length} 1N=${m1n.length} `+
-    `2A=${m2a.length} 2B=${m2b.length} 2C=${m2c.length} `+
-    `3NY=${sNY.picked.length} 3K=${sK.picked.length} 3É=${sÉ.picked.length} 3D=${sD.length}`);
-  return written;
-}
-
 function _upsertMatchRow(row){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
@@ -4969,53 +4473,6 @@ function _upsertMatchRow(row){
   m.r.push(row);return'inserted';
 }
 
-// Drop every matches.csv row that (a) was previously auto-generated by this
-// script (notes starts with "[auto]"), (b) belongs to `targetSeason` via
-// seasonFor(date), AND (c) falls in the half being regenerated. Manual rows
-// (notes don't start with [auto]) and rows from OTHER seasons are kept.
-// Returns the number of rows deleted.
-function _clearAutoMatchesForSeason(targetSeason, half, splitDate){
-  const m=DB.matches; if(!m||!m.r||!m.h)return 0;
-  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'), noi=_hi('notes');
-  if(di<0||noi<0)return 0;
-  const inHalfHere=(d)=>{
-    if(half==='ALL'||!splitDate)return true;
-    if(!d) return half==='A';
-    if(half==='A') return d<splitDate;
-    return d>=splitDate;
-  };
-  const before=m.r.length;
-  m.r=m.r.filter(r=>{
-    const d=String(r[di]||'').trim();
-    const notes=String(r[noi]||'').trim();
-    const isAuto=/^\[auto\]/i.test(notes);
-    if(!isAuto)return true;                                  // manual → keep
-    // Determine the row's season. Rows with no date are conservatively
-    // treated as belonging to no season → keep (we can't be sure they're
-    // ours to delete).
-    if(!d)return true;
-    const sea=(typeof seasonFor==='function')?seasonFor(d):'';
-    if(sea!==targetSeason)return true;                       // other season → keep
-    if(!inHalfHere(d))return true;                           // other half → keep
-    return false;                                            // drop
-  });
-  return before-m.r.length;
-}
-// Drop every results.csv row for `targetSeason`. We don't have an "auto"
-// marker on results rows, but ALL results rows for a season are produced by
-// Generate Season (or by the user manually for `overall`/`MB` of the PREV
-// season — which is a different season string, so this is safe). Returns
-// the number of rows deleted.
-function _clearAutoResultsForSeason(targetSeason){
-  const d=DB.results; if(!d||!d.r||!d.h)return 0;
-  const si=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='season');
-  if(si<0)return 0;
-  const before=d.r.length;
-  d.r=d.r.filter(r=>String(r[si]||'').trim()!==String(targetSeason).trim());
-  return before-d.r.length;
-}
-
 async function generateSeasonFromDraw(targetSeason, half){
   if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
   const prev=_prevSeasonStr(targetSeason);
@@ -5028,34 +4485,33 @@ async function generateSeasonFromDraw(targetSeason, half){
   const _half=(half==='A'||half==='S')?half:'ALL';
   const springYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
   const splitDate=isNaN(springYear)?'':(springYear+'-01-01');
-  // ── Clean slate for THIS season's auto rows ────────────────────
-  // Drop any previously [auto]-generated matches.csv rows for this season
-  // before regenerating, so re-running Generate Season produces a fresh set
-  // instead of accumulating duplicates or leaving stale rows from an older
-  // run. Manual rows (Play page — notes do NOT start with [auto]) and rows
-  // for OTHER seasons are left untouched. In half-mode we only clear rows
-  // in the half being regenerated.
-  // Same logic for results.csv: any auto-written results row for this
-  // season is dropped. The Generate Season pipeline will re-upsert them
-  // from scratch as each phase finishes.
-  const _wipedAutoMatches=_clearAutoMatchesForSeason(targetSeason, _half, splitDate);
-  const _wipedAutoResults=_clearAutoResultsForSeason(targetSeason);
-  console.log(`[GenerateSeason] cleared ${_wipedAutoMatches} auto matches.csv rows and ${_wipedAutoResults} results.csv rows for season ${targetSeason} (half=${_half})`);
   const inHalf=(dateStr)=>{
     if(_half==='ALL') return true;
     if(!dateStr||!splitDate) return _half==='A';        // no date → assume autumn
     if(_half==='A') return String(dateStr)<splitDate;   // strictly before Jan 1
     return String(dateStr)>=splitDate;                  // spring: from Jan 1
   };
-  // Wrap _buildSimulatedMatchRow so out-of-half rows are SKIPPED entirely.
-  //   • Autumn run:  only writes rows with date < Jan-1; spring rows are
-  //                  left untouched (no row inserted, no existing row over-
-  //                  written). They will be written by the spring run later.
-  //   • Spring run:  only writes rows with date >= Jan-1; existing autumn
-  //                  rows are NEVER touched, preserving their scores.
-  // Returns null when the row should be skipped.
+  // Wrap _buildSimulatedMatchRow so out-of-half rows produce a blank stub
+  // instead of being simulated. The stub still gets upserted so the row
+  // exists with the right (rounds, level, mn, date, teams) for the
+  // complementary half-generator to fill in later.
+  const _stubRow=(ctx)=>{
+    const cols=DB.matches.h;
+    const obj={
+      date:ctx.date||'',
+      rounds:ctx.rounds||'',
+      level:ctx.level||'',
+      match_type:String(ctx.mt||'0'),
+      match_number:ctx.mn||'',
+      stadion_name:'',
+      home_id:ctx.homeId||'',
+      away_id:ctx.awayId||'',
+      notes:'[auto] '+(_half==='A'?'spring':'autumn')+' half — sim pending'
+    };
+    return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:false};
+  };
   const _buildOrStub=(ctx)=>{
-    if(_half!=='ALL'&&!inHalf(ctx.date)) return null;
+    if(_half!=='ALL'&&!inHalf(ctx.date)) return _stubRow(ctx);
     return _buildSimulatedMatchRow(ctx);
   };
 
@@ -5126,11 +4582,8 @@ async function generateSeasonFromDraw(targetSeason, half){
   const mbUsed=_mbTeamIdsInUse(prevOverall);
 
   // Does the draw reference any MB-4 group? If yes, prompt for picks.
-  // MB-R rounds are a SPRING competition, so we only prompt on a spring or
-  // full-season run. Autumn runs skip the modal entirely — the MB-R rows are
-  // written as blank stubs by _buildOrStub and resolved during the spring run.
   let mb4Picks=new Map();
-  const needsMB4=(_half==='S'||_half==='ALL') && d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
+  const needsMB4=d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
     (/^(4K|4NY|4É|4D)(\s|$)/.test(String(r[hpi]||'').trim())||
      /^(4K|4NY|4É|4D)(\s|$)/.test(String(r[api]||'').trim())));
   if(needsMB4){
@@ -5172,25 +4625,9 @@ async function generateSeasonFromDraw(targetSeason, half){
   });
   const roundNums=[...mbrByRound.keys()].sort((a,b)=>a-b);
 
-  // Filter the planning counts by half so the preview reflects what will
-  // ACTUALLY be written (autumn-only runs leave spring rows untouched, and
-  // vice versa). Rows with no calendar date are counted on the autumn side.
-  const _inHalfFor=(rnd)=>{
-    if(_half==='ALL')return true;
-    const cal=calMap.get(rnd);
-    const d=cal&&cal.date?cal.date:'';
-    return inHalf(d);
-  };
-  const mbbPlanInHalf=mbbPlan.filter(p=>_inHalfFor(p.rounds)).length;
-  const mbrInHalf=mbR.filter(r=>_inHalfFor(String(r[ri]||'').trim())).length;
-  const _countByRnd=(map)=>{let n=0;for(const arr of map.values())for(const r of arr) if(_inHalfFor(String(r[ri]||'').trim())) n++;return n;};
-  const _countNk=()=>{let n=0;for(const [key,arr] of nkByKey.entries())for(const r of arr) if(_inHalfFor(_normNkRounds(String(r[ri]||'').trim()))) n++;return n;};
-  const kkInHalf=_countByRnd(kkqByRnd)+_countByRnd(kkaraByRnd)+_countByRnd(kkromByRnd)+
-                 _countByRnd(kkabcByRnd)+_countByRnd(kkjklByRnd)+_countByRnd(kkgorByRnd);
-  const nkInHalf=_countNk();
-  const totalPlanned=mbbPlanInHalf+mbrInHalf+kkInHalf+nkInHalf;
-  const halfLbl=(_half==='A')?'AUTUMN half only (date < '+splitDate+') — spring rows will be left untouched and generated later when ⏭ Next Round crosses Jan 1'
-                :(_half==='S')?'SPRING half only (date ≥ '+splitDate+') + NSZK Super Cup — autumn rows will be left untouched'
+  const totalPlanned=mbbPlan.length+mbR.length+kkTotal+nkCount;
+  const halfLbl=(_half==='A')?'AUTUMN half only (date < '+splitDate+')'
+                :(_half==='S')?'SPRING half only (date ≥ '+splitDate+') + NSZK Super Cup'
                 :'FULL season';
   const lines=[
     `Generate ${totalPlanned} match rows for season ${targetSeason} — ${halfLbl}?`,
@@ -5216,11 +4653,9 @@ async function generateSeasonFromDraw(targetSeason, half){
   if(!confirm(lines.join('\n')))return;
 
   // ── PHASE 1: simulate MB-B rows and upsert ────────────────────
-  let upd=0,ins=0,blank=0,resRows=0,skipped=0;
+  let upd=0,ins=0,blank=0,resRows=0;
   mbbPlan.forEach(ctx=>{
-    const built=_buildOrStub(ctx);
-    if(!built){skipped++;return;}
-    const{row,simulated}=built;
+    const{row,simulated}=_buildOrStub(ctx);
     if(!simulated)blank++;
     const op=_upsertMatchRow(row);
     if(op==='updated')upd++;else ins++;
@@ -5256,11 +4691,9 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!aa.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
       const cal=calMap.get(rnd);
       if(!cal)missingDates.add(rnd);
-      const built=_buildOrStub({
+      const{row,simulated}=_buildOrStub({
         rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
       });
-      if(!built){skipped++;return;}
-      const{row,simulated}=built;
       if(!simulated)blank++;
       const op=_upsertMatchRow(row);
       if(op==='updated')upd++;else ins++;
@@ -5307,11 +4740,9 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd);
         if(!cal)missingDates.add(rnd);
-        const built=_buildOrStub({
+        const{row,simulated}=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
-        if(!built){skipped++;return;}
-        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
@@ -5382,11 +4813,9 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)nkUnresolved.push({phase:phaseKey,rounds:rnd,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd)||calMap.get(rawRnd);
         if(!cal)missingDates.add(rnd);
-        const built=_buildOrStub({
+        const{row,simulated}=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
-        if(!built){skipped++;return;}
-        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
@@ -5463,18 +4892,6 @@ async function generateSeasonFromDraw(targetSeason, half){
     }
   }
 
-  // ── PHASE 6: write next-season MB-B group assignments from final BLSZ.
-  // Only after a complete season (ALL or spring run). Populates results.csv
-  // rows for competition ∈ {overall, MB, 1M, 1N, 2A, 2B, 2C, 3NY, 3K, 3É, 3D}
-  // so the FOLLOWING season's Generate Season can resolve plain-integer place
-  // tokens (`MB-1`, `MB-2`, …) AND per-group tokens (`1M 7`, etc.) without
-  // any manual results.csv editing.
-  if((_half==='ALL'||_half==='S')&&typeof _writeNextSeasonGroups==='function'){
-    const wrote=_writeNextSeasonGroups(targetSeason);
-    resRows+=wrote;
-    console.log(`[GenerateSeason] PHASE 6 wrote ${wrote} BLSZ-driven group rows for ${targetSeason}`);
-  }
-
   console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, ${resRows} results rows, missingDates=${missingDates.size}`);
   if(mbrUnresolved.length){
     console.warn(`[GenerateSeason] ${mbrUnresolved.length} MB-R unresolved sides. Sample:`,mbrUnresolved.slice(0,10));
@@ -5544,13 +4961,36 @@ async function fillDatesFromCalendar(){
     edRender();if(typeof renderView==='function')renderView();
   }catch(e){toast('⚠ Save failed: '+(e.message||e),'err');}
 }
-// Generate Season prompts only for the season; it always runs in autumn
-// mode ('A'). The spring half is generated automatically by the ⏭ Next
-// Round boundary popup once current_date crosses Jan 1 of the spring year.
 function _promptGenerateSeason(){
   const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
   const input=prompt('Target season to generate (format YYYY_YY, e.g. 2000_01):',def||'2000_01');
   if(input)generateSeasonFromDraw(String(input).trim(),'A');
+}
+// Prompt + generate ONLY the spring half (date >= Jan 1 of the season's
+// spring year). Refuses if no autumn-half rows for that season exist yet.
+function _promptGenerateSpring(){
+  const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
+  const input=prompt('Target season to generate SPRING HALF for (format YYYY_YY):',def||'2000_01');
+  if(!input)return;
+  const targetSeason=String(input).trim();
+  // Sanity check: at least one matches.csv row for this season with date in
+  // the autumn half (Jul–Dec) must exist before we try to sim spring rows.
+  const m=DB.matches; if(!m||!m.h){toast('matches.csv not loaded','err');return;}
+  const di=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  if(di<0){toast('matches.csv missing date column','err');return;}
+  const hasAutumn=m.r.some(r=>{
+    const d=String(r[di]||'').trim();
+    if(!d)return false;
+    const s=typeof seasonFor==='function'?seasonFor(d):'';
+    if(s!==targetSeason)return false;
+    const hs=typeof halfSeasonFor==='function'?halfSeasonFor(d):'';
+    return /_A$/.test(hs);
+  });
+  if(!hasAutumn){
+    toast(`No autumn matches found for season ${targetSeason} — run Generate Season first.`,'warn');
+    return;
+  }
+  generateSeasonFromDraw(targetSeason,'S');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6743,6 +6183,8 @@ function edSwitchTab(tab){
 function _edSyncGenBtn(){
   const btn=document.getElementById('edGenBtn');
   if(btn) btn.style.display=(edTab==='matches')?'':'none';
+  const sbtn=document.getElementById('edGenSpringBtn');
+  if(sbtn) sbtn.style.display=(edTab==='matches')?'':'none';
 }
 function isColorColumn(name){return/^color\d*$|^colour\d*$/i.test(name);}
 
@@ -7096,84 +6538,6 @@ function edImportCSV(e){
     edPushH();DB[edTab].h=h;DB[edTab].r=r.map(row=>[...row]);
     edSelected.clear();edModified++;edSchedSave();edRender();
     toast(`Loaded ${r.length} rows from ${f.name}`,'');
-  };
-  r.readAsText(f);e.target.value='';
-}
-// Natural keys per sheet — used by Merge CSV to detect duplicates so
-// re-importing the same file doesn't duplicate rows. Column names are
-// matched case-insensitively against the EXISTING sheet headers.
-const _EDIT_MERGE_KEYS={
-  teams:       ['team_id'],
-  matches:     ['rounds','level','match_number'],
-  calendar:    ['date','season'],
-  results:     ['season','competition','place'],
-  team_skills: ['team_id','half_season'],
-  draw:        ['rounds','level','match_number'],
-  state:       ['key']
-};
-// APPEND mode for CSV import. Reads the incoming file, aligns its columns
-// against the current sheet's headers (any missing target columns are added),
-// then upserts each row by the sheet's natural key. Existing rows with the
-// same key are OVERWRITTEN by the incoming row (so the user can fix typos by
-// re-importing). New keys are appended. Headers from the incoming file that
-// aren't already in the sheet are added so no data is silently dropped.
-function edMergeCSV(e){
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    const parsed=parseCSV(ev.target.result);
-    const inH=parsed.h, inR=parsed.r;
-    if(!inH.length){toast('Empty or invalid CSV','err');return;}
-    edPushH();
-    const d=DB[edTab];
-    // Ensure sheet has headers; if empty, just delegate to attach.
-    if(!d.h.length){
-      d.h=inH; d.r=inR.map(row=>[...row]);
-      edSelected.clear();edModified++;edSchedSave();edRender();
-      toast(`Loaded ${inR.length} rows from ${f.name} into empty sheet`,'');
-      return;
-    }
-    // Add any header from inH that doesn't exist yet.
-    const norm=(s)=>String(s||'').trim().toLowerCase();
-    const haveLower=d.h.map(norm);
-    const added=[];
-    inH.forEach(h=>{
-      if(!haveLower.includes(norm(h))){d.h.push(h);haveLower.push(norm(h));added.push(h);}
-    });
-    // Pad every existing row to the new header length.
-    if(added.length){
-      const need=d.h.length;
-      d.r.forEach(row=>{while(row.length<need)row.push('');});
-    }
-    // Column-index map: input col index → sheet col index.
-    const colMap=inH.map(h=>haveLower.indexOf(norm(h)));
-    const keys=(_EDIT_MERGE_KEYS[edTab]||[]).map(k=>haveLower.indexOf(norm(k))).filter(i=>i>=0);
-    // Build an index of existing rows by their natural key (when keys exist).
-    const keyOf=(row)=>keys.length?keys.map(i=>String(row[i]||'').trim()).join('\x1f'):null;
-    const idx=new Map();
-    if(keys.length){
-      d.r.forEach((row,i)=>{const k=keyOf(row);if(k)idx.set(k,i);});
-    }
-    let updated=0,inserted=0,skipped=0;
-    inR.forEach(srcRow=>{
-      // Project srcRow onto target row layout (one slot per target header).
-      const proj=new Array(d.h.length).fill('');
-      srcRow.forEach((v,ci)=>{const ti=colMap[ci];if(ti>=0)proj[ti]=v;});
-      const k=keyOf(proj);
-      if(k && idx.has(k)){
-        // Same key → overwrite the existing row (lets the user fix typos by
-        // re-importing the same season's calendar with corrected dates).
-        d.r[idx.get(k)]=proj;updated++;
-      } else if(k){
-        d.r.push(proj);idx.set(k,d.r.length-1);inserted++;
-      } else {
-        // No natural key for this sheet → just append.
-        d.r.push(proj);inserted++;
-      }
-    });
-    edSelected.clear();edModified++;edSchedSave();edRender();
-    const keyDesc=keys.length?` keyed by (${(_EDIT_MERGE_KEYS[edTab]||[]).join(', ')})`:'';
-    toast(`Merged ${inserted} new + ${updated} updated rows from ${f.name}${keyDesc}${added.length?` · added cols: ${added.join(', ')}`:''}`,'');
   };
   r.readAsText(f);e.target.value='';
 }
