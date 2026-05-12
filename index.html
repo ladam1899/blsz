@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.8</title>
+<title>League Manager v2026.05.12.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -425,6 +425,20 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .blsz-cell .b-plc{font-size:10px;color:var(--muted);}
 .blsz-cell .b-rng{font-size:9px;color:var(--dimmed);}
 .blsz-flat tbody td.b-team .res-team-badge{display:inline-flex;vertical-align:middle;margin-right:8px;}
+.blsz-legend{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.blsz-legend>summary{cursor:pointer;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--surface2);list-style:none;user-select:none;}
+.blsz-legend>summary::-webkit-details-marker{display:none;}
+.blsz-legend>summary::before{content:'▸ ';font-size:10px;margin-right:4px;}
+.blsz-legend[open]>summary::before{content:'▾ ';}
+.blsz-legend-body{padding:12px 14px;display:flex;flex-wrap:wrap;gap:14px;}
+.blsz-legend-section{flex:1 1 280px;min-width:240px;}
+.blsz-legend-section h4{margin:0 0 6px;font-size:12px;font-weight:700;color:var(--text);}
+.blsz-legend-section table{width:100%;border-collapse:collapse;font-size:11px;font-family:'JetBrains Mono',monospace;}
+.blsz-legend-section thead th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:4px 6px;border-bottom:1px solid var(--border);text-align:center;}
+.blsz-legend-section tbody td{padding:2px 6px;border-bottom:1px solid var(--border);text-align:center;}
+.blsz-legend-section tbody tr.lg-grp-sep td{border-top:2px solid var(--border);}
+.blsz-legend-section tbody td.lg-grp{font-weight:700;color:var(--text);}
+.blsz-legend-section tbody td.lg-pts{font-weight:700;}
 
 /* RESULTS VIEW */
 .results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
@@ -569,7 +583,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4915,6 +4929,105 @@ function _blszBuildProjection(season){
   return buckets;
 }
 
+// Build the HTML for the BLSZ points-reference legend. Four side-by-side
+// sections (MB-B / MB-R / KK / NK) showing how each finishing place maps to a
+// group + place-in-group + point total. Tables are derived from BLSZ_POINTS,
+// _BLSZ_MBR_OFFSETS and _BLSZ_KK_OFFSETS so they always match live scoring.
+function _blszBuildLegend(){
+  const pts=BLSZ_POINTS;
+  // ── MB-B: 25 places. Tiers map to MB-B group labels. ───────────────────
+  const mbbTiers=[
+    {label:'1M / 1N',     start:1,  end:8 },
+    {label:'2A / 2B / 2C',start:9,  end:16},
+    {label:'3NY/3K/3É/3D',start:17, end:24},
+    {label:'4K/4NY/4É/4D',start:25, end:25}
+  ];
+  let mbbRows='';
+  mbbTiers.forEach((t,ti)=>{
+    for(let p=t.start;p<=t.end;p++){
+      const pInGrp=p-t.start+1;
+      mbbRows+=`<tr${(pInGrp===1&&ti>0)?' class="lg-grp-sep"':''}>`+
+        `<td>${p}</td><td class="lg-grp">${esc(t.label)}</td>`+
+        `<td>${pInGrp}</td><td class="lg-pts">${pts['MB-B'][p-1]||0}</td></tr>`;
+    }
+  });
+  // ── MB-R: 76 places across 10 Roman groups, derived from _BLSZ_MBR_OFFSETS.
+  const mbrLabels=['I','II','III','IV','V','VI','VII','VIII','IX','X'];
+  const mbrSizes=mbrLabels.map((lab,i)=>{
+    const next=mbrLabels[i+1];
+    const a=_BLSZ_MBR_OFFSETS[lab];
+    const b=(next!=null)?_BLSZ_MBR_OFFSETS[next]:pts['MB-R'].length;
+    return b-a;
+  });
+  let mbrRows=''; let mbrOverall=0;
+  mbrLabels.forEach((label,gi)=>{
+    const size=mbrSizes[gi];
+    for(let i=1;i<=size;i++){
+      mbrOverall++;
+      mbrRows+=`<tr${(i===1&&gi>0)?' class="lg-grp-sep"':''}>`+
+        `<td>${mbrOverall}</td><td class="lg-grp">${esc(label)}</td>`+
+        `<td>${i}</td><td class="lg-pts">${pts['MB-R'][mbrOverall-1]||0}</td></tr>`;
+    }
+  });
+  // ── KK: 45 places — α…ι (3-team groups) then j/k/l (6-team groups). ───
+  const kkTiers=[
+    {label:'α (alfa)',    size:3},
+    {label:'β (béta)',    size:3},
+    {label:'γ (gamma)',   size:3},
+    {label:'δ (delta)',   size:3},
+    {label:'ε (epszilon)',size:3},
+    {label:'ζ (dzéta)',   size:3},
+    {label:'η (éta)',     size:3},
+    {label:'θ (théta)',   size:3},
+    {label:'ι (ióta)',    size:3},
+    {label:'j',           size:6},
+    {label:'k',           size:6},
+    {label:'l',           size:6}
+  ];
+  let kkRows=''; let kkOverall=0;
+  kkTiers.forEach((t,ti)=>{
+    for(let i=1;i<=t.size;i++){
+      kkOverall++;
+      kkRows+=`<tr${(i===1&&ti>0)?' class="lg-grp-sep"':''}>`+
+        `<td>${kkOverall}</td><td class="lg-grp">${esc(t.label)}</td>`+
+        `<td>${i}</td><td class="lg-pts">${pts['KK'][kkOverall-1]||0}</td></tr>`;
+    }
+  });
+  // ── NK: 64 places — eliminated-in-round determines the bracket. ────────
+  const nkTiers=[
+    {start:1, end:1,  ctx:'NKW-7-1 winner'},
+    {start:2, end:2,  ctx:'NKW-7-1 loser' },
+    {start:3, end:3,  ctx:'NKL-9-1 winner'},
+    {start:4, end:4,  ctx:'NKL-9-1 loser' },
+    {start:5, end:6,  ctx:'NKL-8-1 loser' },
+    {start:7, end:8,  ctx:'NKL-7-1 loser' },
+    {start:9, end:12, ctx:'NKL-6-1 loser' },
+    {start:13,end:16, ctx:'NKL-5-1 loser' },
+    {start:17,end:32, ctx:'NKW-3-1 loser' },
+    {start:33,end:64, ctx:'NKW-2-1 loser' }
+  ];
+  let nkRows='';
+  nkTiers.forEach((t,ti)=>{
+    for(let p=t.start;p<=t.end;p++){
+      const pInTier=p-t.start+1;
+      nkRows+=`<tr${(pInTier===1&&ti>0)?' class="lg-grp-sep"':''}>`+
+        `<td>${p}</td><td class="lg-grp">${esc(t.ctx)}</td>`+
+        `<td>${pInTier}</td><td class="lg-pts">${pts['NK'][p-1]||0}</td></tr>`;
+    }
+  });
+  const head=`<thead><tr><th>Overall</th><th>Group</th><th>Place</th><th>Pts</th></tr></thead>`;
+  const nkHead=`<thead><tr><th>Overall</th><th>Match · result</th><th>#</th><th>Pts</th></tr></thead>`;
+  return `<details class="blsz-legend">
+    <summary>Points reference — overall place → group → place-in-group → pts</summary>
+    <div class="blsz-legend-body">
+      <div class="blsz-legend-section"><h4>MB-B (25 places)</h4><table>${head}<tbody>${mbbRows}</tbody></table></div>
+      <div class="blsz-legend-section"><h4>MB-R (76 places)</h4><table>${head}<tbody>${mbrRows}</tbody></table></div>
+      <div class="blsz-legend-section"><h4>KK — KKGOR + KKJKL (45 places)</h4><table>${head}<tbody>${kkRows}</tbody></table></div>
+      <div class="blsz-legend-section"><h4>NK (64 places — by match exit)</h4><table>${nkHead}<tbody>${nkRows}</tbody></table></div>
+    </div>
+  </details>`;
+}
+
 // State for the BLSZ view.
 let _blszSeason=null;
 
@@ -5031,6 +5144,7 @@ function renderBlszView(){
     });
     html+=`</tbody></table></div>`;
   }
+  html+=_blszBuildLegend();
   html+='</div>';
   app.innerHTML=html;
 }
