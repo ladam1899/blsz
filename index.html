@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.10</title>
+<title>League Manager v2026.05.12.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -439,6 +439,18 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .blsz-legend-section tbody tr.lg-grp-sep td{border-top:2px solid var(--border);}
 .blsz-legend-section tbody td.lg-grp{font-weight:700;color:var(--text);}
 .blsz-legend-section tbody td.lg-pts{font-weight:700;}
+/* Place-change arrow chip (BLSZ + matches-view standings) */
+.pchg{display:inline-block;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:18px;text-align:center;}
+.pchg-up{color:#16a34a;}
+.pchg-down{color:#dc2626;}
+.pchg-same{color:var(--dimmed);}
+.pchg-new{color:var(--muted);font-style:italic;}
+/* BLSZ league chip — shows which MB tier this BLSZ rank corresponds to */
+.b-league{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--muted);}
+.b-league .lg-tier{display:inline-block;padding:1px 6px;border-radius:8px;background:var(--surface2);color:var(--text);margin-right:3px;font-size:9px;}
+.blsz-flat tbody td.b-league-cell{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--surface);}
+/* Per-level standings table: change-column header + cell */
+.st-table th.c-chg,.st-table td.c-chg{width:34px;text-align:center;}
 
 /* RESULTS VIEW */
 .results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
@@ -583,7 +595,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1842,6 +1854,47 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
   });
   const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf||String(a.name).localeCompare(String(b.name),'hu'));
+  // ── Previous-round snapshot (for the place-change Δ column) ────────────
+  // Re-aggregate from `included` minus any row in the CURRENT card's round
+  // (sameTournament: rNum < cardNumber; otherwise: ed < roundDate). Skip if
+  // we're at round 1 with nothing prior, in which case every team is "new".
+  const prevStats={};
+  // Seed with the same roster so rank positions stay meaningful.
+  seasonLevelRows.forEach(r=>{
+    const h=c.home>=0?String(r[c.home]||''):'';
+    const a=c.away>=0?String(r[c.away]||''):'';
+    [h,a].forEach(id=>{if(id&&!prevStats[id]){const t=teamById(id);prevStats[id]={id,name:t.name,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
+  });
+  let prevHasData=false;
+  included.forEach(r=>{
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    const rPrefix=_roundPrefix(rd);
+    const rNum=_roundNumber(rd);
+    const sameTournament=!!groupPrefix&&rPrefix===groupPrefix&&!isNaN(rNum)&&!isNaN(cardNumber);
+    let keep;
+    if(sameTournament){
+      keep=rNum<cardNumber;
+    } else {
+      const d=c.date>=0?normalizeDate(r[c.date]):'';
+      const ed=_effDate(r,d);
+      keep=ed&&ed<roundDate;
+    }
+    if(!keep) return;
+    const h=c.home>=0?String(r[c.home]||''):'';
+    const a=c.away>=0?String(r[c.away]||''):'';
+    if(!h||!a) return;
+    [h,a].forEach(id=>{if(!prevStats[id]){const t=teamById(id);prevStats[id]={id,name:t.name,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};}});
+    const hs=parseInt(r[c.hs]),aS=parseInt(r[c.as]);
+    prevStats[h].p++;prevStats[a].p++;prevStats[h].gf+=hs;prevStats[h].ga+=aS;prevStats[a].gf+=aS;prevStats[a].ga+=hs;
+    if(hs>aS){prevStats[h].w++;prevStats[h].pts+=3;prevStats[a].l++;}
+    else if(hs<aS){prevStats[a].w++;prevStats[a].pts+=3;prevStats[h].l++;}
+    else{prevStats[h].d++;prevStats[a].d++;prevStats[h].pts++;prevStats[a].pts++;}
+    prevHasData=true;
+  });
+  const prevTable=Object.values(prevStats).map(s=>({...s,gd:s.gf-s.ga}))
+    .sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf||String(a.name).localeCompare(String(b.name),'hu'));
+  const prevRankByTid=new Map();
+  if(prevHasData) prevTable.forEach((t,i)=>prevRankByTid.set(t.id, i+1));
   const hdrLabel=mode==='rounds'?(groupPrefix||level):level;
   let html=`<div class="rc-stand-card">
     <div class="rc-stand-hdr">${esc(hdrLabel)}<span class="sc">${table.length} team${table.length===1?'':'s'}</span></div>`;
@@ -1849,8 +1902,8 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     html+=`<div class="empty" style="padding:8px 2px;font-size:11px;color:var(--muted)">No matches played yet.</div>`;
   } else {
     html+=`<table class="st-table">
-      <colgroup><col class="c-pos"><col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
-      <thead><tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+      <colgroup><col class="c-pos"><col class="c-chg"><col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
+      <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
       <tbody>`;
     table.forEach((t,i)=>{
       const pos=i+1,total=table.length;
@@ -1877,8 +1930,11 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       if(mbg)metaParts.push(`<span class="m-mini-group" title="MB-B division">[${esc(mbg)}]</span>`);
       metaParts.push(`<span title="${skPts} pts (½ ★ ≈ 15 pts, ★ ≈ 30 pts)">${_starRowHTML(skPts)}</span>`);
       const metaLine=`<div class="team-name-meta">${metaParts.join('')}</div>`;
+      const prevPos=prevRankByTid.get(t.id)||0;
+      const chgHTML=prevHasData?_placeChangeHTML(prevPos, pos):'';
       html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
+        <td class="c-chg">${chgHTML}</td>
         <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><div class="team-name-block"><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span>${metaLine}</div></div></td>
         <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
         <td class="n">${gd}</td><td class="pts">${t.pts}</td>
@@ -4787,7 +4843,36 @@ function _blszKkPlace(comp, placeInGroup){
 //     bucket: { team_id: { comp, curPlace, curPts, minPlace, maxPlace, minPts, maxPts } }
 //   }
 // for bucket ∈ {'MB-B', 'MB-R', 'KK', 'NK'}.
-function _blszBuildProjection(season){
+// Render a small place-change chip used by both BLSZ and per-level standings.
+//   prev,cur are 1-based positions; '' or 0 = team was not on the previous
+//   table. Positive delta (prev > cur) means the team moved UP — green ▲;
+//   negative means DOWN — red ▼; zero means no change. The numeric suffix is
+//   only shown when |delta| > 1.
+function _placeChangeHTML(prev,cur){
+  const p=parseInt(prev),c=parseInt(cur);
+  if(!c||c<1) return '';
+  if(!p||p<1) return '<span class="pchg pchg-new" title="New on the table">·</span>';
+  const d=p-c;
+  if(d===0) return '<span class="pchg pchg-same" title="No change">–</span>';
+  if(d>0)   return `<span class="pchg pchg-up" title="Up ${d} place${d===1?'':'s'} (was #${p})">▲${d>1?d:''}</span>`;
+  const dn=-d;
+  return `<span class="pchg pchg-down" title="Down ${dn} place${dn===1?'':'s'} (was #${p})">▼${dn>1?dn:''}</span>`;
+}
+
+// Return the MB tier label for a BLSZ rank (1-based).
+//   1..16 → MB1 (#1..#16) — top 16 form the 1st league
+//   17..40 → MB2 (#1..#24) — next 24 form the 2nd league
+//   41..72 → MB3 (#1..#32) — next 32 form the 3rd league
+//   73+ → '' (no label per user spec)
+function _blszLeagueLabel(rank){
+  const r=parseInt(rank); if(!r||r<1) return '';
+  if(r<=16) return {tier:'MB1', n:r};
+  if(r<=40) return {tier:'MB2', n:r-16};
+  if(r<=72) return {tier:'MB3', n:r-40};
+  return '';
+}
+
+function _blszBuildProjection(season, dateCutoff){
   const buckets={'MB-B':{},'MB-R':{},'KK':{},'NK':{}};
   const m=DB.matches; if(!m||!m.r) return buckets;
   const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
@@ -4795,6 +4880,10 @@ function _blszBuildProjection(season){
         hi=_hi('home_id'),ai=_hi('away_id'),
         hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
   if(di<0||ri<0||hi<0||ai<0||hsi<0||asi<0) return buckets;
+  // When `dateCutoff` is set, rows whose date is *after* the cutoff are
+  // treated as if they hadn't happened yet (scores blanked). This lets us
+  // compute "BLSZ standings as of an earlier date" for the place-change diff.
+  const cutoff=String(dateCutoff||'').trim();
   // Group every relevant match row by competition.
   const byComp={};
   m.r.forEach(row=>{
@@ -4808,7 +4897,16 @@ function _blszBuildProjection(season){
     const bucket=_blszBucketFor(comp);
     if(!bucket||bucket==='NK') return; // NK podium handled separately
     if(!byComp[comp]) byComp[comp]={bucket, rows:[]};
-    byComp[comp].rows.push(row);
+    // If row is after cutoff, push a score-blanked copy so it's classified
+    // as "unplayed" by the played/unplayed splitter below.
+    if(cutoff && date>cutoff){
+      const blank=row.slice();
+      if(hsi>=0) blank[hsi]='';
+      if(asi>=0) blank[asi]='';
+      byComp[comp].rows.push(blank);
+    } else {
+      byComp[comp].rows.push(row);
+    }
   });
   Object.entries(byComp).forEach(([comp,info])=>{
     const rows=info.rows;
@@ -4937,6 +5035,7 @@ function _blszBuildProjection(season){
       const date=String(row[di]||'').trim();
       if(!date)return;
       if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
+      if(cutoff&&date>cutoff)return;
       const rnd=(typeof _normNkRounds==='function')?_normNkRounds(row[ri])
                                                    :String(row[ri]||'').trim().toUpperCase();
       if(!/^NK[WL]-/.test(rnd))return;
@@ -5132,6 +5231,53 @@ function renderBlszView(){
   const teams=[...teamRow.values()];
   // Sort by current sum (desc), then by name. Compute current BLSZ place.
   teams.sort((a,b)=>(b.sumCur-a.sumCur)||a.name.localeCompare(b.name));
+
+  // ── Previous-round comparison ──────────────────────────────────────────
+  // Find the latest played match date this season, then the second-latest;
+  // anything strictly before the LATEST forms the "previous round" snapshot.
+  const playedDates=new Set();
+  const mhi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const _di=mhi('date'),_hsi=mhi('home_score_full_time'),_asi=mhi('away_score_full_time');
+  if(_di>=0&&_hsi>=0&&_asi>=0){
+    m.r.forEach(r=>{
+      const d=String(r[_di]||'').trim();
+      if(!d) return;
+      if(typeof seasonFor==='function'&&seasonFor(d)!==_blszSeason) return;
+      const h=String(r[_hsi]||'').trim(), a=String(r[_asi]||'').trim();
+      if(h===''||a===''||isNaN(parseInt(h))||isNaN(parseInt(a))) return;
+      playedDates.add(d);
+    });
+  }
+  const playedDatesSorted=[...playedDates].sort();
+  // "Previous round date" = the day just before the latest played match.
+  let prevCutoff='';
+  if(playedDatesSorted.length>=2){
+    const latest=playedDatesSorted[playedDatesSorted.length-1];
+    // Walk back one day from latest — yields the cutoff used to score the
+    // pre-round table (any match strictly before `latest`).
+    const d=new Date(latest+'T00:00:00');
+    d.setDate(d.getDate()-1);
+    prevCutoff=d.toISOString().slice(0,10);
+  }
+  // Compute prev-round rank per team only when a cutoff exists. We use the
+  // same aggregation pipeline as above so the comparison is apples-to-apples.
+  const prevRankByTid=new Map();
+  if(prevCutoff){
+    const projPrev=_blszBuildProjection(_blszSeason, prevCutoff);
+    const prevSum=new Map();
+    ['MB-B','MB-R','KK','NK'].forEach(bucket=>{
+      Object.entries(projPrev[bucket]||{}).forEach(([tid,info])=>{
+        prevSum.set(tid, (prevSum.get(tid)||0)+info.curPts);
+      });
+    });
+    // Rank teams that appear in either set. Teams missing from prev get no rank.
+    const prevTeams=[...prevSum.entries()].map(([tid,pts])=>{
+      const t=teamRow.get(tid); const name=t?t.name:tid;
+      return {tid, pts, name};
+    });
+    prevTeams.sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
+    prevTeams.forEach((t,i)=>prevRankByTid.set(t.tid, i+1));
+  }
   // Min BLSZ place per team: their rank if their sumMax stays at sumMax AND
   // every rival's sum collapses to its minimum (i.e. they're max, rivals min).
   // Max BLSZ place: their rank if their sumMin stays at sumMin AND rivals are
@@ -5161,6 +5307,8 @@ function renderBlszView(){
     html+=`<div class="blsz-flat"><table>
       <thead><tr>
         <th>BLSZ place</th>
+        <th title="Place change since the previous played match date">Δ</th>
+        <th>League</th>
         <th class="b-team">Team</th>
         <th>MB-B</th>
         <th>MB-R</th>
@@ -5186,8 +5334,14 @@ function renderBlszView(){
       const totalRange=(t.sumMin===t.sumMax)?`${t.sumCur}`:`${t.sumMin}–${t.sumMax}`;
       const placeRange=(mn===mx)?`${curPlace}`:`${mn}–${mx}`;
       const logo=logoFor(t.tid,_blszSeason);
+      const prevPlace=prevRankByTid.get(t.tid)||0;
+      const chgHTML=prevCutoff?_placeChangeHTML(prevPlace, curPlace):'';
+      const lg=_blszLeagueLabel(curPlace);
+      const lgHTML=lg?`<span class="lg-tier">${esc(lg.tier)}</span><span>#${lg.n}</span>`:'<span class="b-rng">—</span>';
       html+=`<tr>
         <td class="b-place"><div class="blsz-cell"><span class="b-pts">${esc(String(curPlace))}</span><span class="b-plc">${esc(placeRange)}</span></div></td>
+        <td class="b-chg">${chgHTML}</td>
+        <td class="b-league-cell"><div class="b-league">${lgHTML}</div></td>
         <td class="b-team">
           <div class="res-team-badge" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc((t.name||t.tid).slice(0,3).toUpperCase())}</div>
           ${esc(t.name)}
