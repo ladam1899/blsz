@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.9</title>
+<title>League Manager v2026.05.12.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -583,7 +583,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4910,22 +4910,79 @@ function _blszBuildProjection(season){
       }
     });
   });
-  // NK podium: 4 places only, points from BLSZ_POINTS.NK[0..3] (rest of the
-  // NK table covers earlier-round eliminations 5..64 if you want to model
-  // them later; this implementation reports the top-4 podium only).
-  if(typeof _nkSingleLegWinner==='function'){
-    const wWin=_nkSingleLegWinner('NKW-7-1','1');
-    const wLos=typeof _nkSingleLegLoser==='function'?_nkSingleLegLoser('NKW-7-1','1'):'';
-    const lWin=_nkSingleLegWinner('NKL-9-1','1');
-    const lLos=typeof _nkSingleLegLoser==='function'?_nkSingleLegLoser('NKL-9-1','1'):'';
-    const podium=[wWin,wLos,lWin,lLos];
-    podium.forEach((id,i)=>{
-      if(!id) return;
-      const place=i+1;
-      const pts=_blszPtsFor('NK',place);
-      buckets.NK[id]={comp:'NK',curPlace:place,curPts:pts,minPlace:place,maxPlace:place,minPts:pts,maxPts:pts};
+  // NK 64-place table — season-filtered. Each team's BLSZ place is determined
+  // by the deepest NK match it played in for THIS season:
+  //   place 1 = NKW-7-1 winner       (77 pts)
+  //   place 2 = NKW-7-1 loser        (68 pts)
+  //   place 3 = NKL-9-1 winner       (65 pts)
+  //   place 4 = NKL-9-1 loser        (62 pts)
+  //   place 5–6   = NKL-8-1 losers   (60 pts each)
+  //   place 7–8   = NKL-7-1 losers   (43 pts)
+  //   place 9–12  = NKL-6-1 losers   (34 pts)
+  //   place 13–16 = NKL-5-1 losers   (26 pts)
+  //   place 17–32 = NKW-3-1 losers   (17 pts)
+  //   place 33–64 = NKW-2-1 losers   ( 9 pts)
+  //   NKW-1-1 losers fall off the table (0 pts).
+  // Only rows whose `seasonFor(date)` matches the requested season count, so
+  // selecting a season with no NK matches yields an empty NK bucket.
+  (function _buildNkBucketsForSeason(){
+    if(!m||!m.r)return;
+    const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+    const di=_hi('date'),ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),
+          hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+    if(di<0||ri<0||hi<0||ai<0||hsi<0||asi<0)return;
+    // Group eligible rows by normalised round code.
+    const byRnd={};
+    m.r.forEach(row=>{
+      const date=String(row[di]||'').trim();
+      if(!date)return;
+      if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
+      const rnd=(typeof _normNkRounds==='function')?_normNkRounds(row[ri])
+                                                   :String(row[ri]||'').trim().toUpperCase();
+      if(!/^NK[WL]-/.test(rnd))return;
+      (byRnd[rnd]=byRnd[rnd]||[]).push(row);
     });
-  }
+    const winLose=(row)=>{
+      const h=String(row[hi]||'').trim(),a=String(row[ai]||'').trim();
+      const hs=parseInt(row[hsi]),as=parseInt(row[asi]);
+      if(!h||!a||isNaN(hs)||isNaN(as))return null;
+      if(hs>as)return{win:h,los:a};
+      if(hs<as)return{win:a,los:h};
+      return null;
+    };
+    const assign=(tid,place)=>{
+      if(!tid)return;
+      const pts=_blszPtsFor('NK',place);
+      const prev=buckets.NK[tid];
+      // Keep the deepest run (highest pts / lowest place number).
+      if(!prev||pts>prev.curPts){
+        buckets.NK[tid]={comp:'NK',curPlace:place,curPts:pts,
+                         minPlace:place,maxPlace:place,minPts:pts,maxPts:pts};
+      }
+    };
+    // Podium (places 1–4): one match each.
+    (byRnd['NKW-7-1']||[]).forEach(row=>{
+      const wl=winLose(row);if(!wl)return;assign(wl.win,1);assign(wl.los,2);
+    });
+    (byRnd['NKL-9-1']||[]).forEach(row=>{
+      const wl=winLose(row);if(!wl)return;assign(wl.win,3);assign(wl.los,4);
+    });
+    // Losers-of-round tiers: every loser in a given round shares the tier's
+    // starting place (point value is the same across the whole tier anyway).
+    const loserTiers=[
+      {rnd:'NKL-8-1',place:5 },
+      {rnd:'NKL-7-1',place:7 },
+      {rnd:'NKL-6-1',place:9 },
+      {rnd:'NKL-5-1',place:13},
+      {rnd:'NKW-3-1',place:17},
+      {rnd:'NKW-2-1',place:33}
+    ];
+    loserTiers.forEach(t=>{
+      (byRnd[t.rnd]||[]).forEach(row=>{
+        const wl=winLose(row);if(wl)assign(wl.los,t.place);
+      });
+    });
+  })();
   return buckets;
 }
 
