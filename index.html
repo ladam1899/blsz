@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.14</title>
+<title>League Manager v2026.05.12.15</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.14</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.15</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -685,9 +685,13 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     <div class="tsep"></div>
     <input class="tsearch" id="edSearch" placeholder="Search…" oninput="edRender()" autocomplete="off">
     <div class="tsep"></div>
-    <label class="tbtn" style="cursor:pointer">
+    <label class="tbtn" style="cursor:pointer" title="REPLACE the current sheet's rows with the rows of the uploaded CSV. Headers are taken from the CSV.">
       📎 Attach CSV
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
+    </label>
+    <label class="tbtn" style="cursor:pointer" title="APPEND rows from the uploaded CSV to the current sheet. Existing rows are kept. Duplicate rows (matched by the sheet's natural key — see status bar) are skipped.">
+      ➕ Merge CSV
+      <input type="file" accept=".csv,.txt" style="display:none" onchange="edMergeCSV(event)">
     </label>
     <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. After this finishes, refine team_skills for the spring half (_S rows), then run ▶ Generate Spring Half.">🆕 Generate Season (autumn)</button>
     <button class="tbtn" id="edGenSpringBtn" style="display:none" onclick="_promptGenerateSpring()" title="Generate the SPRING HALF of a season (date >= Jan 1). Reads refreshed _S team_skills rows for the spring sim, and writes the NSZK Super Cup matches (semi + final).">▶ Generate Spring Half</button>
@@ -6538,6 +6542,84 @@ function edImportCSV(e){
     edPushH();DB[edTab].h=h;DB[edTab].r=r.map(row=>[...row]);
     edSelected.clear();edModified++;edSchedSave();edRender();
     toast(`Loaded ${r.length} rows from ${f.name}`,'');
+  };
+  r.readAsText(f);e.target.value='';
+}
+// Natural keys per sheet — used by Merge CSV to detect duplicates so
+// re-importing the same file doesn't duplicate rows. Column names are
+// matched case-insensitively against the EXISTING sheet headers.
+const _EDIT_MERGE_KEYS={
+  teams:       ['team_id'],
+  matches:     ['rounds','level','match_number'],
+  calendar:    ['date','season'],
+  results:     ['season','competition','place'],
+  team_skills: ['team_id','half_season'],
+  draw:        ['rounds','level','match_number'],
+  state:       ['key']
+};
+// APPEND mode for CSV import. Reads the incoming file, aligns its columns
+// against the current sheet's headers (any missing target columns are added),
+// then upserts each row by the sheet's natural key. Existing rows with the
+// same key are OVERWRITTEN by the incoming row (so the user can fix typos by
+// re-importing). New keys are appended. Headers from the incoming file that
+// aren't already in the sheet are added so no data is silently dropped.
+function edMergeCSV(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    const parsed=parseCSV(ev.target.result);
+    const inH=parsed.h, inR=parsed.r;
+    if(!inH.length){toast('Empty or invalid CSV','err');return;}
+    edPushH();
+    const d=DB[edTab];
+    // Ensure sheet has headers; if empty, just delegate to attach.
+    if(!d.h.length){
+      d.h=inH; d.r=inR.map(row=>[...row]);
+      edSelected.clear();edModified++;edSchedSave();edRender();
+      toast(`Loaded ${inR.length} rows from ${f.name} into empty sheet`,'');
+      return;
+    }
+    // Add any header from inH that doesn't exist yet.
+    const norm=(s)=>String(s||'').trim().toLowerCase();
+    const haveLower=d.h.map(norm);
+    const added=[];
+    inH.forEach(h=>{
+      if(!haveLower.includes(norm(h))){d.h.push(h);haveLower.push(norm(h));added.push(h);}
+    });
+    // Pad every existing row to the new header length.
+    if(added.length){
+      const need=d.h.length;
+      d.r.forEach(row=>{while(row.length<need)row.push('');});
+    }
+    // Column-index map: input col index → sheet col index.
+    const colMap=inH.map(h=>haveLower.indexOf(norm(h)));
+    const keys=(_EDIT_MERGE_KEYS[edTab]||[]).map(k=>haveLower.indexOf(norm(k))).filter(i=>i>=0);
+    // Build an index of existing rows by their natural key (when keys exist).
+    const keyOf=(row)=>keys.length?keys.map(i=>String(row[i]||'').trim()).join('\x1f'):null;
+    const idx=new Map();
+    if(keys.length){
+      d.r.forEach((row,i)=>{const k=keyOf(row);if(k)idx.set(k,i);});
+    }
+    let updated=0,inserted=0,skipped=0;
+    inR.forEach(srcRow=>{
+      // Project srcRow onto target row layout (one slot per target header).
+      const proj=new Array(d.h.length).fill('');
+      srcRow.forEach((v,ci)=>{const ti=colMap[ci];if(ti>=0)proj[ti]=v;});
+      const k=keyOf(proj);
+      if(k && idx.has(k)){
+        // Same key → overwrite the existing row (lets the user fix typos by
+        // re-importing the same season's calendar with corrected dates).
+        d.r[idx.get(k)]=proj;updated++;
+      } else if(k){
+        d.r.push(proj);idx.set(k,d.r.length-1);inserted++;
+      } else {
+        // No natural key for this sheet → just append.
+        d.r.push(proj);inserted++;
+      }
+    });
+    edSelected.clear();edModified++;edSchedSave();edRender();
+    const keyDesc=keys.length?` keyed by (${(_EDIT_MERGE_KEYS[edTab]||[]).join(', ')})`:'';
+    toast(`Merged ${inserted} new + ${updated} updated rows from ${f.name}${keyDesc}${added.length?` · added cols: ${added.join(', ')}`:''}`,'');
   };
   r.readAsText(f);e.target.value='';
 }
