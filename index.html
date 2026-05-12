@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.22</title>
+<title>League Manager v2026.05.12.23</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.22</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.23</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2458,17 +2458,11 @@ async function advanceToNextRound(){
 // skills snapshot, so the user can SEE which spring rows are missing before
 // confirming the boundary transition. Spring rows missing fall back to autumn
 // by `teamSkillsFor()` rules.
-// The skill columns that are editable in the half-boundary popup. We list
-// every per-period attack/defence + the overall `skills` + `home` bonus +
-// `penelties`. Each value is treated as an integer 0..100 (home: -20..+20).
+// The full list of skill columns we COPY from autumn into spring. Only the
+// overall `skills` value gets adjusted at the half boundary; every other
+// per-period column is preserved unchanged so the team keeps its autumn
+// specialisation pattern.
 const _HB_SKILL_COLS=['skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties'];
-const _HB_SKILL_LABELS={
-  skills:'overall', home:'home',
-  attack_1h:'att 1H', defence_1h:'def 1H',
-  attack_2h:'att 2H', defence_2h:'def 2H',
-  attack_et:'att ET', defence_et:'def ET',
-  penelties:'pen'
-};
 // Look up a single skill value for a team in a given half_season. Returns
 // the integer cell value, or NaN if no row matches.
 function _hbReadSkill(teamId, halfTag, col){
@@ -2503,6 +2497,61 @@ function _hbUpsertSpringSkill(teamId, halfTag, values){
     if(cur!==nx){row[i]=nx;dirty=true;}
   });
   return dirty?'updated':'noop';
+}
+
+// Compute per-team autumn MB-B performance for the half-boundary popup.
+// Walks matches.csv for rows whose round starts with MB-B-, has a recorded
+// score, and belongs to `season`. Groups by `level` (the MB-B group, e.g.
+// '1M', '2A', '3NY') and computes each team's points (3-1-0) + GD. Returns
+// Map<team_id, {group, pts, gf, ga, gd, gp, groupAvg, perfDelta}>.
+//   • groupAvg  = mean pts of all teams in the same MB-B group
+//   • perfDelta = round((pts - groupAvg) / 3), clamped ±10
+function _hbAutumnPerformance(season){
+  const out=new Map();
+  const m=DB.matches; if(!m||!m.r||!m.h)return out;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
+        hi=_hi('home_id'),ai=_hi('away_id'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(di<0||ri<0||li<0||hi<0||ai<0||hsi<0||asi<0)return out;
+  // Group rows by MB-B group.
+  const byGroup={};
+  m.r.forEach(r=>{
+    const date=String(r[di]||'').trim();
+    if(!date)return;
+    if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
+    const rnd=String(r[ri]||'').trim();
+    if(!/^MB-B-/i.test(rnd))return;
+    const lvl=String(r[li]||'').trim(); if(!lvl)return;
+    const hs=parseInt(r[hsi]), as=parseInt(r[asi]);
+    if(isNaN(hs)||isNaN(as))return;
+    const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
+    if(!h||!a)return;
+    if(!byGroup[lvl])byGroup[lvl]={};
+    const g=byGroup[lvl];
+    if(!g[h])g[h]={id:h,pts:0,gf:0,ga:0,gp:0};
+    if(!g[a])g[a]={id:a,pts:0,gf:0,ga:0,gp:0};
+    g[h].gp++; g[a].gp++;
+    g[h].gf+=hs; g[h].ga+=as; g[a].gf+=as; g[a].ga+=hs;
+    if(hs>as){g[h].pts+=3;}
+    else if(hs<as){g[a].pts+=3;}
+    else{g[h].pts++; g[a].pts++;}
+  });
+  Object.entries(byGroup).forEach(([level,teams])=>{
+    const arr=Object.values(teams);
+    if(!arr.length)return;
+    const avg=arr.reduce((s,t)=>s+t.pts,0)/arr.length;
+    arr.forEach(t=>{
+      const gd=t.gf-t.ga;
+      let perfDelta=Math.round((t.pts-avg)/3);
+      if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
+      out.set(t.id,{
+        group:level, pts:t.pts, gf:t.gf, ga:t.ga, gd, gp:t.gp,
+        groupAvg:Math.round(avg*10)/10, perfDelta
+      });
+    });
+  });
+  return out;
 }
 
 // Half-boundary popup: shows an editable table where every team in
@@ -2549,140 +2598,154 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       return arr.sort((a,b)=>a.name.localeCompare(b.name));
     })();
 
-    // Helper to read autumn + spring values for a team/col. Returns ints; NaN
-    // means "no value". Autumn baseline falls back to defaultSkills() when
-    // no _A row exists, so every team is always editable.
+    // Read autumn baseline (every column) and the suggested perf delta per
+    // team. Per-period columns are copied verbatim from autumn → spring;
+    // ONLY `skills` is edited. Teams without an _A row fall back to
+    // defaultSkills() so they remain editable.
     const _defaults=(typeof defaultSkills==='function')?defaultSkills():{
       skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50
     };
-    const _autVals={}, _sprVals={}, _autSource={};
+    const _perfMap=_hbAutumnPerformance(season);
+    const _autAll={}, _autSource={};
     teamsArr.forEach(tt=>{
-      _autVals[tt.tid]={}; _sprVals[tt.tid]={}; _autSource[tt.tid]={};
+      _autAll[tt.tid]={};
+      _autSource[tt.tid]='A';
+      let anyReal=false;
       _HB_SKILL_COLS.forEach(k=>{
         const raw=_hbReadSkill(tt.tid,aTag,k);
-        if(!isNaN(raw)){
-          _autVals[tt.tid][k]=raw;
-          _autSource[tt.tid][k]='A';      // from _A row
-        } else {
-          // No _A row for (team, season). Fall back to defaults so the user
-          // can still adjust spring values. Track that this is a default so
-          // the cell label shows it dimmed.
-          _autVals[tt.tid][k]=parseInt(_defaults[k])||0;
-          _autSource[tt.tid][k]='default';
-        }
-        _sprVals[tt.tid][k]=_hbReadSkill(tt.tid,sTag,k);
+        if(!isNaN(raw)){_autAll[tt.tid][k]=raw; anyReal=true;}
+        else _autAll[tt.tid][k]=parseInt(_defaults[k])||0;
       });
+      if(!anyReal) _autSource[tt.tid]='default';
     });
-    const _clamp=(k,v)=>{
-      const lo=(k==='home')?-20:0, hi2=(k==='home')?20:100;
-      return Math.max(lo, Math.min(hi2, v));
+    // Existing spring `skills` for each team (if any) → seed the input.
+    // If there is an existing _S row, the initial adjustment = (S - A).
+    // Otherwise we PRE-FILL with the suggested perfDelta so a single Continue
+    // press accepts the auto-calculated change.
+    const _initAdj=(tid)=>{
+      const s=_hbReadSkill(tid,sTag,'skills');
+      const a=_autAll[tid].skills;
+      if(!isNaN(s)&&!isNaN(a)) return s-a;
+      const perf=_perfMap.get(tid);
+      return perf?perf.perfDelta:0;
     };
-    // Current adjustment = (existing spring) - autumn. NaN spring → 0.
-    const _initAdj=(tid,k)=>{
-      const s=_sprVals[tid][k], a=_autVals[tid][k];
-      if(isNaN(s)||isNaN(a)) return 0;
-      return s-a;
-    };
+    const _clampSkills=(v)=>Math.max(0,Math.min(100,v));
+
+    // Build one row per team.
+    const rowsHtml=teamsArr.map(tt=>{
+      const a=_autAll[tt.tid].skills;
+      const perf=_perfMap.get(tt.tid);
+      const adj=_initAdj(tt.tid);
+      const newVal=_clampSkills(a+adj);
+      const ptsStr=perf?String(perf.pts):'—';
+      const avgStr=perf?String(perf.groupAvg):'—';
+      const grpStr=perf?perf.group:'';
+      const perfStr=perf?(perf.perfDelta>0?'+':'')+String(perf.perfDelta):'—';
+      const perfCls=perf?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'';
+      const aCls='hb-aut'+(_autSource[tt.tid]==='default'?' hb-aut-default':'');
+      const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Autumn `skills` value';
+      return `<tr data-row="${esc(tt.tid)}">
+        <td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>
+        <td class="hb-group">${esc(grpStr)}</td>
+        <td>${esc(ptsStr)}</td>
+        <td class="hb-avg">${esc(avgStr)}</td>
+        <td class="hb-perf ${perfCls}" title="Performance vs group average — auto-suggested change">${esc(perfStr)}</td>
+        <td class="${aCls}" title="${esc(aTitle)}">${esc(String(a))}</td>
+        <td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:60px"></td>
+        <td class="hb-spr" data-out="${esc(tt.tid)}">${esc(String(newVal))}</td>
+      </tr>`;
+    }).join('');
 
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
-    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,1100px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
-
-    const colHdrs=_HB_SKILL_COLS.map(k=>`<th colspan="3" style="text-align:center">${esc(_HB_SKILL_LABELS[k])}</th>`).join('');
-    const subHdrs=_HB_SKILL_COLS.map(()=>`<th class="hb-aut" title="Autumn">A</th><th class="hb-adj" title="Adjustment (integer)">±</th><th class="hb-spr" title="Spring after adjustment">S</th>`).join('');
-
-    const rowsHtml=teamsArr.map(tt=>{
-      const cells=_HB_SKILL_COLS.map(k=>{
-        const a=_autVals[tt.tid][k];
-        const adj=_initAdj(tt.tid,k);
-        const src=_autSource[tt.tid][k];
-        const aStr=String(a);
-        const sStr=String(_clamp(k,a+adj));
-        const aCls='hb-aut'+(src==='default'?' hb-aut-default':'');
-        const aTitle=src==='default'?'No _A row — using default baseline (50)':'Autumn baseline';
-        return `<td class="${aCls}" title="${esc(aTitle)}">${esc(aStr)}</td>`+
-               `<td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" data-col="${k}" style="width:48px"></td>`+
-               `<td class="hb-spr" data-out="${esc(tt.tid)}|${k}">${esc(sStr)}</td>`;
-      }).join('');
-      return `<tr data-row="${esc(tt.tid)}">
-        <td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>
-        ${cells}
-      </tr>`;
-    }).join('');
-
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
     md.innerHTML=`
       <h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>
       <p style="margin:0 0 10px;color:var(--text);font-size:12px;">
-        Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Edit any integer adjustment below — the resulting spring (<code>${esc(sTag)}</code>) values are upserted into <code>team_skills.csv</code> before the spring sim runs.
-        <span style="color:var(--muted)">A = autumn baseline, ± = your change (integer), S = spring value after clamp (0..100; home -20..+20).</span>
+        Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from the autumn row.
+        <span style="color:var(--muted)">The Perf Δ column is a suggestion calculated from autumn MB-B group performance — round((team pts − group avg) / 3), clamped ±10. The Your Δ field is pre-filled with it; change it to anything you want.</span>
       </p>
       <div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">
-        <table class="hb-table" style="width:100%;border-collapse:collapse;font-size:11px;">
+        <table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:var(--surface2)">
-              <th rowspan="2" class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:4px 8px">Team</th>
-              ${colHdrs}
+              <th class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:6px 10px">Team</th>
+              <th title="Autumn MB-B group">Group</th>
+              <th title="Autumn points in MB-B group">Aut. pts</th>
+              <th title="Average points in this team's MB-B group">Grp avg</th>
+              <th title="Suggested change based on autumn performance">Perf Δ</th>
+              <th title="Autumn `skills` value">Aut. skills</th>
+              <th title="Your manual adjustment (integer)">Your Δ</th>
+              <th title="New spring skills = autumn + your Δ (clamped 0..100)">New skills</th>
             </tr>
-            <tr style="background:var(--surface2)">${subHdrs}</tr>
           </thead>
-          <tbody>${rowsHtml||'<tr><td colspan="28" style="padding:14px;text-align:center;color:var(--muted)">No teams have an autumn skills row for this season.</td></tr>'}</tbody>
+          <tbody>${rowsHtml||'<tr><td colspan="8" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;align-items:center;">
         <span id="hbSummary" style="font-size:11px;color:var(--muted)"></span>
         <span>
-          <button type="button" id="hbReset" class="tbtn" title="Clear every adjustment (back to autumn baseline)">Reset all</button>
+          <button type="button" id="hbReset" class="tbtn" title="Reset every Your Δ back to the suggested Perf Δ">Reset to suggestion</button>
+          <button type="button" id="hbZero" class="tbtn" title="Set every Your Δ to 0 (spring = autumn)">Zero all</button>
           <button type="button" id="hbCancel" class="tbtn">Cancel</button>
           <button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue — save &amp; generate spring</button>
         </span>
       </div>`;
-    // Inline scoped CSS for the table.
     const styleTag=document.createElement('style');
     styleTag.textContent=`
-      .hb-table thead th{padding:3px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border);font-weight:700;}
-      .hb-table tbody td{padding:2px 4px;text-align:center;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;}
-      .hb-table tbody td.hb-team{position:sticky;left:0;background:var(--surface);text-align:left;font-family:'Inter',sans-serif;font-weight:500;padding:2px 8px;white-space:nowrap;}
+      .hb-table thead th{padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border);font-weight:700;text-align:center;white-space:nowrap;}
+      .hb-table thead th.hb-team{text-align:left;}
+      .hb-table tbody td{padding:4px 8px;text-align:center;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;}
+      .hb-table tbody td.hb-team{position:sticky;left:0;background:var(--surface);text-align:left;font-family:'Inter',sans-serif;font-weight:500;white-space:nowrap;}
       .hb-table tbody tr:hover td{background:var(--surface2);}
       .hb-table tbody tr:hover td.hb-team{background:var(--surface2);}
       .hb-table td.hb-aut{color:var(--muted);}
       .hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}
+      .hb-table td.hb-avg{color:var(--muted);}
+      .hb-table td.hb-group{color:var(--muted);font-size:11px;}
+      .hb-table td.hb-perf{font-weight:700;}
+      .hb-table td.hb-perf.hb-perf-up{color:#16a34a;}
+      .hb-table td.hb-perf.hb-perf-down{color:#dc2626;}
+      .hb-table td.hb-perf.hb-perf-zero{color:var(--muted);}
       .hb-table td.hb-spr{font-weight:700;}
-      .hb-table td.hb-adj input{padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;}
-      .hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}
       .hb-table td.hb-spr.changed{color:var(--blue);}
+      .hb-table td.hb-adj input{padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;}
+      .hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}
     `;
     document.head.appendChild(styleTag);
     document.body.appendChild(ov);
     document.body.appendChild(md);
 
-    // Live recompute: when any input changes, refresh that row's spring cells
-    // and the summary count of changed values.
     const inputs=md.querySelectorAll('input[type=number][data-tid]');
     const updateAll=()=>{
       let changed=0;
       inputs.forEach(inp=>{
-        const tid=inp.dataset.tid, col=inp.dataset.col;
-        let v=parseInt(inp.value);
-        if(isNaN(v))v=0;
-        // Soft-clamp the ADJUSTMENT itself to a sensible range so a stray
-        // 99999 doesn't render an absurd spring value.
+        const tid=inp.dataset.tid;
+        let v=parseInt(inp.value); if(isNaN(v))v=0;
         if(v>100)v=100; if(v<-100)v=-100;
-        const a=_autVals[tid][col];   // always a number now (default 50 / home 0)
-        const out=md.querySelector(`td.hb-spr[data-out="${tid}|${col}"]`);
+        const a=_autAll[tid].skills;
+        const out=md.querySelector(`td.hb-spr[data-out="${tid}"]`);
         if(out){
-          const s=_clamp(col,a+v);
+          const s=_clampSkills(a+v);
           out.textContent=String(s);
-          if(v!==0)out.classList.add('changed');
-          else out.classList.remove('changed');
+          if(v!==0)out.classList.add('changed'); else out.classList.remove('changed');
         }
         if(v!==0)changed++;
       });
       const s=md.querySelector('#hbSummary');
-      if(s)s.textContent=`${changed} adjustment${changed===1?'':'s'} pending · ${teamsArr.length} teams`;
+      if(s)s.textContent=`${changed} of ${teamsArr.length} teams adjusted from autumn`;
     };
     inputs.forEach(inp=>inp.addEventListener('input',updateAll));
     md.querySelector('#hbReset').onclick=()=>{
+      // Restore the perf-Δ suggestion for every row.
+      inputs.forEach(i=>{
+        const perf=_perfMap.get(i.dataset.tid);
+        i.value=perf?perf.perfDelta:0;
+      });
+      updateAll();
+    };
+    md.querySelector('#hbZero').onclick=()=>{
       inputs.forEach(i=>{i.value='0';});
       updateAll();
     };
@@ -2691,23 +2754,20 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     const cleanup=()=>{ov.remove();md.remove();styleTag.remove();};
     md.querySelector('#hbCancel').onclick=()=>{cleanup();resolve(false);};
     md.querySelector('#hbOk').onclick=()=>{
-      // Gather the final values per team and upsert _S rows. Every team now
-      // has a baseline (real _A or default), so we always write a complete
-      // spring row.
+      // Save _S rows. Each row: copy every per-period column from autumn,
+      // override skills with autumn + your Δ, clamped.
       let upd=0,ins=0,noop=0;
       teamsArr.forEach(tt=>{
+        const inp=md.querySelector(`input[data-tid="${tt.tid}"]`);
+        let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
         const values={};
         _HB_SKILL_COLS.forEach(k=>{
-          const inp=md.querySelector(`input[data-tid="${tt.tid}"][data-col="${k}"]`);
-          let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
-          const a=_autVals[tt.tid][k];
-          values[k]=_clamp(k,a+adj);
+          if(k==='skills'){values[k]=_clampSkills(_autAll[tt.tid].skills+adj);}
+          else{values[k]=_autAll[tt.tid][k];}
         });
         const op=_hbUpsertSpringSkill(tt.tid,sTag,values);
         if(op==='inserted')ins++; else if(op==='updated')upd++; else noop++;
       });
-      // Save team_skills.csv to Drive (fire-and-forget; the spring sim will
-      // read the in-memory DB.team_skills which is already updated above).
       try{ if(typeof saveSheet==='function') saveSheet('team_skills'); }catch(e){}
       toast(`Spring skills: ${ins} inserted · ${upd} updated · ${noop} unchanged`,'');
       cleanup();
