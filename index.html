@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.25</title>
+<title>League Manager v2026.05.12.26</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.25</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.26</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4069,11 +4069,16 @@ function _pickMB4Teams(excludeIds){
     const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
     const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
     const fni=fnFull>=0?fnFull:(fnLong>=0?fnLong:fnName);
+    // MB-4 picks must come from the BLSZ organisation only (the federation
+    // we're running this app for). Teams in other orgs are excluded.
+    const oi=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
       const name=fni>=0?String(r[fni]||'').trim():id;
-      return{id,name:name||id};
-    }).filter(o=>o.id&&!excludeIds.has(o.id)).sort((a,b)=>a.name.localeCompare(b.name));
+      const org=oi>=0?String(r[oi]||'').trim():'';
+      return{id,name:name||id,org};
+    }).filter(o=>o.id&&!excludeIds.has(o.id)&&o.org.toUpperCase()==='BLSZ')
+      .sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
