@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.24</title>
+<title>League Manager v2026.05.12.25</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.24</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.25</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4477,6 +4477,43 @@ function _upsertMatchRow(row){
   m.r.push(row);return'inserted';
 }
 
+// Drop every matches.csv row that (a) was auto-generated (notes starts with
+// "[auto]"), (b) belongs to `targetSeason` via seasonFor(date), AND (c) falls
+// in the half being regenerated. Manual rows and other seasons are kept.
+function _clearAutoMatchesForSeason(targetSeason, half, splitDate){
+  const m=DB.matches; if(!m||!m.r||!m.h)return 0;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), noi=_hi('notes');
+  if(di<0||noi<0)return 0;
+  const inHalfHere=(d)=>{
+    if(half==='ALL'||!splitDate)return true;
+    if(!d) return half==='A';
+    if(half==='A') return d<splitDate;
+    return d>=splitDate;
+  };
+  const before=m.r.length;
+  m.r=m.r.filter(r=>{
+    const d=String(r[di]||'').trim();
+    const notes=String(r[noi]||'').trim();
+    if(!/^\[auto\]/i.test(notes)) return true;            // manual → keep
+    if(!d) return true;                                   // no date → keep (can't classify)
+    const sea=(typeof seasonFor==='function')?seasonFor(d):'';
+    if(sea!==targetSeason) return true;                   // other season → keep
+    if(!inHalfHere(d)) return true;                       // other half → keep
+    return false;
+  });
+  return before-m.r.length;
+}
+// Drop every results.csv row for `targetSeason`. Other seasons untouched.
+function _clearAutoResultsForSeason(targetSeason){
+  const d=DB.results; if(!d||!d.r||!d.h)return 0;
+  const si=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='season');
+  if(si<0)return 0;
+  const before=d.r.length;
+  d.r=d.r.filter(r=>String(r[si]||'').trim()!==String(targetSeason).trim());
+  return before-d.r.length;
+}
+
 async function generateSeasonFromDraw(targetSeason, half){
   if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
   const prev=_prevSeasonStr(targetSeason);
@@ -4495,29 +4532,21 @@ async function generateSeasonFromDraw(targetSeason, half){
     if(_half==='A') return String(dateStr)<splitDate;   // strictly before Jan 1
     return String(dateStr)>=splitDate;                  // spring: from Jan 1
   };
-  // Wrap _buildSimulatedMatchRow so out-of-half rows produce a blank stub
-  // instead of being simulated. The stub still gets upserted so the row
-  // exists with the right (rounds, level, mn, date, teams) for the
-  // complementary half-generator to fill in later.
-  const _stubRow=(ctx)=>{
-    const cols=DB.matches.h;
-    const obj={
-      date:ctx.date||'',
-      rounds:ctx.rounds||'',
-      level:ctx.level||'',
-      match_type:String(ctx.mt||'0'),
-      match_number:ctx.mn||'',
-      stadion_name:'',
-      home_id:ctx.homeId||'',
-      away_id:ctx.awayId||'',
-      notes:'[auto] '+(_half==='A'?'spring':'autumn')+' half — sim pending'
-    };
-    return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:false};
-  };
+  // Wrap _buildSimulatedMatchRow so out-of-half rows are SKIPPED entirely.
+  // Returns null when the row should not be touched in this run (existing
+  // rows from the other half are preserved unchanged).
   const _buildOrStub=(ctx)=>{
-    if(_half!=='ALL'&&!inHalf(ctx.date)) return _stubRow(ctx);
+    if(_half!=='ALL'&&!inHalf(ctx.date)) return null;
     return _buildSimulatedMatchRow(ctx);
   };
+  // ── Clean slate for THIS season's auto rows ────────────────────
+  // Drop any previously [auto]-generated matches.csv rows for this season
+  // (in the half being regenerated) so a re-run produces a fresh set
+  // instead of accumulating duplicates. Manual rows (notes don't start
+  // with [auto]) and rows for OTHER seasons are kept.
+  const _wipedAutoMatches=_clearAutoMatchesForSeason(targetSeason, _half, splitDate);
+  const _wipedAutoResults=_clearAutoResultsForSeason(targetSeason);
+  console.log(`[GenerateSeason] cleared ${_wipedAutoMatches} auto matches.csv rows and ${_wipedAutoResults} results.csv rows for season ${targetSeason} (half=${_half})`);
 
   const d=DB.draw;
   if(!d.r.length){toast('draw.csv is empty','warn');return;}
@@ -4657,9 +4686,11 @@ async function generateSeasonFromDraw(targetSeason, half){
   if(!confirm(lines.join('\n')))return;
 
   // ── PHASE 1: simulate MB-B rows and upsert ────────────────────
-  let upd=0,ins=0,blank=0,resRows=0;
+  let upd=0,ins=0,blank=0,resRows=0,skipped=0;
   mbbPlan.forEach(ctx=>{
-    const{row,simulated}=_buildOrStub(ctx);
+    const built=_buildOrStub(ctx);
+    if(!built){skipped++;return;}
+    const{row,simulated}=built;
     if(!simulated)blank++;
     const op=_upsertMatchRow(row);
     if(op==='updated')upd++;else ins++;
@@ -4695,9 +4726,11 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!aa.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
       const cal=calMap.get(rnd);
       if(!cal)missingDates.add(rnd);
-      const{row,simulated}=_buildOrStub({
+      const built=_buildOrStub({
         rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
       });
+      if(!built){skipped++;return;}
+      const{row,simulated}=built;
       if(!simulated)blank++;
       const op=_upsertMatchRow(row);
       if(op==='updated')upd++;else ins++;
@@ -4744,9 +4777,11 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildOrStub({
+        const built=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
+        if(!built){skipped++;return;}
+        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
@@ -4817,9 +4852,11 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)nkUnresolved.push({phase:phaseKey,rounds:rnd,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd)||calMap.get(rawRnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildOrStub({
+        const built=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
+        if(!built){skipped++;return;}
+        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
