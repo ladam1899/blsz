@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.11.6</title>
+<title>League Manager v2026.05.12.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -545,7 +545,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.11.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -670,7 +670,7 @@ const DB={
   state:      {h:[],r:[],fid:null}
 };
 const ED_DEFAULTS={
-  teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation'],
+  teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation','org'],
   matches:    ['date','rounds','level','match_type','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
@@ -968,6 +968,7 @@ function rebuildTeamMap(){
   const lni=d.h.indexOf('long_name');
   const ci=d.h.findIndex(h=>h==='color'||h==='colour');
   const c2=d.h.indexOf('color2'),c3=d.h.indexOf('color3');
+  const oi=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
   if(ii<0)return;
   d.r.forEach(row=>{
     const id=row[ii];if(!id)return;
@@ -982,7 +983,8 @@ function rebuildTeamMap(){
       name:long||full||id,
       color:resolveColor(ci>=0?row[ci]:'',id,0),
       color2:resolveColor(c2>=0?row[c2]:'',id,1),
-      color3:resolveColor(c3>=0?row[c3]:'',id,2)
+      color3:resolveColor(c3>=0?row[c3]:'',id,2),
+      org:oi>=0?String(row[oi]||'').trim():''
     });
   });
 }
@@ -2746,6 +2748,7 @@ let _playNeutralStadium='';    // stadium name chosen from dropdown when neutral
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
 let _playStage='ready';
 let _playRound='FRIENDLY';     // round code written into matches.csv for this match
+let _playOrg='BLSZ';           // preferred ORG — default selection only, team dropdowns still list all teams (grouped by ORG)
 // Return the set of round codes the user may pick from in the Play view's
 // Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
 // EXCLUDED because those are produced by the Generate Season action (MB)
@@ -2810,7 +2813,64 @@ function _playUniqueStadiums(){
 // "Cup-style" = a match that must produce a winner (no draws allowed).
 // Covers single-match knockouts (_playType 1 / 11) and second legs (2).
 function _playIsCup(){return _playType===1||_playType===11||_playType===2;}
-function _playIsCupTiedAt2H(){return _playIsCup()&&(_playData.h1+_playData.h2)===(_playData.a1+_playData.a2);}
+// Look up the leg-1 row that matches the current Play setup. Leg-2 is paired
+// by "same teams, home↔away reversed" within matches.csv, restricted to rows
+// whose match_type is 0 (first leg of a two-legged tie) and — if a non-
+// FRIENDLY round is selected — within the same season as the current play.
+// Returns { row, idx, h_ft, a_ft, mn } or null if no leg-1 found.
+function _playFindLeg1Row(){
+  if(_playKind!=='leg2') return null;
+  const m=DB.matches; if(!m||!m.r||!m.r.length) return null;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const ri=_hi('rounds'),mti=_hi('match_type'),mni=_hi('match_number'),
+        hi=_hi('home_id'),ai=_hi('away_id'),di=_hi('date'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(hi<0||ai<0||hsi<0||asi<0) return null;
+  const playSeason=(typeof seasonFor==='function'&&currentDate)?seasonFor(currentDate()):'';
+  // Scan from newest to oldest so we pick the most recent matching first leg.
+  for(let i=m.r.length-1;i>=0;i--){
+    const r=m.r[i];
+    const homeId=String(r[hi]||'').trim(), awayId=String(r[ai]||'').trim();
+    // "Reversed" — the leg-1 row's HOME is this Play setup's AWAY, and vice versa.
+    if(homeId!==String(_playAway).trim()||awayId!==String(_playHome).trim()) continue;
+    if(mti>=0){
+      const mt=String(r[mti]||'').trim();
+      // Only match_type=0 rows can be leg-1 of a two-legged tie. (Skips
+      // single-knockouts, leg-2 rows, etc.)
+      if(mt!=='0'&&mt!=='') continue;
+    }
+    if(di>=0&&playSeason&&typeof seasonFor==='function'){
+      const rs=seasonFor(String(r[di]||'').trim());
+      if(rs && rs!==playSeason) continue;
+    }
+    const hs=parseInt(r[hsi]), as=parseInt(r[asi]);
+    if(isNaN(hs)||isNaN(as)) continue;
+    return {
+      row:r, idx:i,
+      h_ft:hs, a_ft:as,
+      mn:mni>=0?String(r[mni]||'').trim():'',
+      date:di>=0?String(r[di]||'').trim():'',
+      rounds:ri>=0?String(r[ri]||'').trim():''
+    };
+  }
+  return null;
+}
+// True when leg-2's aggregate (this leg's 90' + leg-1's 90') is tied. Falls
+// back to single-leg tie when no leg-1 row exists yet.
+function _playLeg2AggTied(){
+  const leg1=_playFindLeg1Row();
+  if(!leg1) return (_playData.h1+_playData.h2)===(_playData.a1+_playData.a2);
+  // From THIS row's home view: aggregate-home = leg2.home + leg1.away (leg1's
+  // away IS this leg's home team's first-leg score).
+  const aggH=(_playData.h1+_playData.h2)+leg1.a_ft;
+  const aggA=(_playData.a1+_playData.a2)+leg1.h_ft;
+  return aggH===aggA;
+}
+function _playIsCupTiedAt2H(){
+  if(!_playIsCup()) return false;
+  if(_playKind==='leg2') return _playLeg2AggTied();
+  return (_playData.h1+_playData.h2)===(_playData.a1+_playData.a2);
+}
 // Recompute _playType from _playKind + _playNeutral. Call whenever either
 // input changes so the persisted match_type always matches the UI state.
 function _playSyncType(){
@@ -2853,10 +2913,47 @@ function renderPlayView(){
   if(!list.length){
     app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
   }
+  // Collect every distinct ORG present in teams.csv. Preferred ORG (_playOrg,
+  // defaulting to BLSZ) is listed first in the dropdown and in the team
+  // selectors so its teams are the obvious default. Teams without an org are
+  // grouped under "(no org)".
+  const orgsAll=[...new Set(list.map(t=>t.org||'').map(s=>s.trim()))];
+  const orgs=orgsAll.filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  const hasNoOrg=orgsAll.some(o=>!o);
+  const orgOpts=[];
+  // Preferred ORG first (if it actually exists in the data).
+  if(_playOrg && orgs.includes(_playOrg)){
+    orgOpts.push(`<option value="${esc(_playOrg)}" selected>${esc(_playOrg)}</option>`);
+  } else if(orgs.length){
+    // Fallback: pick the first available ORG and update the state.
+    _playOrg=orgs[0];
+    orgOpts.push(`<option value="${esc(_playOrg)}" selected>${esc(_playOrg)}</option>`);
+  } else {
+    _playOrg='';
+  }
+  orgs.filter(o=>o!==_playOrg).forEach(o=>orgOpts.push(`<option value="${esc(o)}">${esc(o)}</option>`));
+  if(hasNoOrg) orgOpts.push(`<option value="(none)"${_playOrg==='(none)'?' selected':''}>(no org)</option>`);
+  // Build the team `<option>` list grouped by ORG. Preferred ORG group is first.
+  const orderedOrgs=[];
+  if(_playOrg) orderedOrgs.push(_playOrg);
+  orgs.filter(o=>o!==_playOrg).forEach(o=>orderedOrgs.push(o));
+  if(hasNoOrg && _playOrg!=='(none)') orderedOrgs.push('(none)');
+  const byOrg=new Map();
+  orderedOrgs.forEach(o=>byOrg.set(o,[]));
+  list.forEach(t=>{
+    const key=(t.org||'').trim()||'(none)';
+    if(!byOrg.has(key)) byOrg.set(key,[]);
+    byOrg.get(key).push(t);
+  });
   if(!_playHome)_playHome=list[0].id;
   if(!_playAway)_playAway=list[list.length>1?1:0].id;
   if(!_playData)_playData=_emptyPlayData();
-  const opt=(selId)=>list.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
+  const opt=(selId)=>orderedOrgs.map(o=>{
+    const teams=byOrg.get(o)||[];
+    if(!teams.length) return '';
+    const inner=teams.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
+    return `<optgroup label="${esc(o||'(no org)')}">${inner}</optgroup>`;
+  }).join('');
   const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
   const hLogo=logoFor(_playHome,null),aLogo=logoFor(_playAway,null);
   const canPlay=_playHome&&_playAway&&_playHome!==_playAway;
@@ -2869,6 +2966,10 @@ function renderPlayView(){
     <div class="play-wrap">
       <div class="play-title">⚽ Play a Match</div>
       ${_playStageBarHTML()}
+      <div class="play-stadium-row" style="margin-bottom:14px;justify-content:center">
+        <label>Org:</label>
+        <select class="play-stadium-sel" onchange="_playSetOrg(this.value)" ${locked?'disabled':''} title="Preferred organisation — sets the default team group and lists this ORG first in the team selectors">${orgOpts.join('')}</select>
+      </div>
       <div class="play-teams">
         <div class="play-team-box">
           <div class="play-team-label">Home</div>
@@ -3065,6 +3166,7 @@ function _playSetType(t){
 }
 function _playSetMode(m){if(_playStage!=='ready')return;_playMode=m;_playReset();}
 function _playSetRound(v){if(_playStage!=='ready')return;_playRound=String(v||'FRIENDLY').trim()||'FRIENDLY';renderPlayView();}
+function _playSetOrg(v){if(_playStage!=='ready')return;_playOrg=String(v||'').trim();renderPlayView();}
 function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;_playSyncType();renderPlayView();}
 function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;}
 function _playReset(){_playStage='ready';_playData=_emptyPlayData();_playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};renderPlayView();}
@@ -3196,6 +3298,17 @@ function _playNotes(){
   }
   if(d.hpen!==null&&d.hpen!==undefined){
     parts.push(`PEN: ${d.hpen}-${d.apen}`);
+  }
+  // Two-legged tie: append AGG (aggregate over 180' from THIS row's home
+  // view) and PAIR (leg-1's match_number) so the leg-2 row carries enough
+  // metadata to reconcile the pair after the fact.
+  if(_playKind==='leg2'){
+    const leg1=_playFindLeg1Row();
+    if(leg1){
+      const aggH=regHome+leg1.a_ft, aggA=regAway+leg1.h_ft;
+      parts.push(`AGG: ${aggH}-${aggA}`);
+      if(leg1.mn) parts.push(`PAIR: ${leg1.mn}`);
+    }
   }
   return parts.join(' ');
 }
