@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.12</title>
+<title>League Manager v2026.05.12.13</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -452,15 +452,13 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 /* Per-level standings table: change-column header + cell */
 .st-table th.c-chg,.st-table td.c-chg{width:34px;text-align:center;}
 .st-table th.c-dest,.st-table td.c-dest{width:46px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);}
-/* MB-B place tiers — same colors as the user reference picture:
-   white = stable inside the level, grey = lower playoff in the same level,
-   red = "mixed" group (promotion/relegation across two levels). */
-.st-table tbody tr.mbb-keep td{background:#ffffff;}
-.st-table tbody tr.mbb-mid  td{background:#e9eaee;}
-.st-table tbody tr.mbb-mix  td{background:#f5c8c2;}
-.st-table tbody tr.mbb-keep:hover td{background:#f3f4f6;}
-.st-table tbody tr.mbb-mid:hover  td{background:#dadde2;}
-.st-table tbody tr.mbb-mix:hover  td{background:#f0b8b1;}
+/* MB-B place tiers — colours only on the place badge (the row background
+   stays white). White (keep) = stays in the level's top sub-group, grey
+   (mid) = lower playoff in the same level, red (mix) = mixed group with a
+   neighbouring level (promotion or relegation). */
+.pos-badge.mbb-keep{background:#ffffff;color:var(--text);border:1px solid var(--border);}
+.pos-badge.mbb-mid{background:#e9eaee;color:var(--text);}
+.pos-badge.mbb-mix{background:var(--red-l);color:var(--red);}
 
 /* RESULTS VIEW */
 .results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
@@ -605,7 +603,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.12</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.13</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2018,9 +2016,15 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       // middle keeps the neutral class. In normal league mode the original
       // position classes apply.
       const isGroup=mode==='rounds'&&total>=4;
-      const pc=isGroup
-        ?(pos<=2?'sr-advance':pos>=total-1?'sr-eliminate':'pdef')
-        :(pos===1?'p1':pos<=3?'p2':pos>=total?'prel':'pdef');
+      // Position-class for the # badge:
+      //   • rounds mode → top 2 advance (green), bottom 2 eliminate (red)
+      //   • MB-B level   → tier class (white/grey/red) from _mbBPlaceTier
+      //   • other levels → highlight only winner / podium; NEVER auto-red the
+      //     last place (MB-R has no auto-relegation — that's a BLSZ decision)
+      let pc;
+      if(isGroup) pc=(pos<=2?'sr-advance':pos>=total-1?'sr-eliminate':'pdef');
+      else if(isMbB) pc=_mbBPlaceTier(level,pos).cls||'pdef';
+      else pc=(pos===1?'p1':pos<=3?'p2':'pdef');
       const rowCls=isGroup?(pos<=2?'sr-advance':pos>=total-1?'sr-eliminate':''):'';
       const gd=(t.gd>0?'+':'')+t.gd;
       const logo=logoFor(t.id,season);
@@ -2038,12 +2042,11 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       const metaLine=`<div class="team-name-meta">${metaParts.join('')}</div>`;
       const prevPos=prevRankByTid.get(t.id)||0;
       const chgHTML=prevHasData?_placeChangeHTML(prevPos, pos):'';
-      // MB-B tier coloring + destination playoff column. Falls through to the
-      // existing top/relegation classes when the level is NOT an MB-B group.
+      // MB-B destination playoff column — colour now lives on the badge (pc),
+      // so the row background stays white.
       const tier=isMbB?_mbBPlaceTier(level,pos):{cls:'',dest:''};
-      const tierRowCls=tier.cls||rowCls;
       const destCell=isMbB?`<td class="c-dest" title="MB-R group ${esc(tier.dest||'')}">${esc(tier.dest||'')}</td>`:'';
-      html+=`<tr class="st-row ${tierRowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
+      html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
         <td class="c-chg">${chgHTML}</td>
         ${destCell}
