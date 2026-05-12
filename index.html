@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.26</title>
+<title>League Manager v2026.05.12.27</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.26</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.27</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2412,16 +2412,313 @@ function openHeadToHead(aId,bId){
   document.getElementById('infoModal').classList.add('open');
 }
 
+// In-memory marker so the half-boundary popup fires exactly once per
+// season per session. Cleared when the user clicks Cancel so the next
+// ⏭ Next Round click re-prompts.
+const _springPopupShown=new Set();
+
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
+  // Half-season boundary trigger: fires when THIS click crosses Jan 1 of
+  // the next round's season. We compute the Jan-1 split from the NEXT
+  // round's date so a Dec → Jan jump is handled correctly even when the
+  // football-season string wraps.
+  const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
+  const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+  const split=isNaN(sy)?'':(sy+'-01-01');
+  const isCrossing=!!(split && (!cur || cur<split) && next.date>=split);
+  console.log(`[advanceToNextRound] cur=${cur} next=${next.date} season=${nextSeason} split=${split} crossing=${isCrossing} shown=${_springPopupShown.has(nextSeason)}`);
+  if(isCrossing && !_springPopupShown.has(nextSeason)){
+    _springPopupShown.add(nextSeason);
+    const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
+    if(!ok){
+      _springPopupShown.delete(nextSeason);
+      toast('Half-season transition cancelled — current date kept where it is','warn');
+      return;
+    }
+    // Run the spring generation now (MB-4 picker + sim + NSZK + groups).
+    try{
+      await generateSeasonFromDraw(nextSeason,'S');
+    }catch(e){
+      console.error('[advanceToNextRound] spring sim failed:',e);
+      toast('Spring generation failed — see console','err');
+      return;
+    }
+  }
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
   renderLeagueView();
+}
+
+// ── HALF-BOUNDARY SKILL EDITOR ─────────────────────────────────
+// Skill columns copied verbatim from autumn → spring. Only `skills` is
+// editable in the popup; every per-period column is preserved unchanged.
+const _HB_SKILL_COLS=['skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties'];
+// Read a single skill value for (team, halfTag) from team_skills.csv.
+// Returns the integer cell value, or NaN if no row matches.
+function _hbReadSkill(teamId, halfTag, col){
+  const d=DB.team_skills; if(!d||!d.r||!d.h)return NaN;
+  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season'), ci=d.h.indexOf(col);
+  if(ti<0||hi<0||ci<0)return NaN;
+  const row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
+  if(!row)return NaN;
+  const n=parseInt(row[ci]);
+  return isNaN(n)?NaN:n;
+}
+// Upsert a single _S team_skills row. Existing row updated in place; new
+// row appended. Returns 'updated' | 'inserted' | 'noop'.
+function _hbUpsertSpringSkill(teamId, halfTag, values){
+  const d=DB.team_skills; if(!d||!d.h||!d.h.length)return 'noop';
+  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season');
+  if(ti<0||hi<0)return 'noop';
+  let row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
+  if(!row){
+    row=new Array(d.h.length).fill('');
+    row[ti]=teamId; row[hi]=halfTag;
+    d.r.push(row);
+    Object.entries(values).forEach(([k,v])=>{const i=d.h.indexOf(k);if(i>=0)row[i]=String(v);});
+    return 'inserted';
+  }
+  let dirty=false;
+  Object.entries(values).forEach(([k,v])=>{
+    const i=d.h.indexOf(k);if(i<0)return;
+    const cur=String(row[i]||'').trim(), nx=String(v);
+    if(cur!==nx){row[i]=nx;dirty=true;}
+  });
+  return dirty?'updated':'noop';
+}
+// Compute autumn MB-B performance per team. Walks matches.csv for MB-B rows
+// with scores in `season`. For each MB-B group, computes points and the
+// group average. Returns Map<team_id, {group,pts,gp,groupAvg,perfDelta}>
+// where perfDelta = round((pts - groupAvg) / 3) clamped ±10.
+function _hbAutumnPerformance(season){
+  const out=new Map();
+  const m=DB.matches; if(!m||!m.r||!m.h)return out;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
+        hi=_hi('home_id'),ai=_hi('away_id'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(di<0||ri<0||li<0||hi<0||ai<0||hsi<0||asi<0)return out;
+  const byGroup={};
+  m.r.forEach(r=>{
+    const date=String(r[di]||'').trim(); if(!date)return;
+    if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
+    const rnd=String(r[ri]||'').trim(); if(!/^MB-B-/i.test(rnd))return;
+    const lvl=String(r[li]||'').trim(); if(!lvl)return;
+    const hs=parseInt(r[hsi]), as=parseInt(r[asi]);
+    if(isNaN(hs)||isNaN(as))return;
+    const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
+    if(!h||!a)return;
+    if(!byGroup[lvl])byGroup[lvl]={};
+    const g=byGroup[lvl];
+    if(!g[h])g[h]={id:h,pts:0,gp:0};
+    if(!g[a])g[a]={id:a,pts:0,gp:0};
+    g[h].gp++; g[a].gp++;
+    if(hs>as)g[h].pts+=3;
+    else if(hs<as)g[a].pts+=3;
+    else{g[h].pts++; g[a].pts++;}
+  });
+  Object.entries(byGroup).forEach(([level,teams])=>{
+    const arr=Object.values(teams); if(!arr.length)return;
+    const avg=arr.reduce((s,t)=>s+t.pts,0)/arr.length;
+    arr.forEach(t=>{
+      let perfDelta=Math.round((t.pts-avg)/3);
+      if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
+      out.set(t.id,{group:level,pts:t.pts,gp:t.gp,groupAvg:Math.round(avg*10)/10,perfDelta});
+    });
+  });
+  return out;
+}
+// The popup: one row per team. Only `skills` editable; per-period columns
+// copied from autumn into spring untouched. Returns true on Continue (after
+// upserting _S rows), false on Cancel.
+function _confirmHalfBoundary(season,splitDate,nextDate){
+  return new Promise(resolve=>{
+    const aTag=season+'_A', sTag=season+'_S';
+    // Build the team list from teams.csv (one row per team), falling back
+    // to the team_skills row list if teams.csv is empty.
+    const teamsArr=(function(){
+      const td=DB.teams; const arr=[];
+      if(td&&td.r&&td.h){
+        const idi=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+        if(idi>=0){
+          td.r.forEach(r=>{
+            const id=String(r[idi]||'').trim();
+            if(!id)return;
+            const tb=(typeof teamById==='function')?teamById(id):{name:id};
+            arr.push({tid:id,name:String(tb.name||id)});
+          });
+        }
+      }
+      if(!arr.length){
+        const t=DB.team_skills; const seen=new Set();
+        if(t&&t.r&&t.h){
+          const ti=t.h.indexOf('team_id');
+          if(ti>=0){
+            t.r.forEach(r=>{
+              const id=String(r[ti]||'').trim();
+              if(id&&!seen.has(id)){seen.add(id); arr.push({tid:id,name:id});}
+            });
+          }
+        }
+      }
+      return arr.sort((a,b)=>a.name.localeCompare(b.name));
+    })();
+    // Read autumn baseline per team. Fall back to defaultSkills() when the
+    // team has no _A row so every team is always editable.
+    const _defaults=(typeof defaultSkills==='function')?defaultSkills():{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};
+    const _perfMap=_hbAutumnPerformance(season);
+    const _autAll={}, _autSource={};
+    teamsArr.forEach(tt=>{
+      _autAll[tt.tid]={}; _autSource[tt.tid]='A';
+      let anyReal=false;
+      _HB_SKILL_COLS.forEach(k=>{
+        const raw=_hbReadSkill(tt.tid,aTag,k);
+        if(!isNaN(raw)){_autAll[tt.tid][k]=raw; anyReal=true;}
+        else _autAll[tt.tid][k]=parseInt(_defaults[k])||0;
+      });
+      if(!anyReal) _autSource[tt.tid]='default';
+    });
+    // Initial Your Δ = existing _S.skills - autumn.skills, or perfDelta when
+    // no _S row exists yet.
+    const _initAdj=(tid)=>{
+      const s=_hbReadSkill(tid,sTag,'skills');
+      const a=_autAll[tid].skills;
+      if(!isNaN(s)&&!isNaN(a)) return s-a;
+      const perf=_perfMap.get(tid);
+      return perf?perf.perfDelta:0;
+    };
+    const _clampSkills=(v)=>Math.max(0,Math.min(100,v));
+
+    const rowsHtml=teamsArr.map(tt=>{
+      const a=_autAll[tt.tid].skills;
+      const perf=_perfMap.get(tt.tid);
+      const adj=_initAdj(tt.tid);
+      const newVal=_clampSkills(a+adj);
+      const ptsStr=perf?String(perf.pts):'—';
+      const avgStr=perf?String(perf.groupAvg):'—';
+      const grpStr=perf?perf.group:'';
+      const perfStr=perf?(perf.perfDelta>0?'+':'')+String(perf.perfDelta):'—';
+      const perfCls=perf?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'';
+      const aCls='hb-aut'+(_autSource[tt.tid]==='default'?' hb-aut-default':'');
+      const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Autumn `skills` value';
+      return `<tr data-row="${esc(tt.tid)}">`+
+        `<td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>`+
+        `<td class="hb-group">${esc(grpStr)}</td>`+
+        `<td>${esc(ptsStr)}</td>`+
+        `<td class="hb-avg">${esc(avgStr)}</td>`+
+        `<td class="hb-perf ${perfCls}">${esc(perfStr)}</td>`+
+        `<td class="${aCls}" title="${esc(aTitle)}">${esc(String(a))}</td>`+
+        `<td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:60px"></td>`+
+        `<td class="hb-spr" data-out="${esc(tt.tid)}">${esc(String(newVal))}</td>`+
+        `</tr>`;
+    }).join('');
+
+    const ov=document.createElement('div');
+    ov.className='panel-overlay open'; ov.style.zIndex='500';
+    const md=document.createElement('div');
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
+    md.innerHTML=
+      `<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>`+
+      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Perf Δ is auto-calculated from autumn MB-B group performance — round((team pts − group avg)/3), clamped ±10. Your Δ is pre-filled with it.</span></p>`+
+      `<div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">`+
+        `<table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">`+
+          `<thead><tr style="background:var(--surface2)">`+
+            `<th class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:6px 10px">Team</th>`+
+            `<th>Group</th><th>Aut. pts</th><th>Grp avg</th><th>Perf Δ</th><th>Aut. skills</th><th>Your Δ</th><th>New skills</th>`+
+          `</tr></thead>`+
+          `<tbody>${rowsHtml||'<tr><td colspan="8" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>`+
+        `</table>`+
+      `</div>`+
+      `<div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;align-items:center;">`+
+        `<span id="hbSummary" style="font-size:11px;color:var(--muted)"></span>`+
+        `<span>`+
+          `<button type="button" id="hbReset" class="tbtn" title="Restore every Your Δ to its Perf Δ suggestion">Reset to suggestion</button> `+
+          `<button type="button" id="hbZero" class="tbtn" title="Set every Your Δ to 0 (spring = autumn)">Zero all</button> `+
+          `<button type="button" id="hbCancel" class="tbtn">Cancel</button> `+
+          `<button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue — save &amp; generate spring</button>`+
+        `</span>`+
+      `</div>`;
+    const styleTag=document.createElement('style');
+    styleTag.textContent=
+      '.hb-table thead th{padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border);font-weight:700;text-align:center;white-space:nowrap;}'+
+      '.hb-table thead th.hb-team{text-align:left;}'+
+      '.hb-table tbody td{padding:4px 8px;text-align:center;border-bottom:1px solid var(--border);font-family:"JetBrains Mono",monospace;}'+
+      '.hb-table tbody td.hb-team{position:sticky;left:0;background:var(--surface);text-align:left;font-family:"Inter",sans-serif;font-weight:500;white-space:nowrap;}'+
+      '.hb-table tbody tr:hover td{background:var(--surface2);}'+
+      '.hb-table tbody tr:hover td.hb-team{background:var(--surface2);}'+
+      '.hb-table td.hb-aut{color:var(--muted);}'+
+      '.hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}'+
+      '.hb-table td.hb-avg{color:var(--muted);}'+
+      '.hb-table td.hb-group{color:var(--muted);font-size:11px;}'+
+      '.hb-table td.hb-perf{font-weight:700;}'+
+      '.hb-table td.hb-perf.hb-perf-up{color:#16a34a;}'+
+      '.hb-table td.hb-perf.hb-perf-down{color:#dc2626;}'+
+      '.hb-table td.hb-perf.hb-perf-zero{color:var(--muted);}'+
+      '.hb-table td.hb-spr{font-weight:700;}'+
+      '.hb-table td.hb-spr.changed{color:var(--blue);}'+
+      '.hb-table td.hb-adj input{padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:"JetBrains Mono",monospace;font-size:12px;}'+
+      '.hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}';
+    document.head.appendChild(styleTag);
+    document.body.appendChild(ov);
+    document.body.appendChild(md);
+
+    const inputs=md.querySelectorAll('input[type=number][data-tid]');
+    const updateAll=()=>{
+      let changed=0;
+      inputs.forEach(inp=>{
+        const tid=inp.dataset.tid;
+        let v=parseInt(inp.value); if(isNaN(v))v=0;
+        if(v>100)v=100; if(v<-100)v=-100;
+        const a=_autAll[tid].skills;
+        const out=md.querySelector('td.hb-spr[data-out="'+tid+'"]');
+        if(out){
+          const s=_clampSkills(a+v);
+          out.textContent=String(s);
+          if(v!==0)out.classList.add('changed'); else out.classList.remove('changed');
+        }
+        if(v!==0)changed++;
+      });
+      const sEl=md.querySelector('#hbSummary');
+      if(sEl)sEl.textContent=changed+' of '+teamsArr.length+' teams adjusted from autumn';
+    };
+    inputs.forEach(inp=>inp.addEventListener('input',updateAll));
+    md.querySelector('#hbReset').onclick=()=>{
+      inputs.forEach(i=>{const p=_perfMap.get(i.dataset.tid); i.value=p?p.perfDelta:0;});
+      updateAll();
+    };
+    md.querySelector('#hbZero').onclick=()=>{
+      inputs.forEach(i=>{i.value='0';});
+      updateAll();
+    };
+    updateAll();
+
+    const cleanup=()=>{ov.remove();md.remove();styleTag.remove();};
+    md.querySelector('#hbCancel').onclick=()=>{cleanup();resolve(false);};
+    md.querySelector('#hbOk').onclick=()=>{
+      let upd=0,ins=0,noop=0;
+      teamsArr.forEach(tt=>{
+        const inp=md.querySelector('input[data-tid="'+tt.tid+'"]');
+        let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
+        const values={};
+        _HB_SKILL_COLS.forEach(k=>{
+          if(k==='skills') values[k]=_clampSkills(_autAll[tt.tid].skills+adj);
+          else values[k]=_autAll[tt.tid][k];
+        });
+        const op=_hbUpsertSpringSkill(tt.tid,sTag,values);
+        if(op==='inserted')ins++; else if(op==='updated')upd++; else noop++;
+      });
+      try{ if(typeof saveSheet==='function') saveSheet('team_skills'); }catch(e){}
+      toast('Spring skills: '+ins+' inserted · '+upd+' updated · '+noop+' unchanged','');
+      cleanup();
+      resolve(true);
+    };
+  });
 }
 
 // ── STANDINGS (right sidebar) ─────────────────────────────────
