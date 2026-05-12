@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.4</title>
+<title>League Manager v2026.05.12.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -273,7 +273,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .im-section-hdr{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.06em;color:var(--text);margin:14px 0 8px;display:flex;align-items:baseline;gap:8px;}
 .im-section-hdr .sc{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;}
 .im-match-list{display:flex;flex-direction:column;gap:4px;}
-.im-match{display:grid;grid-template-columns:94px minmax(0,1fr) 64px minmax(0,1fr) 40px;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface2);font-size:12px;}
+.im-match{display:grid;grid-template-columns:94px minmax(0,1fr) 64px minmax(0,1fr) 40px;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface2);font-size:12px;border-left:3px solid transparent;}
+.im-match.comp-mb{background:#dbeafe;border-left-color:#2563eb;}
+.im-match.comp-kk{background:#fef3c7;border-left-color:#d97706;}
+.im-match.comp-nk{background:#e5e7eb;border-left-color:#6b7280;}
 .im-match + .im-match{}
 .im-match .im-date{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;}
 .im-match .im-home,.im-match .im-away{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -401,6 +404,27 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   .play-teams{grid-template-columns:1fr;gap:8px;}
   .play-vs{display:none;}
 }
+
+/* BLSZ VIEW */
+.blsz-wrap{max-width:1100px;margin:0 auto;padding:12px 16px 24px;}
+.blsz-flat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;overflow-x:auto;}
+.blsz-flat table{width:100%;border-collapse:collapse;font-size:12px;}
+.blsz-flat thead th{position:sticky;top:0;background:var(--surface2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--border);text-align:center;white-space:nowrap;}
+.blsz-flat thead th.b-team{text-align:left;}
+.blsz-flat tbody td{padding:6px 10px;border-bottom:1px solid var(--border);text-align:center;vertical-align:middle;font-family:'JetBrains Mono',monospace;}
+.blsz-flat tbody td.b-team{text-align:left;font-family:'Inter',sans-serif;font-weight:500;white-space:nowrap;}
+.blsz-flat tbody tr:hover td{background:var(--surface2);}
+.blsz-flat tbody td.comp-mb{background:#dbeafe;}
+.blsz-flat tbody td.comp-mbr{background:#dbeafe;}
+.blsz-flat tbody td.comp-kk{background:#fef3c7;}
+.blsz-flat tbody td.comp-nk{background:#e5e7eb;}
+.blsz-flat tbody td.b-total{font-weight:700;background:var(--surface);font-size:13px;}
+.blsz-flat tbody td.b-place{font-weight:700;font-family:'Bebas Neue',sans-serif;font-size:16px;background:var(--surface);}
+.blsz-cell{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.15;}
+.blsz-cell .b-pts{font-weight:700;font-size:13px;}
+.blsz-cell .b-plc{font-size:10px;color:var(--muted);}
+.blsz-cell .b-rng{font-size:9px;color:var(--dimmed);}
+.blsz-flat tbody td.b-team .res-team-badge{display:inline-flex;vertical-align:middle;margin-right:8px;}
 
 /* RESULTS VIEW */
 .results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
@@ -545,7 +569,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -561,6 +585,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   <div class="ntab" id="ntab-calendar" onclick="switchView('calendar')">📆 Calendar</div>
   <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
   <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
+  <div class="ntab" id="ntab-blsz" onclick="switchView('blsz')">🏆 BLSZ</div>
   <div class="ntab" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
   <div class="nav-space"></div>
   <div class="nav-gear" onclick="openEditor()" title="Data editor">⚙</div>
@@ -1199,6 +1224,7 @@ function renderView(){
   else if(currentView==='calendar')renderCalendarView();
   else if(currentView==='teams')renderTeamsView();
   else if(currentView==='results')renderResultsView();
+  else if(currentView==='blsz')renderBlszView();
   else if(currentView==='play')renderPlayView();
 }
 
@@ -2038,7 +2064,13 @@ function _imMatchRowHTML(row,c,revealScore){
   const cls=played?_imMatchOutcomeCls(hs,aS):'';
   const scoreTxt=played?`${hs}-${aS}`:'— : —';
   const scoreCls=played?'im-score':'im-score pending';
-  return `<div class="im-match ${cls}">
+  // Competition tint by round-code prefix: MB-* → blue, KK* → yellow, NK* → grey.
+  const upR=String(rnd||'').toUpperCase();
+  let compCls='';
+  if(upR.startsWith('MB-')) compCls='comp-mb';
+  else if(upR.startsWith('KK')) compCls='comp-kk';
+  else if(upR.startsWith('NK')) compCls='comp-nk';
+  return `<div class="im-match ${cls} ${compCls}">
     <div class="im-date">${esc(d||'')}</div>
     <div class="im-home" title="${esc(home.name)}">${esc(home.name)}</div>
     <div class="${scoreCls}">${esc(scoreTxt)}</div>
@@ -4627,6 +4659,292 @@ function _promptGenerateSeason(){
   const input=prompt('Target season to generate (format YYYY_YY, e.g. 2000_01):',def||'2000_01');
   if(input)generateSeasonFromDraw(String(input).trim());
 }
+
+// ══════════════════════════════════════════════════════════════
+//  BLSZ VIEW — federation points table
+// ══════════════════════════════════════════════════════════════
+// Points awarded by finishing place in each of four BLSZ competitions.
+// Source: user-supplied table. Tables run from place 1 down to the lowest
+// place that earns any points; finishing below the table earns 0.
+const BLSZ_POINTS={
+  'MB-B':[119,116,113,110,107,104,101,98,92,88,84,80,76,72,68,60,55,49,43,37,31,25,19,11,5],
+  'MB-R':[85,84,83,82,81,80,79,78,77,76,75,74,73,72,71,70,66,65,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,4,3,2,1],
+  'KK':  [85,84,83,81,80,79,77,76,75,73,72,71,69,68,67,65,64,63,61,60,59,57,56,55,53,52,51,49,48,47,46,45,44,42,41,40,39,38,35,34,33,32,31,30],
+  'NK':  [77,68,65,62,60,60,43,43,34,34,34,34,26,26,26,26,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9]
+};
+function _blszPtsFor(comp,place){
+  const t=BLSZ_POINTS[comp]; if(!t) return 0;
+  const p=parseInt(place); if(isNaN(p)||p<1) return 0;
+  return t[p-1]||0;
+}
+
+// Classify each MB-B group label / MB-R Roman / KK-phase label / 'NK' into
+// the four BLSZ buckets that earn points.
+function _blszBucketFor(comp){
+  const c=String(comp||'').trim();
+  if(!c) return null;
+  if(c==='NK') return 'NK';
+  if(/^(I|II|III|IV|V|VI|VII|VIII|IX|X)$/.test(c)) return 'MB-R';
+  if(/^(KKARA|KKROM|KKABC|KKJKL|KKGOR)-/.test(c)) return 'KK';
+  if(/^[1234][A-ZÉ]+$/i.test(c)||['1M','1N','2A','2B','2C','3NY','3K','3É','3D','4K','4NY','4É','4D'].includes(c)) return 'MB-B';
+  return null;
+}
+
+// Compute per-team standings for every BLSZ-relevant competition in a season,
+// AND the "what-if all remaining matches were won by team X / lost by team X"
+// scenarios so we can show min/max place + min/max points per team per
+// competition. Returns:
+//   {
+//     bucket: { team_id: { comp, curPlace, curPts, minPlace, maxPlace, minPts, maxPts } }
+//   }
+// for bucket ∈ {'MB-B', 'MB-R', 'KK', 'NK'}.
+function _blszBuildProjection(season){
+  const buckets={'MB-B':{},'MB-R':{},'KK':{},'NK':{}};
+  const m=DB.matches; if(!m||!m.r) return buckets;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
+        hi=_hi('home_id'),ai=_hi('away_id'),
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(di<0||ri<0||hi<0||ai<0||hsi<0||asi<0) return buckets;
+  // Group every relevant match row by competition.
+  const byComp={};
+  m.r.forEach(row=>{
+    const date=String(row[di]||'').trim();
+    if(!date) return;
+    if(season && typeof seasonFor==='function' && seasonFor(date)!==season) return;
+    const comp=typeof _inferCompetitionForMatch==='function'
+      ? _inferCompetitionForMatch(row[ri], li>=0?row[li]:'')
+      : null;
+    if(!comp) return;
+    const bucket=_blszBucketFor(comp);
+    if(!bucket||bucket==='NK') return; // NK podium handled separately
+    if(!byComp[comp]) byComp[comp]={bucket, rows:[]};
+    byComp[comp].rows.push(row);
+  });
+  Object.entries(byComp).forEach(([comp,info])=>{
+    const rows=info.rows;
+    // Aggregator: build a stats table for an arbitrary subset of rows.
+    const tableOf=(rs)=>{
+      const stats={};
+      rs.forEach(row=>{
+        const h=String(row[hi]||'').trim(), a=String(row[ai]||'').trim();
+        if(!h||!a) return;
+        const hsRaw=String(row[hsi]||'').trim(), asRaw=String(row[asi]||'').trim();
+        if(hsRaw===''||asRaw==='') return;
+        const hs=parseInt(hsRaw), as=parseInt(asRaw);
+        if(isNaN(hs)||isNaN(as)) return;
+        if(!stats[h]) stats[h]={id:h,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+        if(!stats[a]) stats[a]={id:a,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+        stats[h].p++; stats[a].p++;
+        stats[h].gf+=hs; stats[h].ga+=as; stats[a].gf+=as; stats[a].ga+=hs;
+        if(hs>as){ stats[h].w++; stats[h].pts+=3; stats[a].l++; }
+        else if(hs<as){ stats[a].w++; stats[a].pts+=3; stats[h].l++; }
+        else { stats[h].d++; stats[a].d++; stats[h].pts++; stats[a].pts++; }
+      });
+      return Object.values(stats).map(s=>({...s,gd:s.gf-s.ga}))
+        .sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+    };
+    // Played (have a recorded full-time score) vs unplayed for this comp.
+    const played=[],unplayed=[];
+    rows.forEach(row=>{
+      const hs=String(row[hsi]||'').trim(), as=String(row[asi]||'').trim();
+      if(hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as))) played.push(row);
+      else unplayed.push(row);
+    });
+    // Teams in this competition = every team that has at least one row.
+    const teams=new Set();
+    rows.forEach(row=>{
+      const h=String(row[hi]||'').trim(), a=String(row[ai]||'').trim();
+      if(h) teams.add(h); if(a) teams.add(a);
+    });
+    const curTable=tableOf(played);
+    const curRank=new Map(); curTable.forEach((s,i)=>curRank.set(s.id,i+1));
+    // For each team, simulate two extreme scenarios:
+    //   best case  → THIS team wins all of its remaining matches; every
+    //                other match is a draw (gives the fewest points to rivals).
+    //   worst case → THIS team loses all of its remaining matches; every
+    //                other match is a draw (gives rivals at least 1 point).
+    // We can't actually mutate matches.csv, so we build a virtual row list:
+    // played rows untouched, unplayed rows substituted with a synthetic
+    // "scoreline" that reflects the scenario.
+    const _synthRow=(row,hScore,aScore)=>{
+      const r=row.slice();
+      r[hsi]=String(hScore); r[asi]=String(aScore);
+      return r;
+    };
+    const out=buckets[info.bucket];
+    teams.forEach(tid=>{
+      // Best case for THIS team.
+      const bestRows=played.slice();
+      unplayed.forEach(row=>{
+        const h=String(row[hi]||'').trim(), a=String(row[ai]||'').trim();
+        if(h===tid) bestRows.push(_synthRow(row,1,0));      // tid wins
+        else if(a===tid) bestRows.push(_synthRow(row,0,1)); // tid wins
+        else bestRows.push(_synthRow(row,0,0));             // draw between rivals
+      });
+      const bestTable=tableOf(bestRows);
+      const bestRank=bestTable.findIndex(s=>s.id===tid)+1;
+      // Worst case for THIS team.
+      const worstRows=played.slice();
+      unplayed.forEach(row=>{
+        const h=String(row[hi]||'').trim(), a=String(row[ai]||'').trim();
+        if(h===tid) worstRows.push(_synthRow(row,0,1));     // tid loses
+        else if(a===tid) worstRows.push(_synthRow(row,1,0));// tid loses
+        else worstRows.push(_synthRow(row,0,0));            // rivals tie (gain 1pt each)
+      });
+      const worstTable=tableOf(worstRows);
+      const worstRank=worstTable.findIndex(s=>s.id===tid)+1;
+      const curPlace=curRank.get(tid)||0;
+      // Best = lower place number; worst = higher. Pts behave symmetrically.
+      const minPlace=Math.min(bestRank||curPlace,worstRank||curPlace,curPlace||999);
+      const maxPlace=Math.max(bestRank||curPlace,worstRank||curPlace,curPlace||0);
+      const minPts=_blszPtsFor(info.bucket, maxPlace);
+      const maxPts=_blszPtsFor(info.bucket, minPlace);
+      const curPts=_blszPtsFor(info.bucket, curPlace);
+      if(!out[tid]||curPts>out[tid].curPts){
+        out[tid]={comp,curPlace,curPts,minPlace,maxPlace,minPts,maxPts};
+      }
+    });
+  });
+  // NK podium: 4 places only, points from BLSZ_POINTS.NK[0..3] (rest of the
+  // NK table covers earlier-round eliminations 5..64 if you want to model
+  // them later; this implementation reports the top-4 podium only).
+  if(typeof _nkSingleLegWinner==='function'){
+    const wWin=_nkSingleLegWinner('NKW-7-1','1');
+    const wLos=typeof _nkSingleLegLoser==='function'?_nkSingleLegLoser('NKW-7-1','1'):'';
+    const lWin=_nkSingleLegWinner('NKL-9-1','1');
+    const lLos=typeof _nkSingleLegLoser==='function'?_nkSingleLegLoser('NKL-9-1','1'):'';
+    const podium=[wWin,wLos,lWin,lLos];
+    podium.forEach((id,i)=>{
+      if(!id) return;
+      const place=i+1;
+      const pts=_blszPtsFor('NK',place);
+      buckets.NK[id]={comp:'NK',curPlace:place,curPts:pts,minPlace:place,maxPlace:place,minPts:pts,maxPts:pts};
+    });
+  }
+  return buckets;
+}
+
+// State for the BLSZ view.
+let _blszSeason=null;
+
+function renderBlszView(){
+  const app=document.getElementById('app');
+  if(!_teamMap) rebuildTeamMap();
+  // Season dropdown — union of seasons in results.csv + matches.csv (mirror
+  // the Results view so the two stay in sync).
+  const m=DB.matches; const rd=DB.results;
+  const seasonSet=new Set();
+  const rsi=rd.h.findIndex(h=>String(h||'').trim().toLowerCase()==='season');
+  if(rsi>=0) rd.r.forEach(r=>{const s=String(r[rsi]||'').trim(); if(s) seasonSet.add(s);});
+  else rd.r.forEach(r=>r.forEach(c=>{const v=String(c||'').trim(); if(/^\d{4}_\d{2}$/.test(v)) seasonSet.add(v);}));
+  const mdi=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  if(mdi>=0 && typeof seasonFor==='function'){
+    m.r.forEach(r=>{const d=String(r[mdi]||'').trim(); if(d){ const s=seasonFor(d); if(s) seasonSet.add(s); }});
+  }
+  const allSeasons=[...seasonSet].sort().reverse();
+  if(!allSeasons.length){
+    app.innerHTML=`<div class="results-wrap"><div class="res-no-data">No season data yet — run Generate Season first.</div></div>`;
+    return;
+  }
+  if(!_blszSeason||!allSeasons.includes(_blszSeason)) _blszSeason=allSeasons[0];
+  const seasonOpts=allSeasons.map(s=>`<option value="${esc(s)}"${s===_blszSeason?' selected':''}>${esc(seasonLabel(s))}</option>`).join('');
+
+  // Build projections.
+  const proj=_blszBuildProjection(_blszSeason);
+  // Aggregate per team across all four buckets.
+  const teamRow=new Map(); // team_id -> { name, cells:{bucket:{cur,minP,maxP,curPts,minPts,maxPts}}, sumCur, sumMin, sumMax }
+  ['MB-B','MB-R','KK','NK'].forEach(bucket=>{
+    Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
+      let row=teamRow.get(tid);
+      if(!row){
+        const t=teamById(tid);
+        const longName=String(t.long_name||'').trim()||String(t.name||'').trim()||tid;
+        row={tid, name:longName, color:t.color, cells:{}, sumCur:0, sumMin:0, sumMax:0};
+        teamRow.set(tid,row);
+      }
+      row.cells[bucket]=info;
+      row.sumCur+=info.curPts;
+      row.sumMin+=info.minPts;
+      row.sumMax+=info.maxPts;
+    });
+  });
+  const teams=[...teamRow.values()];
+  // Sort by current sum (desc), then by name. Compute current BLSZ place.
+  teams.sort((a,b)=>(b.sumCur-a.sumCur)||a.name.localeCompare(b.name));
+  // Min BLSZ place per team: their rank if their sumMax stays at sumMax AND
+  // every rival's sum collapses to its minimum (i.e. they're max, rivals min).
+  // Max BLSZ place: their rank if their sumMin stays at sumMin AND rivals are
+  // at their maximum.
+  const minPlace=new Map(), maxPlace=new Map();
+  teams.forEach(t=>{
+    let mn=1, mx=1;
+    teams.forEach(o=>{
+      if(o===t) return;
+      if(o.sumMin>t.sumMax) mn++;          // someone could end above me even at my best → my best place worsens
+      if(o.sumMax>t.sumMin) mx++;          // someone could end above me even at my worst → my worst place worsens
+    });
+    minPlace.set(t.tid,mn);
+    maxPlace.set(t.tid,mx);
+  });
+
+  let html=`<div class="blsz-wrap">
+    <div class="results-bar">
+      <div class="results-bar-field">
+        <label>Season</label>
+        <select class="results-sel" onchange="selectBlszSeason(this.value)">${seasonOpts}</select>
+      </div>
+    </div>`;
+  if(!teams.length){
+    html+=`<div class="results-empty">No BLSZ data yet for this season.<br><small>Played matches feed the current standings; unplayed matches expand the min/max range.</small></div>`;
+  } else {
+    html+=`<div class="blsz-flat"><table>
+      <thead><tr>
+        <th class="b-team">Team</th>
+        <th>MB-B</th>
+        <th>MB-R</th>
+        <th>KK</th>
+        <th>NK</th>
+        <th>Total pts</th>
+        <th>BLSZ place</th>
+      </tr></thead><tbody>`;
+    teams.forEach((t,i)=>{
+      const curPlace=i+1;
+      const mn=minPlace.get(t.tid)||curPlace;
+      const mx=maxPlace.get(t.tid)||curPlace;
+      const cell=(bucket,cls)=>{
+        const info=t.cells[bucket];
+        if(!info) return `<td class="${cls}"><span class="b-rng">—</span></td>`;
+        const ptsRange=(info.minPts===info.maxPts)?`${info.curPts}`:`${info.minPts}–${info.maxPts}`;
+        const plRange=(info.minPlace===info.maxPlace)?`#${info.curPlace}`:`#${info.minPlace}–${info.maxPlace}`;
+        return `<td class="${cls}"><div class="blsz-cell">
+          <span class="b-pts">${esc(ptsRange)}</span>
+          <span class="b-plc">${esc(plRange)}</span>
+          <span class="b-rng">${esc(info.comp||'')}</span>
+        </div></td>`;
+      };
+      const totalRange=(t.sumMin===t.sumMax)?`${t.sumCur}`:`${t.sumMin}–${t.sumMax}`;
+      const placeRange=(mn===mx)?`${curPlace}`:`${mn}–${mx}`;
+      const logo=logoFor(t.tid,_blszSeason);
+      html+=`<tr>
+        <td class="b-team">
+          <div class="res-team-badge" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc((t.name||t.tid).slice(0,3).toUpperCase())}</div>
+          ${esc(t.name)}
+        </td>
+        ${cell('MB-B','comp-mb')}
+        ${cell('MB-R','comp-mbr')}
+        ${cell('KK','comp-kk')}
+        ${cell('NK','comp-nk')}
+        <td class="b-total"><div class="blsz-cell"><span class="b-pts">${esc(totalRange)}</span><span class="b-plc">cur ${esc(String(t.sumCur))}</span></div></td>
+        <td class="b-place"><div class="blsz-cell"><span class="b-pts">${esc(String(curPlace))}</span><span class="b-plc">${esc(placeRange)}</span></div></td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div>`;
+  }
+  html+='</div>';
+  app.innerHTML=html;
+}
+function selectBlszSeason(s){_blszSeason=s;renderBlszView();}
 
 // ══════════════════════════════════════════════════════════════
 //  RESULTS VIEW
