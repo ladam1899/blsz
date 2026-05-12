@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.3</title>
+<title>League Manager v2026.05.12.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -545,7 +545,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3048,19 +3048,17 @@ function _playStageBarHTML(){
 function _playStadiumPickerHTML(locked){
   const stadiums=_playUniqueStadiums();
   if(!_playNeutralStadium&&stadiums.length)_playNeutralStadium=stadiums[0];
-  // Datalist-backed text input: user can either pick from autocomplete
-  // (populated from teams.csv) or type a custom venue name.
-  const opts=stadiums.map(s=>`<option value="${esc(s)}"></option>`).join('');
-  const placeholder=stadiums.length?'Type or pick a stadium…':'Type a stadium name…';
+  // Proper <select> dropdown populated from teams.csv. The chosen value is
+  // written into _playNeutralStadium and used as stadion_name on save.
+  const opts=stadiums.map(s=>`<option value="${esc(s)}" ${s===_playNeutralStadium?'selected':''}>${esc(s)}</option>`).join('');
   return`<div class="play-stadium-row">
     <label>Neutral stadium:</label>
-    <input type="text" class="play-stadium-sel" list="playStadiumList"
-           value="${esc(_playNeutralStadium||'')}"
-           oninput="_playSetNeutralStadium(this.value)"
-           onchange="_playSetNeutralStadium(this.value)"
-           placeholder="${placeholder}"
-           ${locked?'disabled':''}>
-    <datalist id="playStadiumList">${opts}</datalist>
+    <select class="play-stadium-sel"
+            onchange="_playSetNeutralStadium(this.value)"
+            ${locked?'disabled':''}>
+      ${stadiums.length?'':'<option value="">(no stadiums in teams.csv)</option>'}
+      ${opts}
+    </select>
   </div>`;
 }
 // Dropdown listing the round codes a user can attach this match to. Only
@@ -3164,7 +3162,7 @@ function _playSetMode(m){if(_playStage!=='ready')return;_playMode=m;_playReset()
 function _playSetRound(v){if(_playStage!=='ready')return;_playRound=String(v||'FRIENDLY').trim()||'FRIENDLY';renderPlayView();}
 function _playSetOrg(v){if(_playStage!=='ready')return;_playOrg=String(v||'').trim();renderPlayView();}
 function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;_playSyncType();renderPlayView();}
-function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;}
+function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;renderPlayView();}
 function _playReset(){_playStage='ready';_playData=_emptyPlayData();_playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};renderPlayView();}
 
 // Zero-pads an unset manual input so the result is always a valid integer.
