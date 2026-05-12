@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.7</title>
+<title>League Manager v2026.05.12.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -569,7 +569,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4715,6 +4715,24 @@ function _blszMbBPlace(group, placeInGroup){
   // Fallback: treat unknown labels as 1M (top level).
   return p;
 }
+// MB-R BLSZ place: each Roman level holds a fixed range of overall places.
+//   I    1.. 6   (6 teams)        VI   35..44  (10 teams)
+//   II   7..12   (6 teams)        VII  45..52  (8 teams)
+//   III 13..22  (10 teams)        VIII 53..60  (8 teams)
+//   IV  23..28   (6 teams)        IX   61..68  (8 teams)
+//   V   29..34   (6 teams)        X    69..76  (8 teams)
+// So I winner = BLSZ place 1 (85 pts), II winner = 7 (79 pts), III winner =
+// 13 (73 pts), … X winner = 69 (12 pts).
+const _BLSZ_MBR_OFFSETS={
+  'I':0,'II':6,'III':12,'IV':22,'V':28,'VI':34,'VII':44,'VIII':52,'IX':60,'X':68
+};
+function _blszMbRPlace(level, placeInGroup){
+  if(!level||!placeInGroup) return 0;
+  const off=_BLSZ_MBR_OFFSETS[String(level).trim().toUpperCase()];
+  if(off==null) return 0;
+  const p=parseInt(placeInGroup); if(isNaN(p)||p<1) return 0;
+  return off+p;
+}
 // KK BLSZ place: only the last two phases (KKGOR + KKJKL) award points and
 // the place depends on which group the team finishes in.
 //   α (alfa)        places  1.. 3   (group of 3)
@@ -4832,10 +4850,11 @@ function _blszBuildProjection(season){
     const out=buckets[info.bucket];
     // Translate an in-group rank to a BLSZ continuous place based on bucket.
     //   MB-B   → _blszMbBPlace(group, rank)        — level/group offset
-    //   MB-R   → rank                              — the Roman level IS the table
+    //   MB-R   → _blszMbRPlace(roman, rank)        — Roman-level offset
     //   KK     → _blszKkPlace(comp,  rank)         — greek/jkl offset
     const xlate=(rank)=>{
       if(info.bucket==='MB-B') return _blszMbBPlace(comp,rank);
+      if(info.bucket==='MB-R') return _blszMbRPlace(comp,rank);
       if(info.bucket==='KK')   return _blszKkPlace(comp,rank);
       return rank;
     };
