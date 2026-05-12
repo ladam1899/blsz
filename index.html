@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.1</title>
+<title>League Manager v2026.05.12.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -545,7 +545,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2966,10 +2966,6 @@ function renderPlayView(){
     <div class="play-wrap">
       <div class="play-title">⚽ Play a Match</div>
       ${_playStageBarHTML()}
-      <div class="play-stadium-row" style="margin-bottom:14px;justify-content:center">
-        <label>Org:</label>
-        <select class="play-stadium-sel" onchange="_playSetOrg(this.value)" ${locked?'disabled':''} title="Preferred organisation — sets the default team group and lists this ORG first in the team selectors">${orgOpts.join('')}</select>
-      </div>
       <div class="play-teams">
         <div class="play-team-box">
           <div class="play-team-label">Home</div>
@@ -4062,11 +4058,49 @@ function _buildSimulatedMatchRow(ctx){
     const mt=String(ctx.mt||'0');
     const ftH=h1+h2,ftA=a1+a2;
     const ftTied=ftH===ftA;
-    const needET=(mt==='1'||mt==='11')&&ftTied;
+    // Two-legged second leg: ET/PEN fire on AGGREGATE tie, not single-leg tie.
+    // Look up the matching leg-1 row by "same teams, reversed" so we can read
+    // its 90' score and compute the aggregate from THIS row's home view.
+    let leg1Pair=null, aggTied=false, aggH=ftH, aggA=ftA;
+    if(mt==='2'){
+      const leg1Rounds=(typeof _NK_LEG2_OF==='object'&&_NK_LEG2_OF)
+        ? Object.keys(_NK_LEG2_OF).find(k=>_NK_LEG2_OF[k]===ctx.rounds)
+        : null;
+      if(leg1Rounds && ctx.homeId && ctx.awayId){
+        leg1Pair=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId);
+        if(leg1Pair){
+          aggH=ftH+leg1Pair.a_ft; aggA=ftA+leg1Pair.h_ft;
+          aggTied=aggH===aggA;
+        }
+      }
+    }
+    // ET triggers on: single-knockout 1/11 with FT tied, OR leg-2 (mt=2) with
+    // AGGREGATE tied. Golden-goal rule: at most ONE goal scored in ET total.
+    // If both teams "score" in the simulated 30 min, the higher-attack side
+    // gets the golden goal and the other side's goal is dropped to 0; if the
+    // simulator returned 0-0 we leave ET 0-0 and roll on to penalties.
+    const needET=((mt==='1'||mt==='11')&&ftTied) || (mt==='2'&&aggTied);
     if(needET){
       p3=simPeriodDetailed(H,A,hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
-      het=p3.homeG;aet=p3.awayG;
-      if((ftH+het)===(ftA+aet)){
+      let _het=p3.homeG, _aet=p3.awayG;
+      // Golden-goal collapse: keep at most one goal across both sides combined.
+      if(_het>0 || _aet>0){
+        if(_het>0 && _aet>0){
+          // Both sides scored — pick the side whose ET attack roll was higher.
+          if(p3.hAttRnd>=p3.aAttRnd){ _het=1; _aet=0; }
+          else { _het=0; _aet=1; }
+        } else if(_het>0){ _het=1; _aet=0; }
+        else { _het=0; _aet=1; }
+      }
+      het=_het; aet=_aet;
+      // Decide whether PEN are needed:
+      //   • single-knockout (mt=1/11) → tied if ftH+het == ftA+aet
+      //   • two-legged (mt=2)         → tied on AGGREGATE after ET, i.e.
+      //                                  aggH+het == aggA+aet
+      let etDecided;
+      if(mt==='2'&&leg1Pair) etDecided=(aggH+het)!==(aggA+aet);
+      else etDecided=(ftH+het)!==(ftA+aet);
+      if(!etDecided){
         pp=simPenaltiesDetailed(hSk,aSk,neutral);
         hpen=pp.hpen;apen=pp.apen;
       }
@@ -4084,22 +4118,19 @@ function _buildSimulatedMatchRow(ctx){
     // ───────────────────────────────────────────────────────────────────
     notesParts.push(`(${h1}-${a1})`);
     notesParts.push(`FT: ${ftH}-${ftA}`);
-    if(p3)notesParts.push(`ET: ${ftH+het}-${ftA+aet}`);
+    // ET line: for leg-2, ET is the cumulative AGGREGATE after extra time so
+    // the line reflects the actual tie-breaker the engine used. For single-
+    // knockouts, ET is cumulative for this single match.
+    if(p3){
+      if(mt==='2'&&leg1Pair) notesParts.push(`ET: ${aggH+het}-${aggA+aet}`);
+      else notesParts.push(`ET: ${ftH+het}-${ftA+aet}`);
+    }
     if(pp)notesParts.push(`PEN: ${hpen}-${apen}`);
-    // AGG only for NK two-legged second legs (NKW-5-2 / NKW-6-2) — find the
-    // matching leg-1 row by "same teams, reversed" and sum the 90' scores.
-    const leg1Rounds=(typeof _NK_LEG2_OF==='object'&&_NK_LEG2_OF)
-      ? Object.keys(_NK_LEG2_OF).find(k=>_NK_LEG2_OF[k]===ctx.rounds)
-      : null;
-    if(leg1Rounds&&ctx.homeId&&ctx.awayId){
-      const leg1=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId);
-      if(leg1){
-        // leg-1 HOME is this row's AWAY. Aggregate from THIS row's home view:
-        //   myHomeAgg = myFT_home + leg1.away   (away of leg1 = home of leg2)
-        //   myAwayAgg = myFT_away + leg1.home
-        const aggH=ftH+leg1.a_ft, aggA=ftA+leg1.h_ft;
-        notesParts.push(`AGG: ${aggH}-${aggA}`);
-      }
+    // AGG always for NK two-legged second legs (NKW-5-2 / NKW-6-2). Computed
+    // earlier into aggH/aggA from THIS row's home view; if no leg-1 row was
+    // found we fall back to the leg-only score.
+    if(mt==='2'&&leg1Pair){
+      notesParts.push(`AGG: ${aggH}-${aggA}`);
     }
     const obj={
       date:ctx.date||'',
