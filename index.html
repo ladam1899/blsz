@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.21</title>
+<title>League Manager v2026.05.12.22</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.21</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.22</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2515,34 +2515,61 @@ function _hbUpsertSpringSkill(teamId, halfTag, values){
 function _confirmHalfBoundary(season,splitDate,nextDate){
   return new Promise(resolve=>{
     const aTag=season+'_A', sTag=season+'_S';
-    // Build the team list from teams.csv. Restrict to teams that actually
-    // have an autumn _A row OR a spring _S row in team_skills, to avoid
-    // listing every random team the user might not care about. (Teams with
-    // no skill row at all fall back to defaultSkills() in the simulator and
-    // don't need refreshing here.)
-    const t=DB.team_skills;
-    const ti=t.h.indexOf('team_id'), hi=t.h.indexOf('half_season');
-    const skillIdx={}; _HB_SKILL_COLS.forEach(k=>skillIdx[k]=t.h.indexOf(k));
-    const tidsWithRow=new Set();
-    if(ti>=0&&hi>=0){
-      t.r.forEach(r=>{
-        const tid=String(r[ti]||'').trim();
-        const hs=String(r[hi]||'').trim();
-        if(tid&&(hs===aTag||hs===sTag))tidsWithRow.add(tid);
-      });
-    }
-    const teamsArr=[...tidsWithRow].map(id=>{
-      const tb=(typeof teamById==='function')?teamById(id):{name:id};
-      return {tid:id,name:String(tb.name||id)};
-    }).sort((a,b)=>a.name.localeCompare(b.name));
+    // Build the team list. Prefer teams.csv (so every team in the league
+    // gets a row, regardless of whether team_skills has a row yet). Falls
+    // back to the team_skills row list if teams.csv is empty for some reason.
+    const teamsArr=(function(){
+      const td=DB.teams;
+      const arr=[];
+      if(td&&td.r&&td.h){
+        const idi=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+        if(idi>=0){
+          td.r.forEach(r=>{
+            const id=String(r[idi]||'').trim();
+            if(!id)return;
+            const tb=(typeof teamById==='function')?teamById(id):{name:id};
+            arr.push({tid:id,name:String(tb.name||id)});
+          });
+        }
+      }
+      // Fallback: collect from team_skills if teams.csv produced nothing.
+      if(!arr.length){
+        const t=DB.team_skills;
+        const seen=new Set();
+        if(t&&t.r&&t.h){
+          const ti=t.h.indexOf('team_id');
+          if(ti>=0){
+            t.r.forEach(r=>{
+              const id=String(r[ti]||'').trim();
+              if(id&&!seen.has(id)){seen.add(id);arr.push({tid:id,name:id});}
+            });
+          }
+        }
+      }
+      return arr.sort((a,b)=>a.name.localeCompare(b.name));
+    })();
 
     // Helper to read autumn + spring values for a team/col. Returns ints; NaN
-    // means "no value" (will display as —).
-    const _autVals={}, _sprVals={};
+    // means "no value". Autumn baseline falls back to defaultSkills() when
+    // no _A row exists, so every team is always editable.
+    const _defaults=(typeof defaultSkills==='function')?defaultSkills():{
+      skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50
+    };
+    const _autVals={}, _sprVals={}, _autSource={};
     teamsArr.forEach(tt=>{
-      _autVals[tt.tid]={}; _sprVals[tt.tid]={};
+      _autVals[tt.tid]={}; _sprVals[tt.tid]={}; _autSource[tt.tid]={};
       _HB_SKILL_COLS.forEach(k=>{
-        _autVals[tt.tid][k]=_hbReadSkill(tt.tid,aTag,k);
+        const raw=_hbReadSkill(tt.tid,aTag,k);
+        if(!isNaN(raw)){
+          _autVals[tt.tid][k]=raw;
+          _autSource[tt.tid][k]='A';      // from _A row
+        } else {
+          // No _A row for (team, season). Fall back to defaults so the user
+          // can still adjust spring values. Track that this is a default so
+          // the cell label shows it dimmed.
+          _autVals[tt.tid][k]=parseInt(_defaults[k])||0;
+          _autSource[tt.tid][k]='default';
+        }
         _sprVals[tt.tid][k]=_hbReadSkill(tt.tid,sTag,k);
       });
     });
@@ -2569,9 +2596,12 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       const cells=_HB_SKILL_COLS.map(k=>{
         const a=_autVals[tt.tid][k];
         const adj=_initAdj(tt.tid,k);
-        const aStr=isNaN(a)?'—':String(a);
-        const sStr=isNaN(a)?'—':String(_clamp(k,a+adj));
-        return `<td class="hb-aut">${esc(aStr)}</td>`+
+        const src=_autSource[tt.tid][k];
+        const aStr=String(a);
+        const sStr=String(_clamp(k,a+adj));
+        const aCls='hb-aut'+(src==='default'?' hb-aut-default':'');
+        const aTitle=src==='default'?'No _A row — using default baseline (50)':'Autumn baseline';
+        return `<td class="${aCls}" title="${esc(aTitle)}">${esc(aStr)}</td>`+
                `<td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" data-col="${k}" style="width:48px"></td>`+
                `<td class="hb-spr" data-out="${esc(tt.tid)}|${k}">${esc(sStr)}</td>`;
       }).join('');
@@ -2616,6 +2646,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       .hb-table tbody tr:hover td{background:var(--surface2);}
       .hb-table tbody tr:hover td.hb-team{background:var(--surface2);}
       .hb-table td.hb-aut{color:var(--muted);}
+      .hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}
       .hb-table td.hb-spr{font-weight:700;}
       .hb-table td.hb-adj input{padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;}
       .hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}
@@ -2637,16 +2668,13 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
         // Soft-clamp the ADJUSTMENT itself to a sensible range so a stray
         // 99999 doesn't render an absurd spring value.
         if(v>100)v=100; if(v<-100)v=-100;
-        const a=_autVals[tid][col];
+        const a=_autVals[tid][col];   // always a number now (default 50 / home 0)
         const out=md.querySelector(`td.hb-spr[data-out="${tid}|${col}"]`);
         if(out){
-          if(isNaN(a)){out.textContent='—';}
-          else{
-            const s=_clamp(col,a+v);
-            out.textContent=String(s);
-            if(v!==0)out.classList.add('changed');
-            else out.classList.remove('changed');
-          }
+          const s=_clamp(col,a+v);
+          out.textContent=String(s);
+          if(v!==0)out.classList.add('changed');
+          else out.classList.remove('changed');
         }
         if(v!==0)changed++;
       });
@@ -2663,21 +2691,18 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     const cleanup=()=>{ov.remove();md.remove();styleTag.remove();};
     md.querySelector('#hbCancel').onclick=()=>{cleanup();resolve(false);};
     md.querySelector('#hbOk').onclick=()=>{
-      // Gather the final values per team and upsert _S rows.
+      // Gather the final values per team and upsert _S rows. Every team now
+      // has a baseline (real _A or default), so we always write a complete
+      // spring row.
       let upd=0,ins=0,noop=0;
       teamsArr.forEach(tt=>{
         const values={};
-        let any=false;
         _HB_SKILL_COLS.forEach(k=>{
           const inp=md.querySelector(`input[data-tid="${tt.tid}"][data-col="${k}"]`);
           let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
           const a=_autVals[tt.tid][k];
-          if(isNaN(a))return;             // skip cols with no autumn baseline
-          const s=_clamp(k,a+adj);
-          values[k]=s;
-          any=true;
+          values[k]=_clamp(k,a+adj);
         });
-        if(!any)return;
         const op=_hbUpsertSpringSkill(tt.tid,sTag,values);
         if(op==='inserted')ins++; else if(op==='updated')upd++; else noop++;
       });
@@ -4884,6 +4909,53 @@ function _upsertMatchRow(row){
   m.r.push(row);return'inserted';
 }
 
+// Drop every matches.csv row that (a) was previously auto-generated by this
+// script (notes starts with "[auto]"), (b) belongs to `targetSeason` via
+// seasonFor(date), AND (c) falls in the half being regenerated. Manual rows
+// (notes don't start with [auto]) and rows from OTHER seasons are kept.
+// Returns the number of rows deleted.
+function _clearAutoMatchesForSeason(targetSeason, half, splitDate){
+  const m=DB.matches; if(!m||!m.r||!m.h)return 0;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), noi=_hi('notes');
+  if(di<0||noi<0)return 0;
+  const inHalfHere=(d)=>{
+    if(half==='ALL'||!splitDate)return true;
+    if(!d) return half==='A';
+    if(half==='A') return d<splitDate;
+    return d>=splitDate;
+  };
+  const before=m.r.length;
+  m.r=m.r.filter(r=>{
+    const d=String(r[di]||'').trim();
+    const notes=String(r[noi]||'').trim();
+    const isAuto=/^\[auto\]/i.test(notes);
+    if(!isAuto)return true;                                  // manual → keep
+    // Determine the row's season. Rows with no date are conservatively
+    // treated as belonging to no season → keep (we can't be sure they're
+    // ours to delete).
+    if(!d)return true;
+    const sea=(typeof seasonFor==='function')?seasonFor(d):'';
+    if(sea!==targetSeason)return true;                       // other season → keep
+    if(!inHalfHere(d))return true;                           // other half → keep
+    return false;                                            // drop
+  });
+  return before-m.r.length;
+}
+// Drop every results.csv row for `targetSeason`. We don't have an "auto"
+// marker on results rows, but ALL results rows for a season are produced by
+// Generate Season (or by the user manually for `overall`/`MB` of the PREV
+// season — which is a different season string, so this is safe). Returns
+// the number of rows deleted.
+function _clearAutoResultsForSeason(targetSeason){
+  const d=DB.results; if(!d||!d.r||!d.h)return 0;
+  const si=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='season');
+  if(si<0)return 0;
+  const before=d.r.length;
+  d.r=d.r.filter(r=>String(r[si]||'').trim()!==String(targetSeason).trim());
+  return before-d.r.length;
+}
+
 async function generateSeasonFromDraw(targetSeason, half){
   if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
   const prev=_prevSeasonStr(targetSeason);
@@ -4896,6 +4968,19 @@ async function generateSeasonFromDraw(targetSeason, half){
   const _half=(half==='A'||half==='S')?half:'ALL';
   const springYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
   const splitDate=isNaN(springYear)?'':(springYear+'-01-01');
+  // ── Clean slate for THIS season's auto rows ────────────────────
+  // Drop any previously [auto]-generated matches.csv rows for this season
+  // before regenerating, so re-running Generate Season produces a fresh set
+  // instead of accumulating duplicates or leaving stale rows from an older
+  // run. Manual rows (Play page — notes do NOT start with [auto]) and rows
+  // for OTHER seasons are left untouched. In half-mode we only clear rows
+  // in the half being regenerated.
+  // Same logic for results.csv: any auto-written results row for this
+  // season is dropped. The Generate Season pipeline will re-upsert them
+  // from scratch as each phase finishes.
+  const _wipedAutoMatches=_clearAutoMatchesForSeason(targetSeason, _half, splitDate);
+  const _wipedAutoResults=_clearAutoResultsForSeason(targetSeason);
+  console.log(`[GenerateSeason] cleared ${_wipedAutoMatches} auto matches.csv rows and ${_wipedAutoResults} results.csv rows for season ${targetSeason} (half=${_half})`);
   const inHalf=(dateStr)=>{
     if(_half==='ALL') return true;
     if(!dateStr||!splitDate) return _half==='A';        // no date → assume autumn
