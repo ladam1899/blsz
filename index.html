@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.19</title>
+<title>League Manager v2026.05.12.20</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.19</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.20</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2411,72 +2411,47 @@ function openHeadToHead(aId,bId){
   document.getElementById('infoModal').classList.add('open');
 }
 
+// Per-session memo so the popup fires exactly once per season-crossing.
+// If the user cancels, the entry is cleared so the next click re-prompts.
+const _springPopupShown=new Set();
+
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
-  // Half-season boundary check: if the next round is in the SPRING half of
-  // some season AND that season's spring matches haven't been generated yet
-  // (no spring row in matches.csv has a recorded score), pause and run the
-  // spring sim from the modal. This fires whenever you advance INTO the
-  // spring half — not just on the exact crossing transition — so a refresh
-  // or replay doesn't silently skip the prompt.
-  //
-  // We base "which season's spring are we entering" on the NEXT round's
-  // date, since the cur date might still be on Dec 31 even if next is
-  // Jan-something of a different season (`seasonFor` wraps the year at
-  // mid-June).
+  // Half-season boundary trigger: fires when this click crosses Jan 1 of
+  // the next round's season. We compute the Jan-1 split from the NEXT
+  // round's date (so even a Dec→Jan jump across the football season
+  // boundary is handled correctly), then check whether `cur < split` and
+  // `next.date >= split`. That's the exact "I'm crossing the line" event.
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
-  if(nextSeason){
-    const sy=(()=>{const m=String(nextSeason).match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-    const split=isNaN(sy)?'':(sy+'-01-01');
-    const nextIsSpring=split && next.date>=split;
-    if(nextIsSpring && !_springHalfReady(nextSeason,split)){
-      console.log(`[advanceToNextRound] spring popup → season=${nextSeason} split=${split} next=${next.date}`);
-      const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
-      if(!ok){
-        toast('Half-season transition cancelled — current date kept where it is','warn');
-        return;
-      }
-      // Run the spring generation now, with the MB-4 picker inside.
-      try{
-        await generateSeasonFromDraw(nextSeason,'S');
-      }catch(e){
-        console.error('[advanceToNextRound] spring sim failed:',e);
-        toast('Spring generation failed — see console','err');
-        return;
-      }
+  const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+  const split=isNaN(sy)?'':(sy+'-01-01');
+  const isCrossing=!!(split && (!cur || cur<split) && next.date>=split);
+  console.log(`[advanceToNextRound] cur=${cur} next=${next.date} season=${nextSeason} split=${split} crossing=${isCrossing} shown=${_springPopupShown.has(nextSeason)}`);
+  if(isCrossing && !_springPopupShown.has(nextSeason)){
+    _springPopupShown.add(nextSeason);
+    const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
+    if(!ok){
+      _springPopupShown.delete(nextSeason); // allow re-prompt on the next click
+      toast('Half-season transition cancelled — current date kept where it is','warn');
+      return;
+    }
+    // Run the spring generation now (MB-4 picker + sim + NSZK + groups).
+    try{
+      await generateSeasonFromDraw(nextSeason,'S');
+    }catch(e){
+      console.error('[advanceToNextRound] spring sim failed:',e);
+      toast('Spring generation failed — see console','err');
+      return;
     }
   }
   setState('current_date',next.date,true);
   lgSelRound=null;
   toast(`Current date → ${next.date}`,'');
   renderLeagueView();
-}
-
-// True if the spring half of `season` already has match rows with recorded
-// full-time scores — i.e. the spring sim has already run. Used to suppress
-// the boundary popup on the second crossing.
-//
-// Note: we look for SPRING rows (date >= splitDate) WITH a score; we do NOT
-// require the autumn half to be fully scored, because some draws have rows
-// without dates that fall into autumn-by-default and we don't want to chase
-// them. A single scored spring row is sufficient evidence.
-function _springHalfReady(season,splitDate){
-  const m=DB.matches; if(!m||!m.r||!splitDate)return false;
-  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'),hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
-  if(di<0||hsi<0||asi<0)return false;
-  for(const r of m.r){
-    const d=String(r[di]||'').trim();
-    if(!d||d<splitDate)continue;
-    if(typeof seasonFor==='function'&&seasonFor(d)!==season)continue;
-    const hs=String(r[hsi]||'').trim(),as=String(r[asi]||'').trim();
-    if(hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as)))return true;
-  }
-  return false;
 }
 
 // Build a tiny HTML preview of every team's autumn (`_A`) vs spring (`_S`)
