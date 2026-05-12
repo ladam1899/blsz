@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.15</title>
+<title>League Manager v2026.05.12.16</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.15</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.16</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4459,6 +4459,140 @@ function _writeFinalTable(season, competition, table){
   return n;
 }
 
+// Parse a latitude / longitude cell. Values in teams.csv sometimes carry a
+// leading "(" (e.g. "(47.4892") or other surrounding punctuation when they
+// were copy-pasted from a "lat, lon" formatted source. Returns NaN if no
+// valid number can be extracted.
+function _parseLatLon(v){
+  const s=String(v||'').replace(/[^\d.\-]/g,'');
+  if(!s)return NaN;
+  const n=parseFloat(s);
+  return isNaN(n)?NaN:n;
+}
+// Look up (lat, lon) for a team_id from DB.teams. Returns {lat,lon} where any
+// missing value is NaN.
+function _teamGeo(teamId){
+  const d=DB.teams; if(!d||!d.r) return {lat:NaN,lon:NaN};
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const idi=_hi('team_id'); const lai=_hi('latitude'); const loi=_hi('longitude');
+  if(idi<0||lai<0||loi<0) return {lat:NaN,lon:NaN};
+  for(const r of d.r){
+    if(String(r[idi]||'').trim()===String(teamId).trim()){
+      return {lat:_parseLatLon(r[lai]), lon:_parseLatLon(r[loi])};
+    }
+  }
+  return {lat:NaN,lon:NaN};
+}
+
+// Compute the final BLSZ ranking for `season` and write next-season group
+// assignments into results.csv:
+//   • `overall` / `MB` master ranking (sorted by BLSZ pts desc) — used by
+//     plain-integer place tokens in next season's draw.csv.
+//   • `1M` / `1N`            — MB1: top 16 BLSZ teams split odd/even.
+//                              Odd BLSZ place → 1N. Even → 1M. Each gets 8.
+//   • `2A` / `2B` / `2C`     — MB2: BLSZ 17..40 split by (rank-17) mod 3.
+//                              mod==0 → 2A; mod==1 → 2B; mod==2 → 2C. 8 each.
+//   • `3NY` / `3K` / `3É` / `3D` — MB3: BLSZ 41..72 split by location:
+//                              first 8 westernmost teams → 3NY,
+//                              of the remaining 24 the 8 easternmost → 3K,
+//                              of the remaining 16 the 8 northernmost → 3É,
+//                              the last 8 → 3D.
+// Within each group, teams are written into places 1..8 by BLSZ rank ascending
+// so place #1 is the strongest team in that group.
+//
+// Returns the number of results rows written (or 0 if BLSZ projection is empty).
+function _writeNextSeasonGroups(season){
+  if(typeof _blszBuildProjection!=='function') return 0;
+  const proj=_blszBuildProjection(season);
+  // Aggregate per-team total points (matches the BLSZ view's sumCur logic).
+  const totals=new Map();
+  ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
+    Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
+      totals.set(tid,(totals.get(tid)||0)+(info.curPts||0));
+    });
+  });
+  if(!totals.size) return 0;
+  const ranked=[...totals.entries()].map(([tid,pts])=>{
+    const t=(typeof teamById==='function')?teamById(tid):{name:tid};
+    return {tid,pts,name:String(t.name||tid)};
+  }).sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
+  let written=0;
+  // Master "overall" ranking — sufficient for next season's plain-integer
+  // place tokens (e.g. `MB-1`, `MB-2`, …). Also write a duplicate copy under
+  // competition='MB' since the place-map lookup accepts both labels.
+  ranked.forEach((t,i)=>{
+    _upsertResultsRow(season,'overall',i+1,t.tid); written++;
+    _upsertResultsRow(season,'MB',i+1,t.tid); written++;
+  });
+  // ── MB1 (BLSZ 1..16): odd BLSZ rank → 1N, even → 1M ─────────────
+  // BLSZ rank is 1-based, so the BEST team (rank 1) goes to 1N. The user
+  // specified "odd numbers of place shold go to N group".
+  const mb1=ranked.slice(0,16);
+  const m1n=[], m1m=[];
+  mb1.forEach((t,idx)=>{
+    const rank=idx+1;
+    (rank%2===1?m1n:m1m).push(t);
+  });
+  // Within each group: sort by BLSZ rank ascending (already true because we
+  // walked `ranked` in order). Write places 1..8.
+  m1n.forEach((t,i)=>{_upsertResultsRow(season,'1N',i+1,t.tid);written++;});
+  m1m.forEach((t,i)=>{_upsertResultsRow(season,'1M',i+1,t.tid);written++;});
+  // ── MB2 (BLSZ 17..40): split by (rank-17) mod 3 ─────────────────
+  // mod==0 → 2A; mod==1 → 2B; mod==2 → 2C. Yields 8 teams per group when the
+  // pool has exactly 24 teams (the BLSZ has at least this many).
+  const mb2=ranked.slice(16,40);
+  const m2a=[],m2b=[],m2c=[];
+  mb2.forEach((t,idx)=>{
+    const m=idx%3;
+    (m===0?m2a:m===1?m2b:m2c).push(t);
+  });
+  m2a.forEach((t,i)=>{_upsertResultsRow(season,'2A',i+1,t.tid);written++;});
+  m2b.forEach((t,i)=>{_upsertResultsRow(season,'2B',i+1,t.tid);written++;});
+  m2c.forEach((t,i)=>{_upsertResultsRow(season,'2C',i+1,t.tid);written++;});
+  // ── MB3 (BLSZ 41..72): geographic split ─────────────────────────
+  // Stages, in order:
+  //   1. 8 westernmost (lowest longitude) of the full pool → 3NY
+  //   2. 8 easternmost (highest longitude) of the remaining 24 → 3K
+  //   3. 8 northernmost (highest latitude)  of the remaining 16 → 3É
+  //   4. The last 8 → 3D
+  // Ties / missing coords: teams with NaN lat or lon sink to the END of the
+  // sort so they fall into 3D rather than skewing the geographic picks.
+  const mb3=ranked.slice(40,72).map(t=>Object.assign({}, t, _teamGeo(t.tid)));
+  const _pickN=(pool,key,dir,n)=>{
+    // dir: +1 = pick smallest (most western / southern); -1 = largest (most
+    // eastern / northern). NaN values sort to the end either way.
+    const sorted=pool.slice().sort((a,b)=>{
+      const va=a[key], vb=b[key];
+      const aNaN=isNaN(va), bNaN=isNaN(vb);
+      if(aNaN&&bNaN) return 0;
+      if(aNaN) return 1;
+      if(bNaN) return -1;
+      return (va-vb)*dir;
+    });
+    const picked=sorted.slice(0,n);
+    const pickedSet=new Set(picked.map(t=>t.tid));
+    const rest=pool.filter(t=>!pickedSet.has(t.tid));
+    // Sort the picked group back into BLSZ order so place 1 inside the group
+    // is the best-ranked team, not the most-extreme by coordinate.
+    picked.sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
+    return {picked,rest};
+  };
+  let pool=mb3;
+  const sNY=_pickN(pool,'lon',+1,8); pool=sNY.rest;   // most west
+  const sK =_pickN(pool,'lon',-1,8); pool=sK.rest;    // most east of rest
+  const sÉ =_pickN(pool,'lat',-1,8); pool=sÉ.rest;    // most north of rest
+  const sD =pool.slice().sort((a,b)=>(b.pts-a.pts)||a.name.localeCompare(b.name));
+  sNY.picked.forEach((t,i)=>{_upsertResultsRow(season,'3NY',i+1,t.tid);written++;});
+  sK .picked.forEach((t,i)=>{_upsertResultsRow(season,'3K', i+1,t.tid);written++;});
+  sÉ .picked.forEach((t,i)=>{_upsertResultsRow(season,'3É', i+1,t.tid);written++;});
+  sD       .forEach((t,i)=>{_upsertResultsRow(season,'3D', i+1,t.tid);written++;});
+  console.log(`[NextSeasonGroups] season=${season} written=${written} `+
+    `1M=${m1m.length} 1N=${m1n.length} `+
+    `2A=${m2a.length} 2B=${m2b.length} 2C=${m2c.length} `+
+    `3NY=${sNY.picked.length} 3K=${sK.picked.length} 3É=${sÉ.picked.length} 3D=${sD.length}`);
+  return written;
+}
+
 function _upsertMatchRow(row){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
@@ -4894,6 +5028,18 @@ async function generateSeasonFromDraw(targetSeason, half){
     } else {
       console.log('[GenerateSeason] NSZK skipped — missing seed:',{mbrI,nkW,kkW});
     }
+  }
+
+  // ── PHASE 6: write next-season MB-B group assignments from final BLSZ.
+  // Only after a complete season (ALL or spring run). Populates results.csv
+  // rows for competition ∈ {overall, MB, 1M, 1N, 2A, 2B, 2C, 3NY, 3K, 3É, 3D}
+  // so the FOLLOWING season's Generate Season can resolve plain-integer place
+  // tokens (`MB-1`, `MB-2`, …) AND per-group tokens (`1M 7`, etc.) without
+  // any manual results.csv editing.
+  if((_half==='ALL'||_half==='S')&&typeof _writeNextSeasonGroups==='function'){
+    const wrote=_writeNextSeasonGroups(targetSeason);
+    resRows+=wrote;
+    console.log(`[GenerateSeason] PHASE 6 wrote ${wrote} BLSZ-driven group rows for ${targetSeason}`);
   }
 
   console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, ${resRows} results rows, missingDates=${missingDates.size}`);
