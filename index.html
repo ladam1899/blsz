@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.13</title>
+<title>League Manager v2026.05.12.14</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -410,6 +410,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .blsz-flat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;overflow-x:auto;}
 .blsz-flat table{width:100%;border-collapse:collapse;font-size:12px;}
 .blsz-flat thead th{position:sticky;top:0;background:var(--surface2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--border);text-align:center;white-space:nowrap;}
+.blsz-flat thead th.sortable{cursor:pointer;user-select:none;}
+.blsz-flat thead th.sortable:hover{color:var(--text);background:var(--surface);}
+.blsz-flat thead th .sort-arrow{display:inline-block;margin-left:4px;font-size:9px;opacity:.6;}
+.blsz-flat thead th.sort-active{color:var(--text);}
+.blsz-flat thead th.sort-active .sort-arrow{opacity:1;color:var(--blue);}
 .blsz-flat thead th.b-team{text-align:left;}
 .blsz-flat tbody td{padding:6px 10px;border-bottom:1px solid var(--border);text-align:center;vertical-align:middle;font-family:'JetBrains Mono',monospace;}
 .blsz-flat tbody td.b-team{text-align:left;font-family:'Inter',sans-serif;font-weight:500;white-space:nowrap;}
@@ -603,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.13</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.14</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -684,7 +689,8 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
       📎 Attach CSV
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edImportCSV(event)">
     </label>
-    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate a full season of matches from draw.csv + calendar.csv + previous results.csv">🆕 Generate Season</button>
+    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. After this finishes, refine team_skills for the spring half (_S rows), then run ▶ Generate Spring Half.">🆕 Generate Season (autumn)</button>
+    <button class="tbtn" id="edGenSpringBtn" style="display:none" onclick="_promptGenerateSpring()" title="Generate the SPRING HALF of a season (date >= Jan 1). Reads refreshed _S team_skills rows for the spring sim, and writes the NSZK Super Cup matches (semi + final).">▶ Generate Spring Half</button>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
@@ -4398,6 +4404,23 @@ function _buildSimulatedMatchRow(ctx){
 // Returns 'updated' | 'inserted'.
 // Upsert one results.csv row keyed by (season, competition, place).
 // Returns 'updated' | 'inserted'. Schema: season, competition, place, team_id.
+// Lookup helper: get the team_id stored at (season, competition, place) in
+// results.csv. Returns '' if no matching row. Used by the NSZK seed-resolver
+// to find the MB-R I / NK / KK winners.
+function _resultByPlace(season, competition, place){
+  const d=DB.results; if(!d||!d.r) return '';
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id');
+  if(si<0||ci<0||pi<0||ti<0) return '';
+  const sStr=String(season),cStr=String(competition),pStr=String(place);
+  for(const r of d.r){
+    if(String(r[si]||'').trim()!==sStr)continue;
+    if(String(r[ci]||'').trim()!==cStr)continue;
+    if(String(r[pi]||'').trim()!==pStr)continue;
+    return String(r[ti]||'').trim();
+  }
+  return '';
+}
 function _upsertResultsRow(season, competition, place, teamId){
   const d=DB.results;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
@@ -4450,11 +4473,47 @@ function _upsertMatchRow(row){
   m.r.push(row);return'inserted';
 }
 
-async function generateSeasonFromDraw(targetSeason){
+async function generateSeasonFromDraw(targetSeason, half){
   if(!targetSeason){toast('Enter a target season first (e.g. 2000_01)','warn');return;}
   const prev=_prevSeasonStr(targetSeason);
   if(!prev){toast('Target season must be YYYY_YY format','err');return;}
   ensureMatchCols();
+  // Half-season gating. `half` ∈ {'A','S','ALL'}; defaults to 'ALL' for back-
+  // compat with any legacy callers. The cutoff date is Jan 1 of the season's
+  // SPRING year (e.g. season '2000_01' → cutoff '2001-01-01'). Autumn rows
+  // have date STRICTLY BEFORE this; spring rows are >= this date.
+  const _half=(half==='A'||half==='S')?half:'ALL';
+  const springYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+  const splitDate=isNaN(springYear)?'':(springYear+'-01-01');
+  const inHalf=(dateStr)=>{
+    if(_half==='ALL') return true;
+    if(!dateStr||!splitDate) return _half==='A';        // no date → assume autumn
+    if(_half==='A') return String(dateStr)<splitDate;   // strictly before Jan 1
+    return String(dateStr)>=splitDate;                  // spring: from Jan 1
+  };
+  // Wrap _buildSimulatedMatchRow so out-of-half rows produce a blank stub
+  // instead of being simulated. The stub still gets upserted so the row
+  // exists with the right (rounds, level, mn, date, teams) for the
+  // complementary half-generator to fill in later.
+  const _stubRow=(ctx)=>{
+    const cols=DB.matches.h;
+    const obj={
+      date:ctx.date||'',
+      rounds:ctx.rounds||'',
+      level:ctx.level||'',
+      match_type:String(ctx.mt||'0'),
+      match_number:ctx.mn||'',
+      stadion_name:'',
+      home_id:ctx.homeId||'',
+      away_id:ctx.awayId||'',
+      notes:'[auto] '+(_half==='A'?'spring':'autumn')+' half — sim pending'
+    };
+    return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:false};
+  };
+  const _buildOrStub=(ctx)=>{
+    if(_half!=='ALL'&&!inHalf(ctx.date)) return _stubRow(ctx);
+    return _buildSimulatedMatchRow(ctx);
+  };
 
   const d=DB.draw;
   if(!d.r.length){toast('draw.csv is empty','warn');return;}
@@ -4567,8 +4626,11 @@ async function generateSeasonFromDraw(targetSeason){
   const roundNums=[...mbrByRound.keys()].sort((a,b)=>a-b);
 
   const totalPlanned=mbbPlan.length+mbR.length+kkTotal+nkCount;
+  const halfLbl=(_half==='A')?'AUTUMN half only (date < '+splitDate+')'
+                :(_half==='S')?'SPRING half only (date ≥ '+splitDate+') + NSZK Super Cup'
+                :'FULL season';
   const lines=[
-    `Generate ${totalPlanned} match rows for season ${targetSeason}?`,
+    `Generate ${totalPlanned} match rows for season ${targetSeason} — ${halfLbl}?`,
     `• MB-B: ${mbbPlan.length} rows`,
     `• MB-R: ${mbR.length} rows across ${roundNums.length} rounds (${roundNums.length?'R'+roundNums[0]+'→R'+roundNums[roundNums.length-1]:'none'})`,
     kkqCount?`• KKQ: ${kkqCount} rows across ${kkqByRnd.size} rounds`:'',
@@ -4593,14 +4655,17 @@ async function generateSeasonFromDraw(targetSeason){
   // ── PHASE 1: simulate MB-B rows and upsert ────────────────────
   let upd=0,ins=0,blank=0,resRows=0;
   mbbPlan.forEach(ctx=>{
-    const{row,simulated}=_buildSimulatedMatchRow(ctx);
+    const{row,simulated}=_buildOrStub(ctx);
     if(!simulated)blank++;
     const op=_upsertMatchRow(row);
     if(op==='updated')upd++;else ins++;
   });
   // MB-B finished — write each group's final table into results.csv.
   // Competition = the MB-B level label itself (e.g. '1M', '1N', '2A', '3NY', '4K').
-  {
+  // Only write final tables when the WHOLE season is complete (ALL or spring).
+  // After an autumn-only run the spring rows are still blank, so the tables
+  // would be misleading.
+  if(_half==='ALL'||_half==='S'){
     const mbbGroups=[...new Set(mbB.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbbGroups.forEach(g=>{
       resRows+=_writeFinalTable(targetSeason,g,_mbBGroupTable(g));
@@ -4626,7 +4691,7 @@ async function generateSeasonFromDraw(targetSeason){
       if(!aa.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
       const cal=calMap.get(rnd);
       if(!cal)missingDates.add(rnd);
-      const{row,simulated}=_buildSimulatedMatchRow({
+      const{row,simulated}=_buildOrStub({
         rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
       });
       if(!simulated)blank++;
@@ -4636,7 +4701,7 @@ async function generateSeasonFromDraw(targetSeason){
   }
   // MB-R finished — write each level's final table into results.csv.
   // Competition = the Roman-numeral level (e.g. 'I', 'II', …, 'X').
-  {
+  if(_half==='ALL'||_half==='S'){
     const mbrLevels=[...new Set(mbR.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbrLevels.forEach(lvl=>{
       resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity));
@@ -4675,7 +4740,7 @@ async function generateSeasonFromDraw(targetSeason){
         if(!aa.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildSimulatedMatchRow({
+        const{row,simulated}=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
         if(!simulated)blank++;
@@ -4690,7 +4755,7 @@ async function generateSeasonFromDraw(targetSeason){
       KKABC:_kkabcGroupTable, KKJKL:_kkjklGroupTable,
       KKGOR:_kkgorGroupTable
     }[phaseName];
-    if(_tableFn){
+    if(_tableFn&&(_half==='ALL'||_half==='S')){
       const levels=new Set();
       for(const arr of byRnd.values())
         for(const r of arr){
@@ -4748,7 +4813,7 @@ async function generateSeasonFromDraw(targetSeason){
         if(!aa.id)nkUnresolved.push({phase:phaseKey,rounds:rnd,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd)||calMap.get(rawRnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildSimulatedMatchRow({
+        const{row,simulated}=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
         if(!simulated)blank++;
@@ -4760,7 +4825,9 @@ async function generateSeasonFromDraw(targetSeason){
 
   // NK finished — record podium: 1=W-final winner, 2=W-final loser,
   // 3=L-final (3rd-place play-off) winner, 4=L-final loser. Competition='NK'.
-  if(nkCount){
+  // Only when the season is complete (ALL or spring run). After autumn-only
+  // run, NK final rows are still blank stubs.
+  if(nkCount&&(_half==='ALL'||_half==='S')){
     const _wWin=_nkSingleLegWinner('NKW-7-1','1');
     const _wLos=_nkSingleLegLoser ('NKW-7-1','1');
     const _lWin=_nkSingleLegWinner('NKL-9-1','1');
@@ -4768,6 +4835,61 @@ async function generateSeasonFromDraw(targetSeason){
     [_wWin,_wLos,_lWin,_lLos].forEach((id,i)=>{
       if(id){ _upsertResultsRow(targetSeason,'NK',i+1,id); resRows++; }
     });
+  }
+  // ── PHASE 5: NSZK Super Cup (semi + final) ─────────────────────
+  // Only fires on a complete-season run (ALL) or the spring half (S). The
+  // three trophies that seed NSZK — MB-R I winner, NK winner, KK winner —
+  // have ranked tables by now, so we can look them up from results.csv.
+  // The semi pairs (NK winner) vs (KK winner); the final pairs (SF winner)
+  // vs (MB-R I winner). If two of the three winners are the same team, the
+  // duplicated trophy's RUNNER-UP takes its seed. Both matches are mt=11
+  // (neutral venue). Rows are upserted by (rounds, level, match_number).
+  if((_half==='ALL'||_half==='S')&&typeof _resultByPlace==='function'){
+    const _seed=(comp,place)=>typeof _resultByPlace==='function'?_resultByPlace(targetSeason,comp,place):'';
+    // Pick MB-R I winner (place 1 in competition 'I' for this season).
+    let mbrI=_seed('I',1);
+    // NK winner (place 1 in 'NK'); KK winner = best KKGOR group α (alfa) winner
+    // recorded as place 1 in 'KKGOR-α (alfa)'.
+    let nkW=_seed('NK',1);
+    let kkW=_seed('KKGOR-α (alfa)',1);
+    // Duplicate-winner fallback: if any two of the three seeds collide, the
+    // duplicated trophy uses its runner-up.
+    if(mbrI && (mbrI===nkW)) nkW=_seed('NK',2)||nkW;
+    if(mbrI && (mbrI===kkW)) kkW=_seed('KKGOR-α (alfa)',2)||kkW;
+    if(nkW && (nkW===kkW))   kkW=_seed('KKGOR-α (alfa)',2)||kkW;
+    // Calendar dates: NSZK-ED + NSZK-F (look up from calendar map).
+    const dateED=(calMap.get('NSZK-ED')||{}).date||'';
+    const dateF =(calMap.get('NSZK-F') ||{}).date||'';
+    if(!dateED) missingDates.add('NSZK-ED');
+    if(!dateF)  missingDates.add('NSZK-F');
+    if(nkW&&kkW&&mbrI){
+      // Semi
+      const {row:rEd,simulated:sEd}=_buildSimulatedMatchRow({
+        rounds:'NSZK-ED',level:'',mt:'11',mn:'1',
+        date:dateED,homeId:nkW,awayId:kkW
+      });
+      if(!sEd) blank++;
+      const opEd=_upsertMatchRow(rEd);
+      if(opEd==='updated') upd++; else ins++;
+      // Resolve SF winner from the just-written row.
+      const sfWinner=_nkSingleLegWinner('NSZK-ED','1');
+      const finalAway=sfWinner||nkW;
+      // Final
+      const {row:rF,simulated:sF}=_buildSimulatedMatchRow({
+        rounds:'NSZK-F',level:'',mt:'11',mn:'1',
+        date:dateF,homeId:mbrI,awayId:finalAway
+      });
+      if(!sF) blank++;
+      const opF=_upsertMatchRow(rF);
+      if(opF==='updated') upd++; else ins++;
+      // Results: 1 = NSZK-F winner, 2 = NSZK-F loser.
+      const fWin=_nkSingleLegWinner('NSZK-F','1');
+      const fLos=_nkSingleLegLoser ('NSZK-F','1');
+      if(fWin){_upsertResultsRow(targetSeason,'NSZK',1,fWin);resRows++;}
+      if(fLos){_upsertResultsRow(targetSeason,'NSZK',2,fLos);resRows++;}
+    } else {
+      console.log('[GenerateSeason] NSZK skipped — missing seed:',{mbrI,nkW,kkW});
+    }
   }
 
   console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, ${resRows} results rows, missingDates=${missingDates.size}`);
@@ -4842,7 +4964,33 @@ async function fillDatesFromCalendar(){
 function _promptGenerateSeason(){
   const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
   const input=prompt('Target season to generate (format YYYY_YY, e.g. 2000_01):',def||'2000_01');
-  if(input)generateSeasonFromDraw(String(input).trim());
+  if(input)generateSeasonFromDraw(String(input).trim(),'A');
+}
+// Prompt + generate ONLY the spring half (date >= Jan 1 of the season's
+// spring year). Refuses if no autumn-half rows for that season exist yet.
+function _promptGenerateSpring(){
+  const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
+  const input=prompt('Target season to generate SPRING HALF for (format YYYY_YY):',def||'2000_01');
+  if(!input)return;
+  const targetSeason=String(input).trim();
+  // Sanity check: at least one matches.csv row for this season with date in
+  // the autumn half (Jul–Dec) must exist before we try to sim spring rows.
+  const m=DB.matches; if(!m||!m.h){toast('matches.csv not loaded','err');return;}
+  const di=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  if(di<0){toast('matches.csv missing date column','err');return;}
+  const hasAutumn=m.r.some(r=>{
+    const d=String(r[di]||'').trim();
+    if(!d)return false;
+    const s=typeof seasonFor==='function'?seasonFor(d):'';
+    if(s!==targetSeason)return false;
+    const hs=typeof halfSeasonFor==='function'?halfSeasonFor(d):'';
+    return /_A$/.test(hs);
+  });
+  if(!hasAutumn){
+    toast(`No autumn matches found for season ${targetSeason} — run Generate Season first.`,'warn');
+    return;
+  }
+  generateSeasonFromDraw(targetSeason,'S');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -4858,7 +5006,12 @@ const BLSZ_POINTS={
   // j/k/l groups of 6 (places 28–45). Group winners get the first slot in
   // their range; group bottoms get the last slot.
   'KK':  [85,84,83,81,80,79,77,76,75,73,72,71,69,68,67,65,64,63,61,60,59,57,56,55,53,52,51,49,48,47,46,45,44,42,41,40,39,38,37,35,34,33,32,31,30],
-  'NK':  [77,68,65,62,60,60,43,43,34,34,34,34,26,26,26,26,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9]
+  'NK':  [77,68,65,62,60,60,43,43,34,34,34,34,26,26,26,26,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],
+  // Szuper Kupa (NSZK): 2 places only.
+  //   place 1 = final winner  → 17 pts
+  //   place 2 = final loser   →  8 pts
+  // SF loser earns 0 (not on the table). Only the final's 2 participants score.
+  'NSZK':[17,8]
 };
 function _blszPtsFor(comp,place){
   const t=BLSZ_POINTS[comp]; if(!t) return 0;
@@ -4872,6 +5025,7 @@ function _blszBucketFor(comp){
   const c=String(comp||'').trim();
   if(!c) return null;
   if(c==='NK') return 'NK';
+  if(c==='NSZK') return 'NSZK';
   if(/^(I|II|III|IV|V|VI|VII|VIII|IX|X)$/.test(c)) return 'MB-R';
   // Only the final two KK phases count toward BLSZ points (KKGOR for Greek-
   // letter groups and KKJKL for j/k/l groups). Earlier KK rounds determine
@@ -4988,7 +5142,7 @@ function _blszLeagueLabel(rank){
 }
 
 function _blszBuildProjection(season, dateCutoff){
-  const buckets={'MB-B':{},'MB-R':{},'KK':{},'NK':{}};
+  const buckets={'MB-B':{},'MB-R':{},'KK':{},'NK':{},'NSZK':{}};
   const m=DB.matches; if(!m||!m.r) return buckets;
   const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
   const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
@@ -5010,7 +5164,7 @@ function _blszBuildProjection(season, dateCutoff){
       : null;
     if(!comp) return;
     const bucket=_blszBucketFor(comp);
-    if(!bucket||bucket==='NK') return; // NK podium handled separately
+    if(!bucket||bucket==='NK'||bucket==='NSZK') return; // NK podium + NSZK final handled separately
     if(!byComp[comp]) byComp[comp]={bucket, rows:[]};
     // If row is after cutoff, push a score-blanked copy so it's classified
     // as "unplayed" by the played/unplayed splitter below.
@@ -5197,6 +5351,38 @@ function _blszBuildProjection(season, dateCutoff){
       });
     });
   })();
+  // NSZK Super Cup — 2-place podium for the FINAL match.
+  //   NSZK-F winner → place 1 (17 pts)
+  //   NSZK-F loser  → place 2 ( 8 pts)
+  // The semi (NSZK-ED) is just a feeder — its loser earns 0 BLSZ pts.
+  (function _buildNszkBucketsForSeason(){
+    if(!m||!m.r)return;
+    const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+    const di=_hi('date'),ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),
+          hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+    if(di<0||ri<0||hi<0||ai<0||hsi<0||asi<0)return;
+    for(const row of m.r){
+      const date=String(row[di]||'').trim();
+      if(!date)continue;
+      if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)continue;
+      if(cutoff&&date>cutoff)continue;
+      const rnd=String(row[ri]||'').trim().toUpperCase();
+      if(rnd!=='NSZK-F')continue;
+      const h=String(row[hi]||'').trim(),a=String(row[ai]||'').trim();
+      const hs=parseInt(row[hsi]),as=parseInt(row[asi]);
+      if(!h||!a||isNaN(hs)||isNaN(as))continue;
+      const win=hs>as?h:(hs<as?a:'');
+      const los=hs>as?a:(hs<as?h:'');
+      if(win){
+        const pts=_blszPtsFor('NSZK',1);
+        buckets.NSZK[win]={comp:'NSZK',curPlace:1,curPts:pts,minPlace:1,maxPlace:1,minPts:pts,maxPts:pts};
+      }
+      if(los){
+        const pts=_blszPtsFor('NSZK',2);
+        buckets.NSZK[los]={comp:'NSZK',curPlace:2,curPts:pts,minPlace:2,maxPlace:2,minPts:pts,maxPts:pts};
+      }
+    }
+  })();
   return buckets;
 }
 
@@ -5286,6 +5472,17 @@ function _blszBuildLegend(){
         `<td>${pInTier}</td><td class="lg-pts">${pts['NK'][p-1]||0}</td></tr>`;
     }
   });
+  // ── NSZK Super Cup: 2 places (final winner + loser). ──────────────────
+  const nszkTiers=[
+    {place:1, ctx:'NSZK-F winner'},
+    {place:2, ctx:'NSZK-F loser' }
+  ];
+  let nszkRows='';
+  nszkTiers.forEach(t=>{
+    nszkRows+=`<tr>`+
+      `<td>${t.place}</td><td class="lg-grp">${esc(t.ctx)}</td>`+
+      `<td>1</td><td class="lg-pts">${pts['NSZK'][t.place-1]||0}</td></tr>`;
+  });
   const head=`<thead><tr><th>Overall</th><th>Group</th><th>Place</th><th>Pts</th></tr></thead>`;
   const nkHead=`<thead><tr><th>Overall</th><th>Match · result</th><th>#</th><th>Pts</th></tr></thead>`;
   return `<details class="blsz-legend">
@@ -5295,12 +5492,26 @@ function _blszBuildLegend(){
       <div class="blsz-legend-section"><h4>MB-R (76 places)</h4><table>${head}<tbody>${mbrRows}</tbody></table></div>
       <div class="blsz-legend-section"><h4>KK — KKGOR + KKJKL (45 places)</h4><table>${head}<tbody>${kkRows}</tbody></table></div>
       <div class="blsz-legend-section"><h4>NK (64 places — by match exit)</h4><table>${nkHead}<tbody>${nkRows}</tbody></table></div>
+      <div class="blsz-legend-section"><h4>NSZK Super Cup (2 places)</h4><table>${nkHead}<tbody>${nszkRows}</tbody></table></div>
     </div>
   </details>`;
 }
 
 // State for the BLSZ view.
 let _blszSeason=null;
+// Sort state. column ∈ {'place','total','MB-B','MB-R','KK','NK'}. Direction
+// 'desc' for points-style columns, 'asc' for 'place' (lower place = better).
+let _blszSort={col:'place', dir:'asc'};
+function selectBlszSort(col){
+  if(_blszSort.col===col){
+    _blszSort.dir=_blszSort.dir==='asc'?'desc':'asc';
+  } else {
+    _blszSort.col=col;
+    // Sensible default: places sort ascending (1 best), points descending.
+    _blszSort.dir=(col==='place')?'asc':'desc';
+  }
+  renderBlszView();
+}
 
 function renderBlszView(){
   const app=document.getElementById('app');
@@ -5326,9 +5537,9 @@ function renderBlszView(){
 
   // Build projections.
   const proj=_blszBuildProjection(_blszSeason);
-  // Aggregate per team across all four buckets.
+  // Aggregate per team across all five buckets.
   const teamRow=new Map(); // team_id -> { name, cells:{bucket:{cur,minP,maxP,curPts,minPts,maxPts}}, sumCur, sumMin, sumMax }
-  ['MB-B','MB-R','KK','NK'].forEach(bucket=>{
+  ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
     Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
       let row=teamRow.get(tid);
       if(!row){
@@ -5346,6 +5557,10 @@ function renderBlszView(){
   const teams=[...teamRow.values()];
   // Sort by current sum (desc), then by name. Compute current BLSZ place.
   teams.sort((a,b)=>(b.sumCur-a.sumCur)||a.name.localeCompare(b.name));
+  // Remember the canonical BLSZ rank BEFORE any user-driven re-sort, so the
+  // "BLSZ place" column and the League chip never shift when sorted by KK.
+  const blszRankByTid=new Map();
+  teams.forEach((t,i)=>blszRankByTid.set(t.tid,i+1));
 
   // ── Previous-round comparison ──────────────────────────────────────────
   // Find the latest played match date this season, then the second-latest;
@@ -5380,7 +5595,7 @@ function renderBlszView(){
   if(prevCutoff){
     const projPrev=_blszBuildProjection(_blszSeason, prevCutoff);
     const prevSum=new Map();
-    ['MB-B','MB-R','KK','NK'].forEach(bucket=>{
+    ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
       Object.entries(projPrev[bucket]||{}).forEach(([tid,info])=>{
         prevSum.set(tid, (prevSum.get(tid)||0)+info.curPts);
       });
@@ -5409,6 +5624,32 @@ function renderBlszView(){
     maxPlace.set(t.tid,mx);
   });
 
+  // ── Apply user-selected sort. Default sort (col='place') preserves the
+  // canonical BLSZ ranking already in `teams`. Sorting by a bucket column
+  // (MB-B / MB-R / KK / NK) uses that bucket's `curPts`; teams missing from
+  // that bucket sink to the bottom in desc and the top in asc.
+  const sortCol=_blszSort.col, sortDir=_blszSort.dir;
+  if(sortCol!=='place'){
+    const getKey=(t)=>{
+      if(sortCol==='total') return t.sumCur;
+      const info=t.cells[sortCol];
+      return info?info.curPts:null;
+    };
+    teams.sort((a,b)=>{
+      const va=getKey(a), vb=getKey(b);
+      // Missing values always go last regardless of direction.
+      if(va==null && vb==null) return a.name.localeCompare(b.name);
+      if(va==null) return 1;
+      if(vb==null) return -1;
+      const cmp=(sortDir==='asc')?(va-vb):(vb-va);
+      return cmp||a.name.localeCompare(b.name);
+    });
+  }
+  const _sortArrow=(col)=>{
+    if(_blszSort.col!==col) return '';
+    return `<span class="sort-arrow">${_blszSort.dir==='asc'?'▲':'▼'}</span>`;
+  };
+  const _sortCls=(col)=>`sortable${_blszSort.col===col?' sort-active':''}`;
   let html=`<div class="blsz-wrap">
     <div class="results-bar">
       <div class="results-bar-field">
@@ -5421,18 +5662,20 @@ function renderBlszView(){
   } else {
     html+=`<div class="blsz-flat"><table>
       <thead><tr>
-        <th>BLSZ place</th>
+        <th class="${_sortCls('place')}" onclick="selectBlszSort('place')" title="Sort by BLSZ place">BLSZ place${_sortArrow('place')}</th>
         <th title="Place change since the previous played match date">Δ</th>
         <th>League</th>
         <th class="b-team">Team</th>
-        <th>MB-B</th>
-        <th>MB-R</th>
-        <th>KK</th>
-        <th>NK</th>
-        <th>Total pts</th>
+        <th class="${_sortCls('MB-B')}" onclick="selectBlszSort('MB-B')" title="Sort by MB-B points">MB-B${_sortArrow('MB-B')}</th>
+        <th class="${_sortCls('MB-R')}" onclick="selectBlszSort('MB-R')" title="Sort by MB-R points">MB-R${_sortArrow('MB-R')}</th>
+        <th class="${_sortCls('KK')}" onclick="selectBlszSort('KK')" title="Sort by KK points">KK${_sortArrow('KK')}</th>
+        <th class="${_sortCls('NK')}" onclick="selectBlszSort('NK')" title="Sort by NK points">NK${_sortArrow('NK')}</th>
+        <th class="${_sortCls('NSZK')}" onclick="selectBlszSort('NSZK')" title="Sort by Szuper Kupa (NSZK) points">NSZK${_sortArrow('NSZK')}</th>
+        <th class="${_sortCls('total')}" onclick="selectBlszSort('total')" title="Sort by total points">Total pts${_sortArrow('total')}</th>
       </tr></thead><tbody>`;
     teams.forEach((t,i)=>{
-      const curPlace=i+1;
+      // BLSZ place stays canonical even when the table is re-sorted.
+      const curPlace=blszRankByTid.get(t.tid)||(i+1);
       const mn=minPlace.get(t.tid)||curPlace;
       const mx=maxPlace.get(t.tid)||curPlace;
       const cell=(bucket,cls)=>{
@@ -5465,6 +5708,7 @@ function renderBlszView(){
         ${cell('MB-R','comp-mbr')}
         ${cell('KK','comp-kk')}
         ${cell('NK','comp-nk')}
+        ${cell('NSZK','comp-nk')}
         <td class="b-total"><div class="blsz-cell"><span class="b-pts">${esc(totalRange)}</span><span class="b-plc">cur ${esc(String(t.sumCur))}</span></div></td>
       </tr>`;
     });
@@ -5938,8 +6182,9 @@ function edSwitchTab(tab){
 }
 function _edSyncGenBtn(){
   const btn=document.getElementById('edGenBtn');
-  if(!btn)return;
-  btn.style.display=(edTab==='matches')?'':'none';
+  if(btn) btn.style.display=(edTab==='matches')?'':'none';
+  const sbtn=document.getElementById('edGenSpringBtn');
+  if(sbtn) sbtn.style.display=(edTab==='matches')?'':'none';
 }
 function isColorColumn(name){return/^color\d*$|^colour\d*$/i.test(name);}
 
