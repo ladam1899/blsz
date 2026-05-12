@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.17</title>
+<title>League Manager v2026.05.12.18</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.17</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.18</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -693,8 +693,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
       ➕ Merge CSV
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edMergeCSV(event)">
     </label>
-    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. After this finishes, refine team_skills for the spring half (_S rows), then run ▶ Generate Spring Half.">🆕 Generate Season (autumn)</button>
-    <button class="tbtn" id="edGenSpringBtn" style="display:none" onclick="_promptGenerateSpring()" title="Generate the SPRING HALF of a season (date >= Jan 1). Reads refreshed _S team_skills rows for the spring sim, and writes the NSZK Super Cup matches (semi + final).">▶ Generate Spring Half</button>
+    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. The SPRING half is generated automatically when current_date crosses Jan 1 via the ⏭ Next Round button (popup will prompt to refresh team_skills _S rows + pick MB-4 teams).">🆕 Generate Season</button>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
@@ -2419,20 +2418,34 @@ async function advanceToNextRound(){
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
   // Half-season boundary check: if advancing crosses from autumn (date <
-  // Jan-1-of-spring-year) into spring (date >= Jan 1), pause and prompt the
-  // user to refresh team_skills _S rows and run Generate Spring Half. The
-  // user can either Continue (advance the date and remind them to run the
-  // spring generator) or Cancel (leave current_date in autumn).
+  // Jan-1-of-spring-year) into spring (date >= Jan 1), pause and run the
+  // SPRING generation directly from the modal — show the _S team_skills
+  // rows the user can review/edit, then on Continue run the MB-4 picker +
+  // spring sim in one go. No separate "Generate Spring Half" button needed.
   const curSeason=(typeof seasonFor==='function')?seasonFor(cur):'';
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
   const springYear=(()=>{const m=String(curSeason||nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
   const split=isNaN(springYear)?'':(springYear+'-01-01');
   const crossesBoundary=split && cur<split && next.date>=split;
   if(crossesBoundary){
-    const ok=await _confirmHalfBoundary(curSeason||nextSeason, split, next.date);
-    if(!ok){
-      toast('Half-season transition cancelled — current date kept in autumn','warn');
-      return;
+    const season=curSeason||nextSeason;
+    // Check whether the spring half has already been simulated for this season
+    // (avoid re-running and overwriting if the user advances past Jan-1 again).
+    const springAlready=_springHalfAlreadyDone(season,split);
+    if(!springAlready){
+      const ok=await _confirmHalfBoundary(season, split, next.date);
+      if(!ok){
+        toast('Half-season transition cancelled — current date kept in autumn','warn');
+        return;
+      }
+      // Run the spring generation now, with the MB-4 picker inside.
+      try{
+        await generateSeasonFromDraw(season,'S');
+      }catch(e){
+        console.error('[advanceToNextRound] spring sim failed:',e);
+        toast('Spring generation failed — see console','err');
+        return;
+      }
     }
   }
   setState('current_date',next.date,true);
@@ -2441,32 +2454,76 @@ async function advanceToNextRound(){
   renderLeagueView();
 }
 
+// True if matches.csv already has at least one SIMULATED spring row for
+// `season` (date >= splitDate AND a recorded full-time score). Used to keep
+// the boundary popup idempotent — advancing past Jan-1 a second time won't
+// re-run the spring sim and overwrite already-finalised scores.
+function _springHalfAlreadyDone(season,splitDate){
+  const m=DB.matches; if(!m||!m.r||!splitDate)return false;
+  const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'),hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+  if(di<0||hsi<0||asi<0)return false;
+  for(const r of m.r){
+    const d=String(r[di]||'').trim();
+    if(!d||d<splitDate)continue;
+    if(typeof seasonFor==='function'&&seasonFor(d)!==season)continue;
+    const hs=String(r[hsi]||'').trim(),as=String(r[asi]||'').trim();
+    if(hs!==''&&as!==''&&!isNaN(parseInt(hs))&&!isNaN(parseInt(as)))return true;
+  }
+  return false;
+}
+
+// Build a tiny HTML preview of every team's autumn (`_A`) vs spring (`_S`)
+// skills snapshot, so the user can SEE which spring rows are missing before
+// confirming the boundary transition. Spring rows missing fall back to autumn
+// by `teamSkillsFor()` rules.
+function _halfBoundarySkillSummary(season){
+  const t=DB.team_skills; if(!t||!t.r||!t.h)return '';
+  const _hi=(n)=>t.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const tii=_hi('team_id'); const hsi=_hi('half_season');
+  if(tii<0||hsi<0)return '';
+  const aTag=season+'_A',sTag=season+'_S';
+  const seen=new Map(); // team_id → {hasA,hasS}
+  t.r.forEach(r=>{
+    const id=String(r[tii]||'').trim();
+    const hs=String(r[hsi]||'').trim();
+    if(!id||!hs)return;
+    if(hs!==aTag&&hs!==sTag)return;
+    if(!seen.has(id))seen.set(id,{hasA:false,hasS:false});
+    if(hs===aTag)seen.get(id).hasA=true;
+    if(hs===sTag)seen.get(id).hasS=true;
+  });
+  const total=seen.size, withS=[...seen.values()].filter(v=>v.hasS).length;
+  const missing=[...seen.entries()].filter(([,v])=>v.hasA&&!v.hasS).map(([id])=>id);
+  return `<div style="margin:6px 0 12px;padding:8px 10px;background:var(--surface2);border-radius:6px;font-size:12px;color:var(--muted);">
+    <div><b>${withS}</b> of <b>${total}</b> teams have a <code>${esc(sTag)}</code> row.</div>
+    ${missing.length?`<div style="margin-top:4px;font-size:11px;">${missing.length} team${missing.length===1?'':'s'} will reuse autumn skills (no <code>_S</code> row): <span style="color:var(--text)">${esc(missing.slice(0,15).join(', '))}${missing.length>15?'…':''}</span></div>`:''}
+  </div>`;
+}
+
 // Modal shown when ⏭ Next Round would move the date from autumn into spring.
-// Reminds the user to (a) update _S rows in team_skills.csv, then (b) click
-// ▶ Generate Spring Half so the spring matches get simulated with refreshed
-// skills. Resolves to true if the user clicks Continue, false on Cancel.
+// Lets the user pause to refresh `_S` rows in team_skills.csv, then on
+// Continue triggers the spring-half generation (MB-4 picker + sim) directly.
+// Resolves to true on Continue, false on Cancel.
 function _confirmHalfBoundary(season,splitDate,nextDate){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
-    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:480px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:520px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
     md.innerHTML=`
       <h3 style="margin:0 0 6px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — refresh team skills</h3>
-      <p style="margin:0 0 10px;color:var(--text);font-size:13px;">
+      <p style="margin:0 0 6px;color:var(--text);font-size:13px;">
         The next round is on <b>${esc(nextDate)}</b>, which crosses into the SPRING half of season <b>${esc(season||'?')}</b> (split at <b>${esc(splitDate)}</b>).
       </p>
-      <p style="margin:0 0 6px;color:var(--muted);font-size:12px;">Before continuing:</p>
-      <ol style="margin:0 0 12px 18px;color:var(--muted);font-size:12px;line-height:1.6;">
-        <li>Open <b>⚙ Data Editor → team_skills</b> and add/refresh the <code>_S</code> half-season rows for each team that needs different spring skills.</li>
-        <li>Click <b>▶ Generate Spring Half</b> in the Matches toolbar (after the modal closes) to simulate spring scores with the refreshed skills.</li>
-      </ol>
-      <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">
-        Clicking <b>Continue</b> just advances the date — you still need to run Generate Spring Half so the spring scores get filled in. Clicking <b>Cancel</b> keeps current date in autumn.
+      ${_halfBoundarySkillSummary(season)}
+      <p style="margin:0 0 6px;color:var(--muted);font-size:12px;">If any team needs different spring skills, open <b>⚙ Data Editor → team_skills</b> in another window and add the missing <code>${esc(season)}_S</code> rows BEFORE clicking Continue.</p>
+      <p style="margin:0 0 14px;color:var(--text);font-size:12px;">
+        Clicking <b>Continue</b> will run the spring generation now (pick MB-4 teams, then simulate every spring match with the refreshed skills, write NSZK + next-season groups) and finally advance current date to <b>${esc(nextDate)}</b>.
       </p>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button type="button" id="hbCancel" class="tbtn">Cancel</button>
-        <button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue</button>
+        <button type="button" id="hbOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Continue — generate spring &amp; advance</button>
       </div>`;
     document.body.appendChild(ov);
     document.body.appendChild(md);
@@ -4687,27 +4744,15 @@ async function generateSeasonFromDraw(targetSeason, half){
     if(_half==='A') return String(dateStr)<splitDate;   // strictly before Jan 1
     return String(dateStr)>=splitDate;                  // spring: from Jan 1
   };
-  // Wrap _buildSimulatedMatchRow so out-of-half rows produce a blank stub
-  // instead of being simulated. The stub still gets upserted so the row
-  // exists with the right (rounds, level, mn, date, teams) for the
-  // complementary half-generator to fill in later.
-  const _stubRow=(ctx)=>{
-    const cols=DB.matches.h;
-    const obj={
-      date:ctx.date||'',
-      rounds:ctx.rounds||'',
-      level:ctx.level||'',
-      match_type:String(ctx.mt||'0'),
-      match_number:ctx.mn||'',
-      stadion_name:'',
-      home_id:ctx.homeId||'',
-      away_id:ctx.awayId||'',
-      notes:'[auto] '+(_half==='A'?'spring':'autumn')+' half — sim pending'
-    };
-    return{row:cols.map(c=>obj[c]!==undefined?obj[c]:''),simulated:false};
-  };
+  // Wrap _buildSimulatedMatchRow so out-of-half rows are SKIPPED entirely.
+  //   • Autumn run:  only writes rows with date < Jan-1; spring rows are
+  //                  left untouched (no row inserted, no existing row over-
+  //                  written). They will be written by the spring run later.
+  //   • Spring run:  only writes rows with date >= Jan-1; existing autumn
+  //                  rows are NEVER touched, preserving their scores.
+  // Returns null when the row should be skipped.
   const _buildOrStub=(ctx)=>{
-    if(_half!=='ALL'&&!inHalf(ctx.date)) return _stubRow(ctx);
+    if(_half!=='ALL'&&!inHalf(ctx.date)) return null;
     return _buildSimulatedMatchRow(ctx);
   };
 
@@ -4824,9 +4869,25 @@ async function generateSeasonFromDraw(targetSeason, half){
   });
   const roundNums=[...mbrByRound.keys()].sort((a,b)=>a-b);
 
-  const totalPlanned=mbbPlan.length+mbR.length+kkTotal+nkCount;
-  const halfLbl=(_half==='A')?'AUTUMN half only (date < '+splitDate+')'
-                :(_half==='S')?'SPRING half only (date ≥ '+splitDate+') + NSZK Super Cup'
+  // Filter the planning counts by half so the preview reflects what will
+  // ACTUALLY be written (autumn-only runs leave spring rows untouched, and
+  // vice versa). Rows with no calendar date are counted on the autumn side.
+  const _inHalfFor=(rnd)=>{
+    if(_half==='ALL')return true;
+    const cal=calMap.get(rnd);
+    const d=cal&&cal.date?cal.date:'';
+    return inHalf(d);
+  };
+  const mbbPlanInHalf=mbbPlan.filter(p=>_inHalfFor(p.rounds)).length;
+  const mbrInHalf=mbR.filter(r=>_inHalfFor(String(r[ri]||'').trim())).length;
+  const _countByRnd=(map)=>{let n=0;for(const arr of map.values())for(const r of arr) if(_inHalfFor(String(r[ri]||'').trim())) n++;return n;};
+  const _countNk=()=>{let n=0;for(const [key,arr] of nkByKey.entries())for(const r of arr) if(_inHalfFor(_normNkRounds(String(r[ri]||'').trim()))) n++;return n;};
+  const kkInHalf=_countByRnd(kkqByRnd)+_countByRnd(kkaraByRnd)+_countByRnd(kkromByRnd)+
+                 _countByRnd(kkabcByRnd)+_countByRnd(kkjklByRnd)+_countByRnd(kkgorByRnd);
+  const nkInHalf=_countNk();
+  const totalPlanned=mbbPlanInHalf+mbrInHalf+kkInHalf+nkInHalf;
+  const halfLbl=(_half==='A')?'AUTUMN half only (date < '+splitDate+') — spring rows will be left untouched and generated later when ⏭ Next Round crosses Jan 1'
+                :(_half==='S')?'SPRING half only (date ≥ '+splitDate+') + NSZK Super Cup — autumn rows will be left untouched'
                 :'FULL season';
   const lines=[
     `Generate ${totalPlanned} match rows for season ${targetSeason} — ${halfLbl}?`,
@@ -4852,9 +4913,11 @@ async function generateSeasonFromDraw(targetSeason, half){
   if(!confirm(lines.join('\n')))return;
 
   // ── PHASE 1: simulate MB-B rows and upsert ────────────────────
-  let upd=0,ins=0,blank=0,resRows=0;
+  let upd=0,ins=0,blank=0,resRows=0,skipped=0;
   mbbPlan.forEach(ctx=>{
-    const{row,simulated}=_buildOrStub(ctx);
+    const built=_buildOrStub(ctx);
+    if(!built){skipped++;return;}
+    const{row,simulated}=built;
     if(!simulated)blank++;
     const op=_upsertMatchRow(row);
     if(op==='updated')upd++;else ins++;
@@ -4890,9 +4953,11 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!aa.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
       const cal=calMap.get(rnd);
       if(!cal)missingDates.add(rnd);
-      const{row,simulated}=_buildOrStub({
+      const built=_buildOrStub({
         rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
       });
+      if(!built){skipped++;return;}
+      const{row,simulated}=built;
       if(!simulated)blank++;
       const op=_upsertMatchRow(row);
       if(op==='updated')upd++;else ins++;
@@ -4939,9 +5004,11 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)kkUnresolved.push({phase:phaseName,rounds:rnd,level:lvl,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildOrStub({
+        const built=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
+        if(!built){skipped++;return;}
+        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
@@ -5012,9 +5079,11 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!aa.id)nkUnresolved.push({phase:phaseKey,rounds:rnd,mn,side:'away',tok:apTok,reason:aa.reason});
         const cal=calMap.get(rnd)||calMap.get(rawRnd);
         if(!cal)missingDates.add(rnd);
-        const{row,simulated}=_buildOrStub({
+        const built=_buildOrStub({
           rounds:rnd,level:lvl,mt,mn,date:cal?cal.date:'',homeId:hh.id,awayId:aa.id
         });
+        if(!built){skipped++;return;}
+        const{row,simulated}=built;
         if(!simulated)blank++;
         const op=_upsertMatchRow(row);
         if(op==='updated')upd++;else ins++;
@@ -5172,36 +5241,13 @@ async function fillDatesFromCalendar(){
     edRender();if(typeof renderView==='function')renderView();
   }catch(e){toast('⚠ Save failed: '+(e.message||e),'err');}
 }
+// Generate Season prompts only for the season; it always runs in autumn
+// mode ('A'). The spring half is generated automatically by the ⏭ Next
+// Round boundary popup once current_date crosses Jan 1 of the spring year.
 function _promptGenerateSeason(){
   const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
   const input=prompt('Target season to generate (format YYYY_YY, e.g. 2000_01):',def||'2000_01');
   if(input)generateSeasonFromDraw(String(input).trim(),'A');
-}
-// Prompt + generate ONLY the spring half (date >= Jan 1 of the season's
-// spring year). Refuses if no autumn-half rows for that season exist yet.
-function _promptGenerateSpring(){
-  const def=(typeof seasonFor==='function'&&typeof currentDate==='function')?seasonFor(currentDate()):'';
-  const input=prompt('Target season to generate SPRING HALF for (format YYYY_YY):',def||'2000_01');
-  if(!input)return;
-  const targetSeason=String(input).trim();
-  // Sanity check: at least one matches.csv row for this season with date in
-  // the autumn half (Jul–Dec) must exist before we try to sim spring rows.
-  const m=DB.matches; if(!m||!m.h){toast('matches.csv not loaded','err');return;}
-  const di=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
-  if(di<0){toast('matches.csv missing date column','err');return;}
-  const hasAutumn=m.r.some(r=>{
-    const d=String(r[di]||'').trim();
-    if(!d)return false;
-    const s=typeof seasonFor==='function'?seasonFor(d):'';
-    if(s!==targetSeason)return false;
-    const hs=typeof halfSeasonFor==='function'?halfSeasonFor(d):'';
-    return /_A$/.test(hs);
-  });
-  if(!hasAutumn){
-    toast(`No autumn matches found for season ${targetSeason} — run Generate Season first.`,'warn');
-    return;
-  }
-  generateSeasonFromDraw(targetSeason,'S');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6394,8 +6440,6 @@ function edSwitchTab(tab){
 function _edSyncGenBtn(){
   const btn=document.getElementById('edGenBtn');
   if(btn) btn.style.display=(edTab==='matches')?'':'none';
-  const sbtn=document.getElementById('edGenSpringBtn');
-  if(sbtn) sbtn.style.display=(edTab==='matches')?'':'none';
 }
 function isColorColumn(name){return/^color\d*$|^colour\d*$/i.test(name);}
 
