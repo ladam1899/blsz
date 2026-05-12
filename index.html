@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.18</title>
+<title>League Manager v2026.05.12.19</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.18</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.19</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2417,30 +2417,32 @@ async function advanceToNextRound(){
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
-  // Half-season boundary check: if advancing crosses from autumn (date <
-  // Jan-1-of-spring-year) into spring (date >= Jan 1), pause and run the
-  // SPRING generation directly from the modal — show the _S team_skills
-  // rows the user can review/edit, then on Continue run the MB-4 picker +
-  // spring sim in one go. No separate "Generate Spring Half" button needed.
-  const curSeason=(typeof seasonFor==='function')?seasonFor(cur):'';
+  // Half-season boundary check: if the next round is in the SPRING half of
+  // some season AND that season's spring matches haven't been generated yet
+  // (no spring row in matches.csv has a recorded score), pause and run the
+  // spring sim from the modal. This fires whenever you advance INTO the
+  // spring half — not just on the exact crossing transition — so a refresh
+  // or replay doesn't silently skip the prompt.
+  //
+  // We base "which season's spring are we entering" on the NEXT round's
+  // date, since the cur date might still be on Dec 31 even if next is
+  // Jan-something of a different season (`seasonFor` wraps the year at
+  // mid-June).
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
-  const springYear=(()=>{const m=String(curSeason||nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-  const split=isNaN(springYear)?'':(springYear+'-01-01');
-  const crossesBoundary=split && cur<split && next.date>=split;
-  if(crossesBoundary){
-    const season=curSeason||nextSeason;
-    // Check whether the spring half has already been simulated for this season
-    // (avoid re-running and overwriting if the user advances past Jan-1 again).
-    const springAlready=_springHalfAlreadyDone(season,split);
-    if(!springAlready){
-      const ok=await _confirmHalfBoundary(season, split, next.date);
+  if(nextSeason){
+    const sy=(()=>{const m=String(nextSeason).match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+    const split=isNaN(sy)?'':(sy+'-01-01');
+    const nextIsSpring=split && next.date>=split;
+    if(nextIsSpring && !_springHalfReady(nextSeason,split)){
+      console.log(`[advanceToNextRound] spring popup → season=${nextSeason} split=${split} next=${next.date}`);
+      const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
       if(!ok){
-        toast('Half-season transition cancelled — current date kept in autumn','warn');
+        toast('Half-season transition cancelled — current date kept where it is','warn');
         return;
       }
       // Run the spring generation now, with the MB-4 picker inside.
       try{
-        await generateSeasonFromDraw(season,'S');
+        await generateSeasonFromDraw(nextSeason,'S');
       }catch(e){
         console.error('[advanceToNextRound] spring sim failed:',e);
         toast('Spring generation failed — see console','err');
@@ -2454,11 +2456,15 @@ async function advanceToNextRound(){
   renderLeagueView();
 }
 
-// True if matches.csv already has at least one SIMULATED spring row for
-// `season` (date >= splitDate AND a recorded full-time score). Used to keep
-// the boundary popup idempotent — advancing past Jan-1 a second time won't
-// re-run the spring sim and overwrite already-finalised scores.
-function _springHalfAlreadyDone(season,splitDate){
+// True if the spring half of `season` already has match rows with recorded
+// full-time scores — i.e. the spring sim has already run. Used to suppress
+// the boundary popup on the second crossing.
+//
+// Note: we look for SPRING rows (date >= splitDate) WITH a score; we do NOT
+// require the autumn half to be fully scored, because some draws have rows
+// without dates that fall into autumn-by-default and we don't want to chase
+// them. A single scored spring row is sufficient evidence.
+function _springHalfReady(season,splitDate){
   const m=DB.matches; if(!m||!m.r||!splitDate)return false;
   const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
   const di=_hi('date'),hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
