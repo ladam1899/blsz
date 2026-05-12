@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.27</title>
+<title>League Manager v2026.05.12.28</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.27</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.28</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -693,8 +693,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
       ➕ Merge CSV
       <input type="file" accept=".csv,.txt" style="display:none" onchange="edMergeCSV(event)">
     </label>
-    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate the AUTUMN HALF of a season (date < Jan 1) from draw.csv + calendar.csv + previous results.csv. After this finishes, refine team_skills for the spring half (_S rows), then run ▶ Generate Spring Half.">🆕 Generate Season (autumn)</button>
-    <button class="tbtn" id="edGenSpringBtn" style="display:none" onclick="_promptGenerateSpring()" title="Generate the SPRING HALF of a season (date >= Jan 1). Reads refreshed _S team_skills rows for the spring sim, and writes the NSZK Super Cup matches (semi + final).">▶ Generate Spring Half</button>
+    <button class="tbtn primary" id="edGenBtn" style="display:none" onclick="lgPromptGenerate()" title="Generate a season from draw.csv + calendar.csv + previous results.csv. Autumn rows are simulated immediately; spring rows are simulated automatically when current_date crosses Jan 1 (popup will prompt to adjust team_skills + pick MB-4 teams).">🆕 Generate Season</button>
     <div style="margin-left:auto;display:flex;gap:6px">
       <button class="tbtn" onclick="edDownload()">⬇ CSV</button>
       <button class="tbtn primary" onclick="edForceSave()">☁ Save Now</button>
@@ -4916,9 +4915,12 @@ async function generateSeasonFromDraw(targetSeason, half){
   // Collect the MB-team-ids so the MB-4 picker can exclude them.
   const mbUsed=_mbTeamIdsInUse(prevOverall);
 
-  // Does the draw reference any MB-4 group? If yes, prompt for picks.
+  // Does the draw reference any MB-4 group? If yes, prompt for picks — but
+  // ONLY on a spring or full-season run, since MB-R (the only competition
+  // that uses MB-4 teams) plays in the spring half. Autumn-only runs skip
+  // the modal entirely; the picks happen later when the user crosses Jan 1.
   let mb4Picks=new Map();
-  const needsMB4=d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
+  const needsMB4=(_half==='S'||_half==='ALL') && d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
     (/^(4K|4NY|4É|4D)(\s|$)/.test(String(r[hpi]||'').trim())||
      /^(4K|4NY|4É|4D)(\s|$)/.test(String(r[api]||'').trim())));
   if(needsMB4){
@@ -6526,8 +6528,6 @@ function edSwitchTab(tab){
 function _edSyncGenBtn(){
   const btn=document.getElementById('edGenBtn');
   if(btn) btn.style.display=(edTab==='matches')?'':'none';
-  const sbtn=document.getElementById('edGenSpringBtn');
-  if(sbtn) sbtn.style.display=(edTab==='matches')?'':'none';
 }
 function isColorColumn(name){return/^color\d*$|^colour\d*$/i.test(name);}
 
