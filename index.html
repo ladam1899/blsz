@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.5</title>
+<title>League Manager v2026.05.13.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4557,19 +4557,25 @@ function _pickMB4Teams(excludeIds){
     const groups=['4K','4NY','4É','4D'];
     const t=DB.teams;
     const ii=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
-    // Prefer `full_name`; fall back to `long_name`, then generic `name`, then team_id.
-    const fnFull=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='full_name');
+    // Prefer `long_name` (matches the rest of the app — Results table, profile
+    // popup etc.). Fall back per-row to `full_name`, then `name`, then `team_id`.
+    // Per-row chaining (not per-column) so a blank cell in one preferred column
+    // doesn't drag the whole dropdown back to bare IDs.
     const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
+    const fnFull=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='full_name');
     const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
-    const fni=fnFull>=0?fnFull:(fnLong>=0?fnLong:fnName);
     // MB-4 picks must come from the BLSZ organisation only (the federation
     // we're running this app for). Teams in other orgs are excluded.
     const oi=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
+    const _cell=(r,i)=>i>=0?String(r[i]||'').trim():'';
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
-      const name=fni>=0?String(r[fni]||'').trim():id;
+      const name=_cell(r,fnLong)||_cell(r,fnFull)||_cell(r,fnName)||id;
       const org=oi>=0?String(r[oi]||'').trim():'';
-      return{id,name:name||id,org};
+      // Show the long name and the id together so the user can disambiguate
+      // two teams that share a display name (e.g. reserves vs first XI).
+      const label=name===id?id:(name+' ('+id+')');
+      return{id,name,label,org};
     }).filter(o=>o.id&&!excludeIds.has(o.id)&&o.org.toUpperCase()==='BLSZ')
       .sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
@@ -4582,7 +4588,7 @@ function _pickMB4Teams(excludeIds){
         <label style="min-width:44px;font-weight:600;">${g}</label>
         <select data-mb4="${g}" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
           <option value="">— select —</option>
-          ${options.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}
+          ${options.map(o=>`<option value="${esc(o.id)}" title="${esc(o.id)}">${esc(o.label)}</option>`).join('')}
         </select>
       </div>`).join('')}
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
@@ -4604,7 +4610,7 @@ function _pickMB4Teams(excludeIds){
         // Replace the option list while preserving the placeholder and current selection.
         s.innerHTML='<option value="">— select —</option>'+options
           .filter(o=>!hide.has(o.id))
-          .map(o=>`<option value="${esc(o.id)}"${o.id===keep?' selected':''}>${esc(o.name)}</option>`)
+          .map(o=>`<option value="${esc(o.id)}" title="${esc(o.id)}"${o.id===keep?' selected':''}>${esc(o.label)}</option>`)
           .join('');
       });
     };
