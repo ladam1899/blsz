@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.3</title>
+<title>League Manager v2026.05.13.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1146,36 +1146,6 @@ function seasonLabel(s){
   if(!s)return'';
   const m=s.match(/^(\d{4})_(\d{2})/);
   return m?`${m[1]}/${m[2]}`:s;
-}
-
-// Parse a latitude / longitude cell. Tolerates:
-//   • plain numbers: `47.487`, `19.078`
-//   • Hungarian-style commas: `47,487`, `19,078`
-//   • stray punctuation like a leading `(` from copy-pasted `(47.4892,…`
-// Returns NaN if no valid number can be extracted.
-function _parseLatLon(v){
-  if(v==null) return NaN;
-  // Strip anything that isn't a digit, dot, minus, or comma. Then turn the
-  // comma into a dot so parseFloat understands it.
-  let s=String(v).trim().replace(/[^0-9.,\-]/g,'').replace(',', '.');
-  if(!s) return NaN;
-  const n=parseFloat(s);
-  return isNaN(n)?NaN:n;
-}
-// Look up (lat, lon) for a team_id from DB.teams. Returns {lat,lon} where
-// any missing value is NaN. Used by any geography-aware feature (e.g. the
-// MB-3 east/west/north/south split when next-season groups are built).
-function _teamGeo(teamId){
-  const d=DB.teams; if(!d||!d.r||!d.h) return {lat:NaN,lon:NaN};
-  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const idi=_hi('team_id'); const lai=_hi('latitude'); const loi=_hi('longitude');
-  if(idi<0||lai<0||loi<0) return {lat:NaN,lon:NaN};
-  for(const r of d.r){
-    if(String(r[idi]||'').trim()===String(teamId).trim()){
-      return {lat:_parseLatLon(r[lai]), lon:_parseLatLon(r[loi])};
-    }
-  }
-  return {lat:NaN,lon:NaN};
 }
 
 function teamSkillsFor(teamId,halfSeason){
