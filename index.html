@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.13</title>
+<title>League Manager v2026.05.13.14</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -792,7 +792,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.13</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.14</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2172,27 +2172,29 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     </div>`;
   };
 
-  // ── W-bracket columns (7 rounds; W-5 / W-6 collapse legs) ─────────────
+  // ── W-bracket columns: last 3 rounds (QF → SF → Final) ────────────────
+  // The earlier rounds (R1..R16) are intentionally omitted — drawing all
+  // 128 teams produced a ~1920-px-wide canvas that was unusable on a phone.
+  // The QF onward gives the user the trophy-path overview they actually
+  // need, in a layout that fits a Samsung S24 portrait without horizontal
+  // scrolling on the W side alone.
   const wCols=[
-    _column('NKW-1-1','R1 · 128 → 64',  64, 'single'),
-    _column('NKW-2-1','R2 · 64 → 32',   32, 'single'),
-    _column('NKW-3-1','R3 · 32 → 16',   16, 'single'),
-    _column('NKW-4-1','R16 · 16 → 8',    8, 'single'),
     _column('NKW-5-1','QF · 8 → 4',      4, 'pair2'),
     _column('NKW-6-1','SF · 4 → 2',      2, 'pair2'),
     _column('NKW-7-1','Final',           1, 'single')
   ].join('');
-  // ── L-bracket columns (5 rounds, varying sizes) ───────────────────────
+  // ── L-bracket columns: last 3 rounds matching the W side ──────────────
+  // L-R7 (4 matches) → L-R8 (2 matches) → L-9 (3rd/4th, 1 match) so the L
+  // side mirrors the W side's depth and the trophy/3rd-place outcomes are
+  // visible at the same level.
   const lCols=[
-    _column('NKL-5-1','L-R5 · 8 → 4',   4, 'single'),
-    _column('NKL-6-1','L-R6 · 8 → 4',   4, 'single'),
     _column('NKL-7-1','L-R7 · 4 → 2',   2, 'single'),
     _column('NKL-8-1','L-R8 · 4 → 2',   2, 'single'),
     _column('NKL-9-1','3rd/4th',         1, 'single')
   ].join('');
 
   return `<div class="nkb2-wrap">
-    <div class="nkb2-hdr">🏆 Full NK draw${season?' — '+esc(seasonLabel(season)):''} <span class="nkb2-sub">(scroll horizontally on mobile · two-legged QF/SF are shown as one cell with aggregate)</span></div>
+    <div class="nkb2-hdr">🏆 NK final stages${season?' — '+esc(seasonLabel(season)):''} <span class="nkb2-sub">(QF · SF · Final on each side · two-legged ties shown as one cell with aggregate)</span></div>
     <div class="nkb2-scroll">
       <div class="nkb2-side nkb2-side-w">
         <div class="nkb2-side-hdr">Winners bracket → 1st place</div>
