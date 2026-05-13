@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.11</title>
+<title>League Manager v2026.05.13.12</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -569,6 +569,35 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .drop-zone p{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7;}
 .drop-zone code{font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:4px;color:var(--text);}
 
+/* NK FULL-BRACKET (inline on NK rounds in the Matches view) */
+.nkb-wrap{margin-top:10px;border-top:1px solid var(--border);padding:10px 6px 4px;}
+.nkb-hdr{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.06em;color:var(--text);margin-bottom:8px;padding:0 4px;}
+.nkb-round{border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--surface);overflow:hidden;}
+.nkb-round>summary{cursor:pointer;padding:6px 10px;font-size:12px;font-family:'Inter',sans-serif;color:var(--text);background:var(--surface2);user-select:none;list-style:none;display:flex;align-items:center;gap:8px;}
+.nkb-round>summary::-webkit-details-marker{display:none;}
+.nkb-round>summary::before{content:'▸';font-size:10px;color:var(--muted);}
+.nkb-round[open]>summary::before{content:'▾';}
+.nkb-round>summary b{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--blue);}
+.nkb-cnt{margin-left:auto;font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.nkb-list{padding:4px 8px 8px;display:flex;flex-direction:column;gap:2px;}
+.nkb-row{display:grid;grid-template-columns:28px 1fr 56px 1fr;gap:6px;align-items:center;font-size:12px;padding:3px 2px;border-radius:4px;}
+.nkb-row:hover{background:var(--surface2);}
+.nkb-mn{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);text-align:right;}
+.nkb-team{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.nkb-home{text-align:right;}
+.nkb-away{text-align:left;}
+.nkb-team-blank{color:var(--dimmed);font-style:italic;}
+.nkb-sc{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.04em;text-align:center;background:var(--surface2);border-radius:4px;padding:1px 0;}
+.nkb-sc-blank{color:var(--dimmed);background:transparent;font-family:'JetBrains Mono',monospace;font-size:11px;}
+@media(max-width:768px){
+  .nkb-hdr{font-size:13px;}
+  .nkb-row{grid-template-columns:22px 1fr 48px 1fr;font-size:11px;gap:4px;}
+  .nkb-sc{font-size:13px;}
+  .nkb-mn{font-size:9px;}
+  .nkb-round>summary{padding:5px 8px;font-size:11px;}
+  .nkb-round>summary b{font-size:10px;}
+}
+
 /* MISC */
 .loading{text-align:center;padding:60px;color:var(--muted);}
 .spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
@@ -738,7 +767,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.12</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1911,6 +1940,14 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     stageLabel=['Kick-off','Half-time','Full Time'][stage];
   }
 
+  // If this is an NK round, append a full-bracket section below the per-level
+  // blocks. Lists every NK round of the season as a vertical block of
+  // pairings with score (or em-dash when the row is in the future or has no
+  // full-time score). Future-dated rows blank BOTH team names AND score so
+  // the bracket reflects what the user is allowed to see at `current_date`.
+  const isNkRound = /^NK[WL]-/i.test(String(info.round||'')) || /^NK-[WL]-/i.test(String(info.round||''));
+  const nkBracket = isNkRound ? _lgBuildNkBracket(info.season||seasonFor(info.date), curDate, info.round) : '';
+
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
       <div>
@@ -1921,7 +1958,95 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
         <span class="rc-stage">${esc(stageLabel)}</span>
       </div>
     </div>
-    <div class="rc-body">${body}</div>
+    <div class="rc-body">${body}${nkBracket}</div>
+  </div>`;
+}
+
+// Build the full NK-bracket display for a season. Returns HTML for a vertical
+// list of every NK round in `_NK_BRACKET_ORDER`, each round collapsible via
+// <details>. The current card's round is auto-opened; everything else starts
+// collapsed to keep the round card compact. Per-row reveal rule:
+//   • date > curDate → blank team names AND score (the user shouldn't yet
+//     know either, since the feeder match wasn't played yet from their POV)
+//   • no full-time score recorded → score blanked, team names shown
+//   • otherwise → both shown normally
+function _lgBuildNkBracket(season, curDate, currentRound){
+  const m=DB.matches; if(!m||!m.r||!m.h) return '';
+  const c=_lgMatchCols();
+  if(c.rounds<0||c.home<0||c.away<0||c.date<0) return '';
+  // Every NK round in bracket order, with a short human label per phase.
+  const ORDER=[
+    {code:'NKW-1-1', label:'W R1 — 128 teams · 64 matches'},
+    {code:'NKW-2-1', label:'W R2 — 64 teams · 32 matches'},
+    {code:'NKW-3-1', label:'W R3 — 32 teams · 16 matches'},
+    {code:'NKW-4-1', label:'W R4 — Round of 16'},
+    {code:'NKW-5-1', label:'W QF — leg 1'},
+    {code:'NKW-5-2', label:'W QF — leg 2'},
+    {code:'NKL-5-1', label:'L R5 — W-R4 losers'},
+    {code:'NKW-6-1', label:'W SF — leg 1'},
+    {code:'NKW-6-2', label:'W SF — leg 2'},
+    {code:'NKL-6-1', label:'L R6 — W-QF losers + L-R5 winners'},
+    {code:'NKL-7-1', label:'L R7 — L-R6 winners'},
+    {code:'NKL-8-1', label:'L R8 — W-SF losers + L-R7 winners'},
+    {code:'NKW-7-1', label:'W Final · 1st / 2nd'},
+    {code:'NKL-9-1', label:'L Final · 3rd / 4th'}
+  ];
+  const curR=(typeof _normNkRounds==='function')?_normNkRounds(currentRound||''):String(currentRound||'').trim();
+  // Bucket every NK-shaped row of the season by its normalised round code.
+  const byRound=new Map();
+  m.r.forEach(r=>{
+    const raw=String(r[c.rounds]||'').trim();
+    if(!/^NK[WL]-/i.test(raw)&&!/^NK-[WL]-/i.test(raw)) return;
+    const norm=(typeof _normNkRounds==='function')?_normNkRounds(raw):raw;
+    const d=normalizeDate(r[c.date]);
+    if(!d) return;
+    if(season&&typeof seasonFor==='function'&&seasonFor(d)!==season) return;
+    if(!byRound.has(norm)) byRound.set(norm,[]);
+    byRound.get(norm).push(r);
+  });
+  if(!byRound.size) return '';
+  // Sort each round's rows by match_number (integer-tolerant).
+  byRound.forEach(arr=>arr.sort((a,b)=>{
+    const na=c.mn>=0?parseInt(a[c.mn]):NaN, nb=c.mn>=0?parseInt(b[c.mn]):NaN;
+    if(!isNaN(na)&&!isNaN(nb)) return na-nb;
+    return String(a[c.mn]||'').localeCompare(String(b[c.mn]||''));
+  }));
+  const blocks=ORDER.map(p=>{
+    const rows=byRound.get(p.code)||[];
+    if(!rows.length) return '';
+    const items=rows.map(r=>{
+      const d=normalizeDate(r[c.date]);
+      const future=curDate&&d&&d>curDate;
+      const hId=String(r[c.home]||'').trim();
+      const aId=String(r[c.away]||'').trim();
+      const hT=hId?teamById(hId):{name:''};
+      const aT=aId?teamById(aId):{name:''};
+      const hName=(!future&&hId)?(hT.name||hId):'—';
+      const aName=(!future&&aId)?(aT.name||aId):'—';
+      const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
+      const as=c.as>=0?parseInt(r[c.as]):NaN;
+      const hasFull=!isNaN(hs)&&!isNaN(as);
+      const score=(!future&&hasFull)?(hs+'-'+as):'—';
+      const mn=c.mn>=0?String(r[c.mn]||'').trim():'';
+      const scoreCls='nkb-sc'+(future||!hasFull?' nkb-sc-blank':'');
+      const nameCls=future?'nkb-team nkb-team-blank':'nkb-team';
+      return `<div class="nkb-row">
+        <span class="nkb-mn">${esc(mn)}</span>
+        <span class="${nameCls} nkb-home" title="${esc(hT.name||hId||'')}">${esc(hName)}</span>
+        <span class="${scoreCls}">${esc(score)}</span>
+        <span class="${nameCls} nkb-away" title="${esc(aT.name||aId||'')}">${esc(aName)}</span>
+      </div>`;
+    }).join('');
+    const open=(p.code===curR)||(rows.length<=4);
+    return `<details class="nkb-round" ${open?'open':''}>
+      <summary><b>${esc(p.code)}</b> · ${esc(p.label)} <span class="nkb-cnt">${rows.length}</span></summary>
+      <div class="nkb-list">${items}</div>
+    </details>`;
+  }).filter(Boolean).join('');
+  if(!blocks) return '';
+  return `<div class="nkb-wrap">
+    <div class="nkb-hdr">📜 Full NK draw${season?' — '+esc(seasonLabel(season)):''}</div>
+    ${blocks}
   </div>`;
 }
 
