@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.15</title>
+<title>League Manager v2026.05.13.16</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -581,28 +581,33 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .nkb2-side-w .nkb2-side-hdr{color:var(--green);}
 .nkb2-side-l .nkb2-side-hdr{color:var(--gold);}
 .nkb2-cols{display:flex;align-items:stretch;gap:8px;}
-.nkb2-col{display:flex;flex-direction:column;width:200px;flex-shrink:0;}
+.nkb2-col{display:flex;flex-direction:column;width:320px;flex-shrink:0;}
 .nkb2-single .nkb2-side{width:100%;}
 .nkb2-single .nkb2-cols{justify-content:flex-start;flex-wrap:nowrap;}
 .nkb2-col-hdr{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:center;padding:4px 2px 6px;border-bottom:1px dashed var(--border);}
 .nkb2-col-active .nkb2-col-hdr{color:var(--green);border-bottom-color:var(--green);}
 .nkb2-col-body{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:2px;padding:4px 0;min-height:140px;}
-.nkb2-match{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 6px;min-height:42px;position:relative;}
-.nkb2-match-2leg{padding:5px 6px;}
+.nkb2-match{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;min-height:42px;position:relative;}
+.nkb2-match-2leg{padding:6px 8px;}
 .nkb2-stub{background:transparent;border-style:dashed;border-color:var(--border2);}
 .nkb2-col-active .nkb2-match{border-color:var(--green);box-shadow:0 0 0 1px rgba(26,107,58,.15);}
+/* Match row — Home  Score  Away on one line */
+.nkb2-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;}
+.nkb2-row .nkb2-chip:first-child{justify-content:flex-end;text-align:right;}
+.nkb2-row .nkb2-chip:first-child .nkb2-name{text-align:right;}
 .nkb2-chip{display:flex;align-items:center;gap:5px;font-size:11px;min-width:0;}
 .nkb2-logo{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;background:var(--surface2);font-family:'JetBrains Mono',monospace;}
 .nkb2-logo img{width:100%;height:100%;object-fit:contain;}
 .nkb2-logo-blank{background:transparent;border:1px dashed var(--border2);}
 .nkb2-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--text);}
 .nkb2-chip-blank .nkb2-name{color:var(--dimmed);font-style:italic;}
-.nkb2-sc{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.04em;text-align:center;color:var(--text);padding:1px 0;}
-.nkb2-sc-agg{font-size:15px;color:var(--green);font-weight:700;}
-.nkb2-sc-blank{color:var(--dimmed);font-family:'JetBrains Mono',monospace;font-size:11px;}
-.nkb2-mid{display:flex;flex-direction:column;align-items:center;gap:1px;padding:1px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border);}
-.nkb2-legs{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-align:center;}
-.nkb2-sc-tail{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.nkb2-sc{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.04em;text-align:center;color:var(--text);padding:2px 6px;background:var(--surface2);border-radius:4px;white-space:nowrap;}
+.nkb2-sc-agg{color:var(--green);font-weight:700;background:var(--green-l);}
+.nkb2-sc-blank{color:var(--dimmed);background:transparent;font-family:'JetBrains Mono',monospace;font-size:11px;}
+/* Note line — HT + decider (Golden goal / Penalties) below the row */
+.nkb2-note{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:2px 2px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);flex-wrap:wrap;}
+.nkb2-note-ht{color:var(--muted);}
+.nkb2-note-tail{color:var(--gold);font-weight:600;letter-spacing:.02em;}
 .nkb2-trophy{display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0;padding:0 8px;}
 /* Connector lines — drawn via :after on each NON-FIRST column. Cheap CSS
    feathering between adjacent columns: vertical bar joining each pair of
@@ -615,15 +620,17 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 @media(max-width:768px){
   .nkb2-hdr{font-size:14px;}
   .nkb2-hdr .nkb2-sub{display:block;margin:2px 0 0;font-size:9px;}
-  .nkb2-col{width:115px;}
-  .nkb2-single .nkb2-col{width:118px;}
+  .nkb2-col{width:260px;}
+  .nkb2-single .nkb2-col{width:260px;}
   .nkb2-col-hdr{font-size:9px;}
-  .nkb2-chip{font-size:10px;gap:4px;}
-  .nkb2-logo{width:14px;height:14px;font-size:7px;}
-  .nkb2-sc{font-size:12px;}
+  .nkb2-chip{font-size:11px;gap:4px;}
+  .nkb2-logo{width:16px;height:16px;font-size:7px;}
+  .nkb2-sc{font-size:13px;padding:2px 5px;}
   .nkb2-sc-agg{font-size:13px;}
   .nkb2-trophy{font-size:24px;padding:0 4px;}
-  .nkb2-match{padding:3px 4px;min-height:38px;}
+  .nkb2-match{padding:5px 6px;min-height:42px;}
+  .nkb2-row{gap:6px;}
+  .nkb2-note{font-size:9px;gap:6px;}
 }
 
 /* MISC */
@@ -795,7 +802,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.15</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.16</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2059,6 +2066,46 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     const tail=extra?` <span class="nkb2-sc-tail">${esc(extra)}</span>`:'';
     return `<span class="nkb2-sc">${hs}-${as}${tail}</span>`;
   };
+  // Parse the per-period breakdown from a single row's notes/score columns.
+  // Returns { ht: '(0-0)' or '', tail: 'Golden goal 1-0' / 'Penalties 4-3' / '' }.
+  // The tail line shows ONLY the period that actually decided the tie:
+  //   • If pens were taken → that's the decider, show only pens.
+  //   • Else if ET was played → ET was the decider, label it "Golden goal" per
+  //     the user's preference for two-leg cup rules.
+  //   • Otherwise → no tail (just HT).
+  const _periodBitsForCell=(row)=>{
+    const notes=c.notes>=0?String(row[c.notes]||''):'';
+    const cleaned=notes.replace(/^\s*\[auto\]\s*/i,'');
+    const parsed={};
+    const mHT=cleaned.match(/\((-?\d+)\s*[-:]\s*(-?\d+)\)/);
+    if(mHT)parsed.HT={h:parseInt(mHT[1]),a:parseInt(mHT[2])};
+    const labelRe=/\b(1H|2H|HT|FT|ET|AET|PEN|AGG)[:\s]+(-?\d+)\s*[-:]\s*(-?\d+)/g;
+    let mm;
+    while((mm=labelRe.exec(cleaned))){
+      const k=mm[1].toUpperCase();
+      parsed[k]={h:parseInt(mm[2]),a:parseInt(mm[3])};
+    }
+    // HT fallback: use the first-half score columns if notes don't carry it.
+    if(!parsed.HT){
+      const h1=c.h1>=0?parseInt(row[c.h1]):NaN, a1=c.a1>=0?parseInt(row[c.a1]):NaN;
+      if(!isNaN(h1)&&!isNaN(a1)) parsed.HT={h:h1,a:a1};
+    }
+    const ht=(parsed.HT && !isNaN(parsed.HT.h) && !isNaN(parsed.HT.a))?`(${parsed.HT.h}-${parsed.HT.a})`:'';
+    let tail='';
+    const pen=parsed.PEN;
+    if(pen && !isNaN(pen.h) && !isNaN(pen.a)){
+      tail=`Penalties ${pen.h}-${pen.a}`;
+    } else {
+      const et=parsed.ET||parsed.AET;
+      if(et && !isNaN(et.h) && !isNaN(et.a)){
+        // Only label as a decider when ET wasn't 0-0 (a 0-0 ET means the tie
+        // went on to pens — handled above — so this branch always reflects
+        // an actual ET-decided result).
+        if(et.h!==et.a) tail=`Golden goal ${et.h}-${et.a}`;
+      }
+    }
+    return {ht, tail};
+  };
   const _aggregate=(row1,row2)=>{
     // Sum two legs' full-time scores from the HOME team's perspective in
     // row1 (the leg-1 row). row2 swaps home/away, so we cross-add.
@@ -2093,11 +2140,25 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     const hs=c.hs>=0?parseInt(row[c.hs]):NaN, as=c.as>=0?parseInt(row[c.as]):NaN;
     const hasFull=!isNaN(hs)&&!isNaN(as);
     const mn=c.mn>=0?String(row[c.mn]||'').trim():'';
-    const scoreCell=future?`<span class="nkb2-sc nkb2-sc-blank">—</span>`:_scoreLine(hs,as);
+    // Inline layout: "Home  H-A  Away" on one row, HT + optional decider tail
+    // (Golden goal / Penalties) on a small note line below — matches the
+    // user-requested matchlist style.
+    const score=future?`<span class="nkb2-sc nkb2-sc-blank">—</span>`:_scoreLine(hs,as);
+    let noteLine='';
+    if(!future && hasFull){
+      const bits=_periodBitsForCell(row);
+      const parts=[];
+      if(bits.ht) parts.push(`<span class="nkb2-note-ht">${esc(bits.ht)}</span>`);
+      if(bits.tail) parts.push(`<span class="nkb2-note-tail">${esc(bits.tail)}</span>`);
+      if(parts.length) noteLine=`<div class="nkb2-note">${parts.join(' ')}</div>`;
+    }
     return `<div class="nkb2-match" data-mn="${esc(mn)}">
-      ${_teamChip(hId,future)}
-      ${scoreCell}
-      ${_teamChip(aId,future)}
+      <div class="nkb2-row">
+        ${_teamChip(hId,future)}
+        ${score}
+        ${_teamChip(aId,future)}
+      </div>
+      ${noteLine}
     </div>`;
   };
   const _cellTwoLeg=(pair)=>{
@@ -2111,43 +2172,59 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     const hs1=c.hs>=0?parseInt(r1[c.hs]):NaN, as1=c.as>=0?parseInt(r1[c.as]):NaN;
     const hasLeg1=!isNaN(hs1)&&!isNaN(as1);
     const aggInfo=r2?_aggregate(r1,r2):{agg:null};
-    // Score behaviour:
-    //   • both legs played → show "agg" big, both legs small
-    //   • only leg 1 played → show leg 1, no agg
-    //   • neither played → blank
-    let mid;
+    // Inline layout: "Home  AGG  Away" on one row (where AGG is the aggregate
+    // when both legs are played, or just leg 1 when only one is played), and a
+    // small note line below with HT of leg 1 + per-leg breakdown + optional
+    // PEN/Golden-goal decider taken from whichever leg actually settled the tie.
+    let score, noteLine='';
     if(future){
-      mid=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
+      score=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
     } else if(aggInfo.agg){
       const hs2=c.hs>=0&&r2?parseInt(r2[c.hs]):NaN, as2=c.as>=0&&r2?parseInt(r2[c.as]):NaN;
-      // Leg-2 home/away are swapped relative to leg 1, so the leg-2 score
-      // is rendered from the home (leg-1 home) perspective by flipping.
       const r2HomeIsR1Home=r2&&String(r2[c.home]||'').trim()===hId;
       const l2HomeSc=r2HomeIsR1Home?hs2:as2;
       const l2AwaySc=r2HomeIsR1Home?as2:hs2;
-      mid=`<span class="nkb2-sc nkb2-sc-agg">${aggInfo.agg}</span>
-           <span class="nkb2-legs">L1 ${hs1}-${as1} · L2 ${l2HomeSc}-${l2AwaySc}</span>`;
+      score=`<span class="nkb2-sc nkb2-sc-agg">${aggInfo.agg}</span>`;
+      // Decider lives on whichever leg has it; the leg-2 row is the one that
+      // contains the tie-breaker for an NK two-legged knockout, so check it
+      // first. Fall back to leg 1.
+      const bitsL2=r2?_periodBitsForCell(r2):{ht:'',tail:''};
+      const bitsL1=_periodBitsForCell(r1);
+      const ht=bitsL1.ht||bitsL2.ht;
+      const tail=bitsL2.tail||bitsL1.tail;
+      const noteBits=[];
+      if(ht) noteBits.push(`<span class="nkb2-note-ht">L1 ${esc(ht)}</span>`);
+      noteBits.push(`<span class="nkb2-note-tail">L1 ${hs1}-${as1} · L2 ${l2HomeSc}-${l2AwaySc}</span>`);
+      if(tail) noteBits.push(`<span class="nkb2-note-tail">${esc(tail)}</span>`);
+      noteLine=`<div class="nkb2-note">${noteBits.join(' ')}</div>`;
     } else if(hasLeg1){
-      mid=`<span class="nkb2-sc">L1 ${hs1}-${as1}</span>`;
+      score=`<span class="nkb2-sc">${hs1}-${as1}</span>`;
+      const bits=_periodBitsForCell(r1);
+      const parts=[];
+      if(bits.ht) parts.push(`<span class="nkb2-note-ht">L1 ${esc(bits.ht)}</span>`);
+      parts.push(`<span class="nkb2-note-tail">leg 2 pending</span>`);
+      noteLine=`<div class="nkb2-note">${parts.join(' ')}</div>`;
     } else {
-      mid=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
+      score=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
     }
     const mn=pair.mn||'';
     return `<div class="nkb2-match nkb2-match-2leg" data-mn="${esc(mn)}">
-      ${_teamChip(hId,future)}
-      <div class="nkb2-mid">${mid}</div>
-      ${_teamChip(aId,future)}
+      <div class="nkb2-row">
+        ${_teamChip(hId,future)}
+        ${score}
+        ${_teamChip(aId,future)}
+      </div>
+      ${noteLine}
     </div>`;
   };
   const _stubsForRound=(round,n)=>{
     // Build N blank match cells when the round has no rows yet (e.g. user
     // is on NKW-1-1 and the spring rounds haven't been generated).
+    const blank=`<span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>`;
     const out=[];
     for(let i=0;i<n;i++){
       out.push(`<div class="nkb2-match nkb2-stub">
-        <span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>
-        <span class="nkb2-sc nkb2-sc-blank">—</span>
-        <span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>
+        <div class="nkb2-row">${blank}<span class="nkb2-sc nkb2-sc-blank">—</span>${blank}</div>
       </div>`);
     }
     return out.join('');
