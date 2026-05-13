@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.9</title>
+<title>League Manager v2026.05.13.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -738,7 +738,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1995,6 +1995,20 @@ function _kkDestForPlace(phase,level,placeInGroup){
     }
     return '';
   }
+  if(phase==='MB-R'){
+    // MB-R: each Roman group's place maps directly to an overall BLSZ MB-R
+    // rank via _BLSZ_MBR_OFFSETS — no further cross-group ranking. Group I
+    // owns BLSZ slots 1-6, II 7-12, III 13-22, IV 23-28, V 29-34, VI 35-44,
+    // VII 45-52, VIII 53-60, IX 61-68, X 69-76. Each place inside the group
+    // maps to a single BLSZ overall position (offset + place).
+    const sizes={'I':6,'II':6,'III':10,'IV':6,'V':6,'VI':10,'VII':8,'VIII':8,'IX':8,'X':8};
+    const lvlU=String(lvl).trim().toUpperCase();
+    const off=({'I':0,'II':6,'III':12,'IV':22,'V':28,'VI':34,'VII':44,'VIII':52,'IX':60,'X':68})[lvlU];
+    const size=sizes[lvlU];
+    if(off==null||size==null) return '';
+    if(p<1||p>size) return '';
+    return String(off+p);
+  }
   if(phase==='KKABC'){
     // A..I groups of 3 → KKGOR Greek-letter groups → final BLSZ ranges.
     // Region (A-C / D-F / G-I) + place-in-group selects the destination KKGOR
@@ -2092,6 +2106,12 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   const _kkPhaseMatch=String(info.round||'').match(/^(KKARA|KKROM|KKABC|KKJKL|KKGOR)-/i);
   const kkPhase=_kkPhaseMatch?_kkPhaseMatch[1].toUpperCase():'';
   const isKK=!!kkPhase;
+  // MB-R: rounds look like `MB-R-<n>` and `level` is a Roman numeral I..X.
+  // Each Roman group's standings get an overall BLSZ-rank column via the
+  // same destination-column mechanism KK uses — but the mapping is direct
+  // (offset + place-in-group) since MB-R has no cross-group cup phase.
+  const isMbR=/^MB-R-/i.test(String(info.round||''))
+              && /^(I|II|III|IV|V|VI|VII|VIII|IX|X)$/i.test(String(level||'').trim());
   // Header label + tooltip per phase.
   const _kkColLabel=(()=>{
     if(!isKK)return '';
@@ -2292,9 +2312,11 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   if(!table.length){
     html+=`<div class="empty" style="padding:8px 2px;font-size:11px;color:var(--muted)">No matches played yet.</div>`;
   } else {
-    const _showDest=isMbB||isKK;
+    const _showDest=isMbB||isKK||isMbR;
+    const _mbrColTitle='MB-R overall BLSZ rank for this place. I 1-6, II 7-12, III 13-22, IV 23-28, V 29-34, VI 35-44, VII 45-52, VIII 53-60, IX 61-68, X 69-76.';
     const _destHdr=isMbB?'<th class="c-dest" title="MB-R playoff group this place feeds into">→</th>'
-                  :(isKK?`<th class="c-dest" title="${esc(_kkColTitle)}">${esc(_kkColLabel)}</th>`:'');
+                  :(isKK?`<th class="c-dest" title="${esc(_kkColTitle)}">${esc(_kkColLabel)}</th>`
+                  :(isMbR?`<th class="c-dest" title="${esc(_mbrColTitle)}">BLSZ</th>`:''));
     html+=`<table class="st-table">
       <colgroup><col class="c-pos"><col class="c-chg">${_showDest?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
       <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${_destHdr}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
@@ -2344,6 +2366,9 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       } else if(isKK){
         const kd=_kkDestForPlace(kkPhase,level,pos);
         destCell=`<td class="c-dest" title="${esc(_kkColTitle)}">${esc(kd)}</td>`;
+      } else if(isMbR){
+        const md=_kkDestForPlace('MB-R',level,pos);
+        destCell=`<td class="c-dest" title="${esc(_mbrColTitle)}">${esc(md)}</td>`;
       }
       html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
