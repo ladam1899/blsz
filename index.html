@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.2</title>
+<title>League Manager v2026.05.13.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2645,45 +2645,61 @@ function _hbUpsertSpringSkill(teamId, halfTag, values){
   });
   return dirty?'updated':'noop';
 }
-// Compute autumn MB-B performance per team. Walks matches.csv for MB-B rows
-// with scores in `season`. For each MB-B group, computes points and the
-// group average. Returns Map<team_id, {group,pts,gp,groupAvg,perfDelta}>
-// where perfDelta = round((pts - groupAvg) / 3) clamped ±10.
+// Compute autumn performance per team from the random-roll columns stored
+// on every simulated row of matches.csv. The simulator writes a 0..100
+// roll per period for both sides — these are independent samples drawn for
+// the team's home and away appearances. Per the user's rule:
+//
+//   For a given team, average ALL its rolls in autumn-half rows it played:
+//     • when team is HOME → first_home_att, first_home_def, second_home_att,
+//                           second_home_def, extra_home_att, extra_home_def,
+//                           pen_home
+//     • when team is AWAY → first_away_att, first_away_def, second_away_att,
+//                           second_away_def, extra_away_att, extra_away_def,
+//                           pen_away
+//   The avg is on a 0..100 scale. Translate to a skill delta:
+//     0     → -10
+//     50    →   0   (midpoint = no change)
+//     100   → +10
+//   i.e. delta = round((avg - 50) / 5), clamped to ±10. Empty / missing
+//   cells (e.g. extra time / pen never played) are skipped, not counted as 0.
+//
+// Returns Map<team_id, {avg, samples, perfDelta}>. Only teams with at
+// least one valid roll show up.
 function _hbAutumnPerformance(season){
   const out=new Map();
   const m=DB.matches; if(!m||!m.r||!m.h)return out;
   const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'),ri=_hi('rounds'),li=_hi('level'),
-        hi=_hi('home_id'),ai=_hi('away_id'),
-        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
-  if(di<0||ri<0||li<0||hi<0||ai<0||hsi<0||asi<0)return out;
-  const byGroup={};
+  const di=_hi('date');
+  const hi=_hi('home_id'), ai=_hi('away_id');
+  if(di<0||hi<0||ai<0)return out;
+  const homeCols=['first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home'].map(_hi);
+  const awayCols=['first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'].map(_hi);
+  // Detect spring boundary so we only sum AUTUMN-half rolls.
+  const sy=(()=>{const mm=String(season||'').match(/^(\d{4})_/);return mm?parseInt(mm[1])+1:NaN;})();
+  const splitDate=isNaN(sy)?'':(sy+'-01-01');
+  const acc=new Map(); // team_id → {sum, count}
+  const _add=(tid,v)=>{
+    if(!tid)return;
+    const n=parseFloat(v);
+    if(isNaN(n))return;
+    if(!acc.has(tid))acc.set(tid,{sum:0,count:0});
+    const a=acc.get(tid); a.sum+=n; a.count++;
+  };
   m.r.forEach(r=>{
     const date=String(r[di]||'').trim(); if(!date)return;
     if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
-    const rnd=String(r[ri]||'').trim(); if(!/^MB-B-/i.test(rnd))return;
-    const lvl=String(r[li]||'').trim(); if(!lvl)return;
-    const hs=parseInt(r[hsi]), as=parseInt(r[asi]);
-    if(isNaN(hs)||isNaN(as))return;
+    if(splitDate&&date>=splitDate)return;   // skip spring rows
     const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
-    if(!h||!a)return;
-    if(!byGroup[lvl])byGroup[lvl]={};
-    const g=byGroup[lvl];
-    if(!g[h])g[h]={id:h,pts:0,gp:0};
-    if(!g[a])g[a]={id:a,pts:0,gp:0};
-    g[h].gp++; g[a].gp++;
-    if(hs>as)g[h].pts+=3;
-    else if(hs<as)g[a].pts+=3;
-    else{g[h].pts++; g[a].pts++;}
+    homeCols.forEach(ci=>{if(ci>=0)_add(h,r[ci]);});
+    awayCols.forEach(ci=>{if(ci>=0)_add(a,r[ci]);});
   });
-  Object.entries(byGroup).forEach(([level,teams])=>{
-    const arr=Object.values(teams); if(!arr.length)return;
-    const avg=arr.reduce((s,t)=>s+t.pts,0)/arr.length;
-    arr.forEach(t=>{
-      let perfDelta=Math.round((t.pts-avg)/3);
-      if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
-      out.set(t.id,{group:level,pts:t.pts,gp:t.gp,groupAvg:Math.round(avg*10)/10,perfDelta});
-    });
+  acc.forEach((v,tid)=>{
+    if(!v.count)return;
+    const avg=v.sum/v.count;
+    let perfDelta=Math.round((avg-50)/5);
+    if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
+    out.set(tid,{avg:Math.round(avg*10)/10, samples:v.count, perfDelta});
   });
   return out;
 }
@@ -2753,19 +2769,18 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       const perf=_perfMap.get(tt.tid);
       const adj=_initAdj(tt.tid);
       const newVal=_clampSkills(a+adj);
-      const ptsStr=perf?String(perf.pts):'—';
-      const avgStr=perf?String(perf.groupAvg):'—';
-      const grpStr=perf?perf.group:'';
+      const avgStr=perf?String(perf.avg):'—';
+      const sampStr=perf?String(perf.samples):'—';
       const perfStr=perf?(perf.perfDelta>0?'+':'')+String(perf.perfDelta):'—';
       const perfCls=perf?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'';
       const aCls='hb-aut'+(_autSource[tt.tid]==='default'?' hb-aut-default':'');
       const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Autumn `skills` value';
+      const avgTitle=perf?`Average of ${perf.samples} rand-roll cell(s) across this team's autumn matches (home: first/second/extra att+def + pen; away: same)`:'No autumn rolls recorded';
       return `<tr data-row="${esc(tt.tid)}">`+
         `<td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>`+
-        `<td class="hb-group">${esc(grpStr)}</td>`+
-        `<td>${esc(ptsStr)}</td>`+
-        `<td class="hb-avg">${esc(avgStr)}</td>`+
-        `<td class="hb-perf ${perfCls}">${esc(perfStr)}</td>`+
+        `<td class="hb-avg" title="${esc(avgTitle)}">${esc(avgStr)}</td>`+
+        `<td class="hb-samp" title="Number of rand-roll cells averaged">${esc(sampStr)}</td>`+
+        `<td class="hb-perf ${perfCls}" title="round((avg − 50) / 5), clamped ±10">${esc(perfStr)}</td>`+
         `<td class="${aCls}" title="${esc(aTitle)}">${esc(String(a))}</td>`+
         `<td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:60px"></td>`+
         `<td class="hb-spr" data-out="${esc(tt.tid)}">${esc(String(newVal))}</td>`+
@@ -2778,14 +2793,17 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
     md.innerHTML=
       `<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>`+
-      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Perf Δ is auto-calculated from autumn MB-B group performance — round((team pts − group avg)/3), clamped ±10. Your Δ is pre-filled with it.</span></p>`+
+      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's autumn matches. 0..100 scale. Perf Δ = round((avg − 50) / 5), clamped ±10. Your Δ is pre-filled with Perf Δ.</span></p>`+
       `<div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">`+
         `<table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">`+
           `<thead><tr style="background:var(--surface2)">`+
             `<th class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:6px 10px">Team</th>`+
-            `<th>Group</th><th>Aut. pts</th><th>Grp avg</th><th>Perf Δ</th><th>Aut. skills</th><th>Your Δ</th><th>New skills</th>`+
+            `<th title="Average of every rand-roll cell (0..100) across this team's autumn matches">Rand avg</th>`+
+            `<th title="How many rand-roll cells were averaged">n</th>`+
+            `<th title="round((avg − 50) / 5), clamped ±10">Perf Δ</th>`+
+            `<th>Aut. skills</th><th>Your Δ</th><th>New skills</th>`+
           `</tr></thead>`+
-          `<tbody>${rowsHtml||'<tr><td colspan="8" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>`+
+          `<tbody>${rowsHtml||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>`+
         `</table>`+
       `</div>`+
       `<div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;align-items:center;">`+
@@ -2809,6 +2827,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       '.hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}'+
       '.hb-table td.hb-avg{color:var(--muted);}'+
       '.hb-table td.hb-group{color:var(--muted);font-size:11px;}'+
+      '.hb-table td.hb-samp{color:var(--muted);font-size:11px;}'+
       '.hb-table td.hb-perf{font-weight:700;}'+
       '.hb-table td.hb-perf.hb-perf-up{color:#16a34a;}'+
       '.hb-table td.hb-perf.hb-perf-down{color:#dc2626;}'+
