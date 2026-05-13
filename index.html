@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.12</title>
+<title>League Manager v2026.05.13.13</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -569,33 +569,58 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .drop-zone p{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7;}
 .drop-zone code{font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:4px;color:var(--text);}
 
-/* NK FULL-BRACKET (inline on NK rounds in the Matches view) */
-.nkb-wrap{margin-top:10px;border-top:1px solid var(--border);padding:10px 6px 4px;}
-.nkb-hdr{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.06em;color:var(--text);margin-bottom:8px;padding:0 4px;}
-.nkb-round{border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--surface);overflow:hidden;}
-.nkb-round>summary{cursor:pointer;padding:6px 10px;font-size:12px;font-family:'Inter',sans-serif;color:var(--text);background:var(--surface2);user-select:none;list-style:none;display:flex;align-items:center;gap:8px;}
-.nkb-round>summary::-webkit-details-marker{display:none;}
-.nkb-round>summary::before{content:'▸';font-size:10px;color:var(--muted);}
-.nkb-round[open]>summary::before{content:'▾';}
-.nkb-round>summary b{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--blue);}
-.nkb-cnt{margin-left:auto;font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
-.nkb-list{padding:4px 8px 8px;display:flex;flex-direction:column;gap:2px;}
-.nkb-row{display:grid;grid-template-columns:28px 1fr 56px 1fr;gap:6px;align-items:center;font-size:12px;padding:3px 2px;border-radius:4px;}
-.nkb-row:hover{background:var(--surface2);}
-.nkb-mn{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);text-align:right;}
-.nkb-team{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-.nkb-home{text-align:right;}
-.nkb-away{text-align:left;}
-.nkb-team-blank{color:var(--dimmed);font-style:italic;}
-.nkb-sc{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.04em;text-align:center;background:var(--surface2);border-radius:4px;padding:1px 0;}
-.nkb-sc-blank{color:var(--dimmed);background:transparent;font-family:'JetBrains Mono',monospace;font-size:11px;}
+/* NK FULL-DRAW BRACKET (inline on NK rounds in the Matches view) */
+.nkb2-wrap{margin-top:14px;border-top:1px solid var(--border);padding:12px 4px 4px;}
+.nkb2-hdr{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.06em;color:var(--text);margin-bottom:10px;padding:0 6px;}
+.nkb2-hdr .nkb2-sub{font-family:'Inter',sans-serif;font-size:10px;font-weight:400;color:var(--muted);letter-spacing:.02em;margin-left:6px;text-transform:none;}
+.nkb2-scroll{overflow-x:auto;overflow-y:hidden;padding:4px 2px 8px;display:flex;align-items:stretch;gap:14px;}
+.nkb2-scroll::-webkit-scrollbar{height:8px;}
+.nkb2-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+.nkb2-side{display:flex;flex-direction:column;flex-shrink:0;}
+.nkb2-side-hdr{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.06em;color:var(--muted);text-align:center;padding:0 4px 8px;}
+.nkb2-side-w .nkb2-side-hdr{color:var(--green);}
+.nkb2-side-l .nkb2-side-hdr{color:var(--gold);}
+.nkb2-cols{display:flex;align-items:stretch;gap:8px;}
+.nkb2-col{display:flex;flex-direction:column;width:160px;flex-shrink:0;}
+.nkb2-col-hdr{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:center;padding:4px 2px 6px;border-bottom:1px dashed var(--border);}
+.nkb2-col-active .nkb2-col-hdr{color:var(--green);border-bottom-color:var(--green);}
+.nkb2-col-body{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:2px;padding:4px 0;min-height:140px;}
+.nkb2-match{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 6px;min-height:42px;position:relative;}
+.nkb2-match-2leg{padding:5px 6px;}
+.nkb2-stub{background:transparent;border-style:dashed;border-color:var(--border2);}
+.nkb2-col-active .nkb2-match{border-color:var(--green);box-shadow:0 0 0 1px rgba(26,107,58,.15);}
+.nkb2-chip{display:flex;align-items:center;gap:5px;font-size:11px;min-width:0;}
+.nkb2-logo{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;background:var(--surface2);font-family:'JetBrains Mono',monospace;}
+.nkb2-logo img{width:100%;height:100%;object-fit:contain;}
+.nkb2-logo-blank{background:transparent;border:1px dashed var(--border2);}
+.nkb2-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--text);}
+.nkb2-chip-blank .nkb2-name{color:var(--dimmed);font-style:italic;}
+.nkb2-sc{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.04em;text-align:center;color:var(--text);padding:1px 0;}
+.nkb2-sc-agg{font-size:15px;color:var(--green);font-weight:700;}
+.nkb2-sc-blank{color:var(--dimmed);font-family:'JetBrains Mono',monospace;font-size:11px;}
+.nkb2-mid{display:flex;flex-direction:column;align-items:center;gap:1px;padding:1px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border);}
+.nkb2-legs{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-align:center;}
+.nkb2-sc-tail{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.nkb2-trophy{display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0;padding:0 8px;}
+/* Connector lines — drawn via :after on each NON-FIRST column. Cheap CSS
+   feathering between adjacent columns: vertical bar joining each pair of
+   feeders on the previous column to the midpoint of the current column. */
+.nkb2-col + .nkb2-col .nkb2-col-body{position:relative;}
+.nkb2-col + .nkb2-col .nkb2-col-body::before{
+  content:'';position:absolute;left:-5px;top:8px;bottom:8px;
+  border-left:1px solid var(--border2);
+}
 @media(max-width:768px){
-  .nkb-hdr{font-size:13px;}
-  .nkb-row{grid-template-columns:22px 1fr 48px 1fr;font-size:11px;gap:4px;}
-  .nkb-sc{font-size:13px;}
-  .nkb-mn{font-size:9px;}
-  .nkb-round>summary{padding:5px 8px;font-size:11px;}
-  .nkb-round>summary b{font-size:10px;}
+  .nkb2-hdr{font-size:14px;}
+  .nkb2-hdr .nkb2-sub{display:block;margin:2px 0 0;font-size:9px;}
+  .nkb2-col{width:130px;}
+  .nkb2-col-hdr{font-size:9px;}
+  .nkb2-chip{font-size:10px;gap:4px;}
+  .nkb2-logo{width:14px;height:14px;font-size:7px;}
+  .nkb2-sc{font-size:12px;}
+  .nkb2-sc-agg{font-size:13px;}
+  .nkb2-trophy{font-size:24px;padding:0 4px;}
+  .nkb2-match{padding:3px 4px;min-height:38px;}
 }
 
 /* MISC */
@@ -767,7 +792,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.12</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.13</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1962,35 +1987,27 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   </div>`;
 }
 
-// Build the full NK-bracket display for a season. Returns HTML for a vertical
-// list of every NK round in `_NK_BRACKET_ORDER`, each round collapsible via
-// <details>. The current card's round is auto-opened; everything else starts
-// collapsed to keep the round card compact. Per-row reveal rule:
-//   • date > curDate → blank team names AND score (the user shouldn't yet
-//     know either, since the feeder match wasn't played yet from their POV)
-//   • no full-time score recorded → score blanked, team names shown
+// Build the full NK-draw bracket inline on NK round-cards in the Matches
+// view. Real graphical bracket (W-bracket on the left, L-bracket mirrored on
+// the right) using flex-columns where each match cell uses `flex:1`, so
+// every column sums to the same total height and each successor match
+// auto-aligns to the vertical midpoint of its two feeders.
+//
+// Connectors are CSS borders drawn via `::before` / `::after` on the match
+// cell, so they survive horizontal/vertical scroll without JS layout work.
+//
+// Per-row reveal rule:
+//   • date > curDate → blank team names AND score (user hasn't reached this
+//     round yet, so they shouldn't see who's playing)
+//   • row missing full-time score → score blanked, team names shown
 //   • otherwise → both shown normally
+//
+// Two-legged W ties (NKW-5-1/2 and NKW-6-1/2) collapse into a single bracket
+// cell that shows the aggregate of both legs.
 function _lgBuildNkBracket(season, curDate, currentRound){
   const m=DB.matches; if(!m||!m.r||!m.h) return '';
   const c=_lgMatchCols();
   if(c.rounds<0||c.home<0||c.away<0||c.date<0) return '';
-  // Every NK round in bracket order, with a short human label per phase.
-  const ORDER=[
-    {code:'NKW-1-1', label:'W R1 — 128 teams · 64 matches'},
-    {code:'NKW-2-1', label:'W R2 — 64 teams · 32 matches'},
-    {code:'NKW-3-1', label:'W R3 — 32 teams · 16 matches'},
-    {code:'NKW-4-1', label:'W R4 — Round of 16'},
-    {code:'NKW-5-1', label:'W QF — leg 1'},
-    {code:'NKW-5-2', label:'W QF — leg 2'},
-    {code:'NKL-5-1', label:'L R5 — W-R4 losers'},
-    {code:'NKW-6-1', label:'W SF — leg 1'},
-    {code:'NKW-6-2', label:'W SF — leg 2'},
-    {code:'NKL-6-1', label:'L R6 — W-QF losers + L-R5 winners'},
-    {code:'NKL-7-1', label:'L R7 — L-R6 winners'},
-    {code:'NKL-8-1', label:'L R8 — W-SF losers + L-R7 winners'},
-    {code:'NKW-7-1', label:'W Final · 1st / 2nd'},
-    {code:'NKL-9-1', label:'L Final · 3rd / 4th'}
-  ];
   const curR=(typeof _normNkRounds==='function')?_normNkRounds(currentRound||''):String(currentRound||'').trim();
   // Bucket every NK-shaped row of the season by its normalised round code.
   const byRound=new Map();
@@ -2011,42 +2028,182 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     if(!isNaN(na)&&!isNaN(nb)) return na-nb;
     return String(a[c.mn]||'').localeCompare(String(b[c.mn]||''));
   }));
-  const blocks=ORDER.map(p=>{
-    const rows=byRound.get(p.code)||[];
-    if(!rows.length) return '';
-    const items=rows.map(r=>{
-      const d=normalizeDate(r[c.date]);
-      const future=curDate&&d&&d>curDate;
-      const hId=String(r[c.home]||'').trim();
-      const aId=String(r[c.away]||'').trim();
-      const hT=hId?teamById(hId):{name:''};
-      const aT=aId?teamById(aId):{name:''};
-      const hName=(!future&&hId)?(hT.name||hId):'—';
-      const aName=(!future&&aId)?(aT.name||aId):'—';
-      const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
-      const as=c.as>=0?parseInt(r[c.as]):NaN;
-      const hasFull=!isNaN(hs)&&!isNaN(as);
-      const score=(!future&&hasFull)?(hs+'-'+as):'—';
-      const mn=c.mn>=0?String(r[c.mn]||'').trim():'';
-      const scoreCls='nkb-sc'+(future||!hasFull?' nkb-sc-blank':'');
-      const nameCls=future?'nkb-team nkb-team-blank':'nkb-team';
-      return `<div class="nkb-row">
-        <span class="nkb-mn">${esc(mn)}</span>
-        <span class="${nameCls} nkb-home" title="${esc(hT.name||hId||'')}">${esc(hName)}</span>
-        <span class="${scoreCls}">${esc(score)}</span>
-        <span class="${nameCls} nkb-away" title="${esc(aT.name||aId||'')}">${esc(aName)}</span>
-      </div>`;
-    }).join('');
-    const open=(p.code===curR)||(rows.length<=4);
-    return `<details class="nkb-round" ${open?'open':''}>
-      <summary><b>${esc(p.code)}</b> · ${esc(p.label)} <span class="nkb-cnt">${rows.length}</span></summary>
-      <div class="nkb-list">${items}</div>
-    </details>`;
-  }).filter(Boolean).join('');
-  if(!blocks) return '';
-  return `<div class="nkb-wrap">
-    <div class="nkb-hdr">📜 Full NK draw${season?' — '+esc(seasonLabel(season)):''}</div>
-    ${blocks}
+
+  // ── Cell renderer ─────────────────────────────────────────────────────
+  // One bracket cell = one match (or one two-legged tie). Returns HTML
+  // for a div containing two team chips + an optional score line.
+  const _teamChip=(teamId,future)=>{
+    if(future||!teamId) return `<span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>`;
+    const t=teamById(teamId);
+    const lg=(typeof logoFor==='function')?logoFor(teamId,season):'';
+    const initials=esc((t.id||'').slice(0,2).toUpperCase());
+    const logoHtml=lg
+      ?`<span class="nkb2-logo"><img src="${lg}" alt=""></span>`
+      :`<span class="nkb2-logo" style="background:${safeColor(t.color)}">${initials}</span>`;
+    const nm=esc(t.name||t.id||'');
+    return `<span class="nkb2-chip" title="${nm}">${logoHtml}<span class="nkb2-name">${nm}</span></span>`;
+  };
+  const _scoreLine=(hs,as,extra)=>{
+    if(isNaN(hs)||isNaN(as)) return `<span class="nkb2-sc nkb2-sc-blank">—</span>`;
+    const tail=extra?` <span class="nkb2-sc-tail">${esc(extra)}</span>`:'';
+    return `<span class="nkb2-sc">${hs}-${as}${tail}</span>`;
+  };
+  const _aggregate=(row1,row2)=>{
+    // Sum two legs' full-time scores from the HOME team's perspective in
+    // row1 (the leg-1 row). row2 swaps home/away, so we cross-add.
+    const h1=parseInt(row1[c.hs]), a1=parseInt(row1[c.as]);
+    const h2=parseInt(row2[c.hs]), a2=parseInt(row2[c.as]);
+    if(isNaN(h1)||isNaN(a1)||isNaN(h2)||isNaN(a2)) return {agg:null};
+    const r1Home=String(row1[c.home]||'').trim();
+    const r2Home=String(row2[c.home]||'').trim();
+    let hAgg, aAgg;
+    if(r1Home===r2Home){ hAgg=h1+h2; aAgg=a1+a2; }
+    else { hAgg=h1+a2; aAgg=a1+h2; }
+    return {agg:hAgg+'-'+aAgg, hAgg, aAgg};
+  };
+  // Pair NKW-5-1 ↔ NKW-5-2 and NKW-6-1 ↔ NKW-6-2 by match_number for the
+  // aggregate-displaying single-cell renderer.
+  const _pairLegs=(leg1Code,leg2Code)=>{
+    const arr1=byRound.get(leg1Code)||[];
+    const arr2=byRound.get(leg2Code)||[];
+    const m2=new Map();
+    arr2.forEach(r=>{const mn=c.mn>=0?String(r[c.mn]||'').trim():''; if(mn)m2.set(mn,r);});
+    return arr1.map(r1=>{
+      const mn=c.mn>=0?String(r1[c.mn]||'').trim():'';
+      const r2=mn?m2.get(mn):null;
+      return {r1,r2,mn};
+    });
+  };
+  const _cellSingle=(row)=>{
+    const d=normalizeDate(row[c.date]);
+    const future=curDate&&d&&d>curDate;
+    const hId=String(row[c.home]||'').trim();
+    const aId=String(row[c.away]||'').trim();
+    const hs=c.hs>=0?parseInt(row[c.hs]):NaN, as=c.as>=0?parseInt(row[c.as]):NaN;
+    const hasFull=!isNaN(hs)&&!isNaN(as);
+    const mn=c.mn>=0?String(row[c.mn]||'').trim():'';
+    const scoreCell=future?`<span class="nkb2-sc nkb2-sc-blank">—</span>`:_scoreLine(hs,as);
+    return `<div class="nkb2-match" data-mn="${esc(mn)}">
+      ${_teamChip(hId,future)}
+      ${scoreCell}
+      ${_teamChip(aId,future)}
+    </div>`;
+  };
+  const _cellTwoLeg=(pair)=>{
+    const r1=pair.r1, r2=pair.r2;
+    const d1=normalizeDate(r1[c.date]);
+    const d2=r2?normalizeDate(r2[c.date]):'';
+    const futureD=curDate?Math.max(d1>curDate?1:0, (d2&&d2>curDate)?1:0):0;
+    const future=!!futureD;
+    const hId=String(r1[c.home]||'').trim();
+    const aId=String(r1[c.away]||'').trim();
+    const hs1=c.hs>=0?parseInt(r1[c.hs]):NaN, as1=c.as>=0?parseInt(r1[c.as]):NaN;
+    const hasLeg1=!isNaN(hs1)&&!isNaN(as1);
+    const aggInfo=r2?_aggregate(r1,r2):{agg:null};
+    // Score behaviour:
+    //   • both legs played → show "agg" big, both legs small
+    //   • only leg 1 played → show leg 1, no agg
+    //   • neither played → blank
+    let mid;
+    if(future){
+      mid=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
+    } else if(aggInfo.agg){
+      const hs2=c.hs>=0&&r2?parseInt(r2[c.hs]):NaN, as2=c.as>=0&&r2?parseInt(r2[c.as]):NaN;
+      // Leg-2 home/away are swapped relative to leg 1, so the leg-2 score
+      // is rendered from the home (leg-1 home) perspective by flipping.
+      const r2HomeIsR1Home=r2&&String(r2[c.home]||'').trim()===hId;
+      const l2HomeSc=r2HomeIsR1Home?hs2:as2;
+      const l2AwaySc=r2HomeIsR1Home?as2:hs2;
+      mid=`<span class="nkb2-sc nkb2-sc-agg">${aggInfo.agg}</span>
+           <span class="nkb2-legs">L1 ${hs1}-${as1} · L2 ${l2HomeSc}-${l2AwaySc}</span>`;
+    } else if(hasLeg1){
+      mid=`<span class="nkb2-sc">L1 ${hs1}-${as1}</span>`;
+    } else {
+      mid=`<span class="nkb2-sc nkb2-sc-blank">—</span>`;
+    }
+    const mn=pair.mn||'';
+    return `<div class="nkb2-match nkb2-match-2leg" data-mn="${esc(mn)}">
+      ${_teamChip(hId,future)}
+      <div class="nkb2-mid">${mid}</div>
+      ${_teamChip(aId,future)}
+    </div>`;
+  };
+  const _stubsForRound=(round,n)=>{
+    // Build N blank match cells when the round has no rows yet (e.g. user
+    // is on NKW-1-1 and the spring rounds haven't been generated).
+    const out=[];
+    for(let i=0;i<n;i++){
+      out.push(`<div class="nkb2-match nkb2-stub">
+        <span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>
+        <span class="nkb2-sc nkb2-sc-blank">—</span>
+        <span class="nkb2-chip nkb2-chip-blank"><span class="nkb2-logo nkb2-logo-blank"></span><span class="nkb2-name">—</span></span>
+      </div>`);
+    }
+    return out.join('');
+  };
+
+  // ── Column builder ────────────────────────────────────────────────────
+  // Each column is a flex column where every match cell uses `flex:1`.
+  // The column gets a `--mc` (match count) CSS var so connectors can be
+  // drawn proportionally if needed.
+  const _column=(round,label,expectedMatches,kind)=>{
+    const rows=byRound.get(round)||[];
+    let cellsHtml;
+    if(kind==='pair2'){
+      // Two-legged W ties — pair leg 1 with leg 2 of the same match_number.
+      const leg1Code=round, leg2Code=round.replace(/-1$/,'-2');
+      const pairs=_pairLegs(leg1Code,leg2Code);
+      if(pairs.length){
+        cellsHtml=pairs.map(_cellTwoLeg).join('');
+      } else {
+        cellsHtml=_stubsForRound(round, expectedMatches);
+      }
+    } else {
+      if(rows.length){
+        cellsHtml=rows.map(_cellSingle).join('');
+      } else {
+        cellsHtml=_stubsForRound(round, expectedMatches);
+      }
+    }
+    const activeCls=(round===curR||round.replace(/-2$/,'-1')===curR||round.replace(/-1$/,'-2')===curR)?' nkb2-col-active':'';
+    return `<div class="nkb2-col${activeCls}" data-round="${esc(round)}" style="--mc:${expectedMatches}">
+      <div class="nkb2-col-hdr">${esc(label)}</div>
+      <div class="nkb2-col-body">${cellsHtml}</div>
+    </div>`;
+  };
+
+  // ── W-bracket columns (7 rounds; W-5 / W-6 collapse legs) ─────────────
+  const wCols=[
+    _column('NKW-1-1','R1 · 128 → 64',  64, 'single'),
+    _column('NKW-2-1','R2 · 64 → 32',   32, 'single'),
+    _column('NKW-3-1','R3 · 32 → 16',   16, 'single'),
+    _column('NKW-4-1','R16 · 16 → 8',    8, 'single'),
+    _column('NKW-5-1','QF · 8 → 4',      4, 'pair2'),
+    _column('NKW-6-1','SF · 4 → 2',      2, 'pair2'),
+    _column('NKW-7-1','Final',           1, 'single')
+  ].join('');
+  // ── L-bracket columns (5 rounds, varying sizes) ───────────────────────
+  const lCols=[
+    _column('NKL-5-1','L-R5 · 8 → 4',   4, 'single'),
+    _column('NKL-6-1','L-R6 · 8 → 4',   4, 'single'),
+    _column('NKL-7-1','L-R7 · 4 → 2',   2, 'single'),
+    _column('NKL-8-1','L-R8 · 4 → 2',   2, 'single'),
+    _column('NKL-9-1','3rd/4th',         1, 'single')
+  ].join('');
+
+  return `<div class="nkb2-wrap">
+    <div class="nkb2-hdr">🏆 Full NK draw${season?' — '+esc(seasonLabel(season)):''} <span class="nkb2-sub">(scroll horizontally on mobile · two-legged QF/SF are shown as one cell with aggregate)</span></div>
+    <div class="nkb2-scroll">
+      <div class="nkb2-side nkb2-side-w">
+        <div class="nkb2-side-hdr">Winners bracket → 1st place</div>
+        <div class="nkb2-cols">${wCols}</div>
+      </div>
+      <div class="nkb2-trophy">🏆</div>
+      <div class="nkb2-side nkb2-side-l">
+        <div class="nkb2-side-hdr">Losers bracket → 3rd place</div>
+        <div class="nkb2-cols">${lCols}</div>
+      </div>
+    </div>
   </div>`;
 }
 
