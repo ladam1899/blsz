@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.12.28</title>
+<title>League Manager v2026.05.13.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.12.28</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1685,6 +1685,10 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
       const ka=groups.get(a).key,kb=groups.get(b).key;
       const an=parseInt(ka),bn=parseInt(kb);
       if(!isNaN(an)&&!isNaN(bn)&&an!==bn)return an-bn;
+      // Roman numerals (KKROM uses I..XV as level labels) sort by numeric
+      // value, not alphabetic — so III comes before X.
+      const ra=_romanToInt(ka), rb=_romanToInt(kb);
+      if(!isNaN(ra)&&!isNaN(rb)&&ra!==rb)return ra-rb;
       return String(ka).localeCompare(String(kb),'hu');
     });
     const season=info.season||seasonFor(info.date);
@@ -1778,6 +1782,94 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
 //   • "mid"   (grey)  = mid playoff inside the level
 //   • "mix"   (red)   = promotion / relegation slot, gets mixed with another level
 // Returns {cls:'mbb-keep'|'mbb-mid'|'mbb-mix', dest:'I'|'II'|...|''}.
+// Roman numeral → integer (I..XV). Returns NaN for non-roman strings.
+function _romanToInt(s){
+  s=String(s||'').trim().toUpperCase();
+  if(!/^[IVXLCDM]+$/.test(s))return NaN;
+  const map={I:1,V:5,X:10,L:50,C:100,D:500,M:1000};
+  let total=0;
+  for(let i=0;i<s.length;i++){
+    const v=map[s[i]], n=map[s[i+1]];
+    total+=(n&&n>v)?-v:v;
+  }
+  return total;
+}
+
+// KK destination ranges per the user's spec. Returns the string to render
+// in the destination column for (phase, group-level, place-in-group). Empty
+// when the (phase, level, place) tuple doesn't map to anything meaningful.
+//
+//   • KKARA (5-team groups): top 3 → KKROM (places 1..27); bottom 2 → KKJKL
+//     (places 28..45). We show the *range* of places the team is competing
+//     for in the next phase, since the actual destination depends on
+//     cross-group ranking.
+//   • KKROM groups I..IX:  winners→1..9, seconds→10..18, thirds→19..27
+//     (places in KKABC).
+//   • KKROM groups X..XV:  winners→28..33, seconds→34..39, thirds→40..45
+//     (places in KKJKL).
+//   • KKABC (A..I groups of 3): winners→1..3 (one per group), seconds→4..6,
+//     thirds→7..9 in KKGOR; we show the destination range slot.
+//   • KKJKL (J/K/L groups of 6): final standings. Place column shows the
+//     overall BLSZ place: J → 28..33, K → 34..39, L → 40..45.
+//   • KKGOR (α/β/…/ι groups of 3): final standings. Place column shows the
+//     overall BLSZ place: α→1..3, β→4..6, γ→7..9, δ→10..12, ε→13..15,
+//     ζ→16..18, η→19..21, θ→22..24, ι→25..27.
+function _kkDestForPlace(phase,level,placeInGroup){
+  const lvl=String(level||'').trim();
+  const p=parseInt(placeInGroup); if(!p||p<1)return '';
+  if(phase==='KKARA'){
+    if(p<=3) return '1–27';     // → KKROM
+    if(p<=5) return '28–45';    // → KKJKL
+    return '';
+  }
+  if(phase==='KKROM'){
+    const ri=_romanToInt(lvl);
+    if(isNaN(ri))return '';
+    if(ri>=1&&ri<=9){
+      // I..IX feed KKABC.
+      if(p===1) return String(ri);          // group-winner position
+      if(p===2) return String(9+ri);        // 10..18
+      if(p===3) return String(18+ri);       // 19..27
+    } else if(ri>=10&&ri<=15){
+      // X..XV feed KKJKL.
+      const idx=ri-9; // 1..6
+      if(p===1) return String(27+idx);      // 28..33
+      if(p===2) return String(33+idx);      // 34..39
+      if(p===3) return String(39+idx);      // 40..45
+    }
+    return '';
+  }
+  if(phase==='KKABC'){
+    // A..I groups of 3 → KKGOR α..ι (3 per place tier).
+    const code=lvl.toUpperCase();
+    const idx={A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9}[code];
+    if(!idx)return '';
+    if(p===1) return String(idx);           // 1..9 (winners)
+    if(p===2) return String(9+idx);         // 10..18 (seconds)
+    if(p===3) return String(18+idx);        // 19..27 (thirds)
+    return '';
+  }
+  if(phase==='KKJKL'){
+    // 6-team groups. Place in group + group offset → BLSZ place 28..45.
+    // J → 28..33, K → 34..39, L → 40..45.
+    const first=lvl.charAt(0).toLowerCase();
+    const off={j:27,k:33,l:39}[first];
+    if(off==null||p<1||p>6)return '';
+    return String(off+p);
+  }
+  if(phase==='KKGOR'){
+    // 3-team Greek-letter groups. α→1..3, β→4..6, … ι→25..27.
+    const first=String(lvl).trim().charAt(0);
+    const off={
+      'α':0,'β':3,'γ':6,'δ':9,'ε':12,'ζ':15,'η':18,'θ':21,'ι':24,
+      'a':0,'b':3,'c':6,'d':9,'e':12,'f':15,'g':18,'h':21,'i':24
+    }[first];
+    if(off==null||p<1||p>3)return '';
+    return String(off+p);
+  }
+  return '';
+}
+
 function _mbBPlaceTier(group, place){
   const g=String(group||'').trim(); const p=parseInt(place);
   if(!g||!p||p<1) return {cls:'',dest:''};
@@ -1832,6 +1924,30 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   // colour tiers and destination-playoff column at the bottom of the table.
   const isMbB=/^([12][A-Z]+|[34][A-ZÉ]+)$/.test(String(level||'').trim()) ||
               ['1M','1N','2A','2B','2C','3NY','3K','3É','3D','4K','4NY','4É','4D'].includes(String(level||'').trim());
+  // KK phase detection (from the round code, not the level). Each KK phase
+  // shows a destination column whose meaning depends on the phase — see
+  // _kkDestForPlace().
+  const _kkPhaseMatch=String(info.round||'').match(/^(KKARA|KKROM|KKABC|KKJKL|KKGOR)-/i);
+  const kkPhase=_kkPhaseMatch?_kkPhaseMatch[1].toUpperCase():'';
+  const isKK=!!kkPhase;
+  // Header label + tooltip per phase.
+  const _kkColLabel=(()=>{
+    if(!isKK)return '';
+    if(kkPhase==='KKARA') return 'Next';     // → KKROM 1..27 / KKJKL 28..45
+    if(kkPhase==='KKROM') return 'KKABC/JKL';// next-phase BLSZ slot
+    if(kkPhase==='KKABC') return 'KKGOR';    // next-phase BLSZ slot
+    if(kkPhase==='KKJKL'||kkPhase==='KKGOR') return 'Place'; // final BLSZ place
+    return '';
+  })();
+  const _kkColTitle=(()=>{
+    if(!isKK)return '';
+    if(kkPhase==='KKARA') return 'KKARA top-3 → KKROM places 1–27; 4th–5th → KKJKL 28–45';
+    if(kkPhase==='KKROM') return 'KKROM I–IX winners→1–9, seconds→10–18, thirds→19–27 (KKABC); X–XV winners→28–33, seconds→34–39, thirds→40–45 (KKJKL)';
+    if(kkPhase==='KKABC') return 'KKABC group winners → KKGOR 1–9, seconds → 10–18, thirds → 19–27';
+    if(kkPhase==='KKJKL') return 'KKJKL is a final phase: places 28–45 (J 28–33, K 34–39, L 40–45)';
+    if(kkPhase==='KKGOR') return 'KKGOR is a final phase: places 1–27 (α 1–3, β 4–6, … ι 25–27)';
+    return '';
+  })();
   const season=seasonHint||info.season||seasonFor(info.date)||'';
   const curIso=(typeof currentDate==='function')?currentDate():'';
   const roundDate=info.date;
@@ -2014,9 +2130,12 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   if(!table.length){
     html+=`<div class="empty" style="padding:8px 2px;font-size:11px;color:var(--muted)">No matches played yet.</div>`;
   } else {
+    const _showDest=isMbB||isKK;
+    const _destHdr=isMbB?'<th class="c-dest" title="MB-R playoff group this place feeds into">→</th>'
+                  :(isKK?`<th class="c-dest" title="${esc(_kkColTitle)}">${esc(_kkColLabel)}</th>`:'');
     html+=`<table class="st-table">
-      <colgroup><col class="c-pos"><col class="c-chg">${isMbB?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
-      <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${isMbB?'<th class="c-dest" title="MB-R playoff group this place feeds into">→</th>':''}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+      <colgroup><col class="c-pos"><col class="c-chg">${_showDest?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
+      <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${_destHdr}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
       <tbody>`;
     table.forEach((t,i)=>{
       const pos=i+1,total=table.length;
@@ -2051,10 +2170,19 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       const metaLine=`<div class="team-name-meta">${metaParts.join('')}</div>`;
       const prevPos=prevRankByTid.get(t.id)||0;
       const chgHTML=prevHasData?_placeChangeHTML(prevPos, pos):'';
-      // MB-B destination playoff column — colour now lives on the badge (pc),
-      // so the row background stays white.
+      // Destination column:
+      //   • MB-B level → MB-R playoff group ('I'..'X') via _mbBPlaceTier.
+      //   • KK phase   → next-phase BLSZ slot / final BLSZ place via
+      //                  _kkDestForPlace. Always shows a number/range string,
+      //                  blank when the row's position has no mapping.
       const tier=isMbB?_mbBPlaceTier(level,pos):{cls:'',dest:''};
-      const destCell=isMbB?`<td class="c-dest" title="MB-R group ${esc(tier.dest||'')}">${esc(tier.dest||'')}</td>`:'';
+      let destCell='';
+      if(isMbB){
+        destCell=`<td class="c-dest" title="MB-R group ${esc(tier.dest||'')}">${esc(tier.dest||'')}</td>`;
+      } else if(isKK){
+        const kd=_kkDestForPlace(kkPhase,level,pos);
+        destCell=`<td class="c-dest" title="${esc(_kkColTitle)}">${esc(kd)}</td>`;
+      }
       html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
         <td class="c-chg">${chgHTML}</td>
