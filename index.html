@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.6</title>
+<title>League Manager v2026.05.13.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -580,6 +580,136 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .toast.err{border-left-color:var(--red);}
 @keyframes toastin{from{transform:translateX(110%);opacity:0;}to{transform:translateX(0);opacity:1;}}
 
+/* ── MOBILE (≤768px — phones in portrait, target Samsung S24 ~384px) ── */
+@media(max-width:768px){
+  /* Containers — tighter horizontal padding so content uses the whole width */
+  .lg-wrap,.results-wrap,.blsz-wrap,.cal-wrap,.play-wrap{padding:10px 8px 20px;}
+  body{font-size:14px;}
+
+  /* Header — smaller logo, hide the season pill (it lives in the date bar too) */
+  header{padding:0 10px;}
+  .logo{font-size:16px;letter-spacing:.04em;}
+  .logo span{margin-left:.2em;}
+  .logo-season{display:none;}
+  .hdr-right{gap:6px;}
+  .hbtn{font-size:10px;padding:4px 7px;}
+
+  /* Nav — already horizontal-scroll, just trim padding */
+  .nav{padding:0 10px;gap:2px;}
+  .ntab{font-size:12px;padding:6px 10px;}
+
+  /* Date / filter bar — let the search take a full row */
+  .date-bar{padding:8px 10px;gap:6px;}
+  .db-label{font-size:10px;}
+  .db-sel,.db-date{font-size:12px;padding:5px 7px;}
+  .db-search{min-width:0;flex:1 1 100%;max-width:none;padding:6px 8px;font-size:12px;}
+  .db-date{width:130px;}
+  .db-now{margin-left:0;padding:6px 10px;font-size:11px;}
+  .db-gen{padding:6px 10px;font-size:11px;}
+  .db-current{font-size:11px;padding:3px 8px;}
+
+  /* Round cards (matches view) */
+  .rc-hdr{padding:10px 12px;}
+  .rc-title{font-size:18px;}
+  .rc-body{padding:8px 6px;}
+  .rc-level-block{grid-template-columns:1fr;gap:10px;padding-top:8px;}
+  .rc-stand-hdr{font-size:18px;}
+  .rc-level-name{font-size:18px;}
+
+  /* Match rows — narrower score chip, smaller team logos */
+  .m-row{grid-template-columns:1fr 56px 1fr;gap:6px;padding:6px 4px;}
+  .m-side{font-size:12px;gap:6px;}
+  .m-logo{width:18px;height:18px;}
+  .m-score{font-size:16px;padding:2px 0;}
+  .m-periods{font-size:9px;}
+
+  /* Standings table */
+  .st-table{font-size:11px;}
+  .st-table th,.st-table td{padding:5px 3px;}
+  .st-table col.c-pos{width:24px;}
+  .st-table col.c-n{width:22px;}
+  .st-table col.c-gd{width:28px;}
+  .st-table col.c-pts{width:28px;}
+  .team-cell{gap:4px;}
+  .team-badge-sm{width:16px;height:16px;}
+  .pos-badge{width:20px;height:20px;font-size:10px;}
+
+  /* Results page */
+  .results-bar{padding:8px 10px;gap:8px;}
+  .results-bar-field{min-width:0;flex:1 1 calc(50% - 4px);}
+  .results-bar-field.grow{flex:1 1 100%;min-width:0;}
+  .results-flat td,.results-table td{padding:7px 10px;font-size:12px;}
+  .res-flat-name,.res-team-cell{gap:8px;}
+  .res-team-badge{width:24px;height:24px;}
+  .res-league-tag{font-size:10px;padding:2px 7px;}
+  .res-flat-place{justify-content:flex-start;}
+  .results-comp-title{padding:10px 12px;font-size:15px;}
+
+  /* BLSZ ranking grid — horizontal-scroll the wide table */
+  .blsz-flat table{font-size:11px;min-width:max-content;}
+  .blsz-flat thead th,.blsz-flat tbody td{padding:5px 6px;}
+  .blsz-legend-body{padding:10px;gap:10px;}
+  .blsz-legend-section{min-width:0;}
+
+  /* Play view */
+  .play-wrap{max-width:none;}
+  .play-teams{grid-template-columns:1fr;gap:8px;}
+  .play-vs{display:none;}
+  .play-team-box{padding:10px;}
+  .play-team-badge{width:50px;height:50px;font-size:18px;}
+  .play-opts{padding:10px;gap:10px;}
+  .play-opt-btn{padding:5px 10px;font-size:12px;}
+  .play-manual{grid-template-columns:auto 1fr;gap:6px 10px;padding:10px;max-width:none;}
+  .play-go{padding:10px 22px;font-size:14px;}
+
+  /* Calendar grid */
+  .cal-wrap{padding:10px 6px 20px;}
+  .cal-header{margin-bottom:10px;}
+  .cal-month{font-size:18px;}
+  .cal-nav-btn{width:30px;height:30px;font-size:14px;}
+  .cal-dow-cell{font-size:9px;padding:6px 2px;}
+  .cal-day{min-height:54px;padding:3px;}
+  .day-num{font-size:10px;margin-bottom:2px;}
+  .round-pill{font-size:8px;padding:1px 4px;border-radius:8px;}
+  .round-pill .pill-r{font-size:8px;padding:0 3px;}
+
+  /* Data Editor — gear panel */
+  .editor-top{padding:0 10px;height:46px;}
+  .editor-top-title{font-size:15px;}
+  .editor-tabs{padding:0 8px;}
+  .etab{font-size:11px;padding:8px 10px;}
+  .editor-toolbar{padding:6px 8px;gap:4px;}
+  .tbtn{font-size:11px;padding:4px 7px;}
+  .tsearch{width:110px;font-size:11px;padding:4px 7px;}
+  .ed-table{font-size:11px;}
+  .ed-table thead th{padding:6px 7px;font-size:9px;}
+  .ed-table thead th.rn,.ed-table tbody td.rn{width:30px;min-width:30px;font-size:9px;}
+  .ecell{padding:4px 7px;min-width:50px;max-width:160px;}
+  .drop-zone{margin:10px;padding:24px 14px;}
+
+  /* Info modal (team profile / head-to-head) */
+  .info-modal{padding:16px 8px;}
+  .info-modal-inner{max-height:calc(100vh - 32px);}
+  .info-modal-hdr{padding:12px 14px;gap:8px;}
+  .info-modal-title{font-size:17px;gap:6px;}
+  .info-modal-body{padding:12px 14px 16px;font-size:12px;}
+
+  /* Half-boundary skill table (8 cols — let the inner wrapper scroll) */
+  .hb-table{font-size:11px;min-width:max-content;}
+  .hb-table thead th{padding:5px 6px;font-size:9px;}
+  .hb-table tbody td{padding:3px 6px;}
+  .hb-table tbody td.hb-team{font-size:11px;padding:4px 8px;}
+  .hb-table td.hb-adj input{width:54px !important;font-size:11px;padding:2px 3px;}
+
+  /* Toasts — full-bleed so they don't overflow */
+  #toasts{bottom:10px;right:10px;left:10px;}
+  .toast{max-width:none;font-size:12px;padding:8px 12px;}
+
+  /* Auth card */
+  .auth-card{padding:32px 22px;}
+  .auth-title{font-size:24px;}
+}
+
 @media(max-width:640px){
   .cal-day{min-height:60px;padding:4px;}
   .round-pill{font-size:9px;padding:1px 5px;}
@@ -608,7 +738,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4581,7 +4711,7 @@ function _pickMB4Teams(excludeIds){
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
     const md=document.createElement('div');
-    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;min-width:460px;max-width:92vw;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+    md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;width:min(460px,92vw);max-height:90vh;overflow-y:auto;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
     md.innerHTML=`<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">Select MB-4 teams</h3>
       <p style="margin:0 0 14px;color:var(--muted);font-size:12px;">Pick the team for each MB-4 group. Teams already in MB-B are excluded; once a team is picked in one dropdown it is removed from the others.</p>
       ${groups.map(g=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
