@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.14</title>
+<title>League Manager v2026.05.13.15</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -581,7 +581,9 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .nkb2-side-w .nkb2-side-hdr{color:var(--green);}
 .nkb2-side-l .nkb2-side-hdr{color:var(--gold);}
 .nkb2-cols{display:flex;align-items:stretch;gap:8px;}
-.nkb2-col{display:flex;flex-direction:column;width:160px;flex-shrink:0;}
+.nkb2-col{display:flex;flex-direction:column;width:200px;flex-shrink:0;}
+.nkb2-single .nkb2-side{width:100%;}
+.nkb2-single .nkb2-cols{justify-content:flex-start;flex-wrap:nowrap;}
 .nkb2-col-hdr{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:center;padding:4px 2px 6px;border-bottom:1px dashed var(--border);}
 .nkb2-col-active .nkb2-col-hdr{color:var(--green);border-bottom-color:var(--green);}
 .nkb2-col-body{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:2px;padding:4px 0;min-height:140px;}
@@ -613,7 +615,8 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 @media(max-width:768px){
   .nkb2-hdr{font-size:14px;}
   .nkb2-hdr .nkb2-sub{display:block;margin:2px 0 0;font-size:9px;}
-  .nkb2-col{width:130px;}
+  .nkb2-col{width:115px;}
+  .nkb2-single .nkb2-col{width:118px;}
   .nkb2-col-hdr{font-size:9px;}
   .nkb2-chip{font-size:10px;gap:4px;}
   .nkb2-logo{width:14px;height:14px;font-size:7px;}
@@ -792,7 +795,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.14</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.15</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1871,8 +1874,17 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   else if(status==='future')reveal='hidden';
   else reveal=revealStages[info.key]||0;
 
+  // NK round? The full bracket replaces the ordinary match list entirely —
+  // the bracket cells already render every match cell with team chips and
+  // scores, so duplicating them as the standard "level-block" rows below
+  // would just be noise. Standings tables are also meaningless for cup
+  // knockout rounds, which the existing per-level-block code already skips.
+  const isNkRound = /^NK[WL]-/i.test(String(info.round||'')) || /^NK-[WL]-/i.test(String(info.round||''));
+
   let body='';
-  if(!rows.length){
+  if(isNkRound){
+    body=''; // bracket appended below replaces match list for NK rounds
+  } else if(!rows.length){
     body=`<div class="empty" style="padding:20px 12px;font-size:12px;color:var(--muted)">No matches in this round.</div>`;
   } else {
     // Group rows by `level` so each group (1M, 1N, 2A, …) gets its own
@@ -1970,7 +1982,6 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   // pairings with score (or em-dash when the row is in the future or has no
   // full-time score). Future-dated rows blank BOTH team names AND score so
   // the bracket reflects what the user is allowed to see at `current_date`.
-  const isNkRound = /^NK[WL]-/i.test(String(info.round||'')) || /^NK-[WL]-/i.test(String(info.round||''));
   const nkBracket = isNkRound ? _lgBuildNkBracket(info.season||seasonFor(info.date), curDate, info.round) : '';
 
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
@@ -2172,38 +2183,54 @@ function _lgBuildNkBracket(season, curDate, currentRound){
     </div>`;
   };
 
-  // ── W-bracket columns: last 3 rounds (QF → SF → Final) ────────────────
-  // The earlier rounds (R1..R16) are intentionally omitted — drawing all
-  // 128 teams produced a ~1920-px-wide canvas that was unusable on a phone.
-  // The QF onward gives the user the trophy-path overview they actually
-  // need, in a layout that fits a Samsung S24 portrait without horizontal
-  // scrolling on the W side alone.
-  const wCols=[
-    _column('NKW-5-1','QF · 8 → 4',      4, 'pair2'),
-    _column('NKW-6-1','SF · 4 → 2',      2, 'pair2'),
-    _column('NKW-7-1','Final',           1, 'single')
-  ].join('');
-  // ── L-bracket columns: last 3 rounds matching the W side ──────────────
-  // L-R7 (4 matches) → L-R8 (2 matches) → L-9 (3rd/4th, 1 match) so the L
-  // side mirrors the W side's depth and the trophy/3rd-place outcomes are
-  // visible at the same level.
-  const lCols=[
-    _column('NKL-7-1','L-R7 · 4 → 2',   2, 'single'),
-    _column('NKL-8-1','L-R8 · 4 → 2',   2, 'single'),
-    _column('NKL-9-1','3rd/4th',         1, 'single')
-  ].join('');
+  // ── Branch-relative 3-column view ─────────────────────────────────────
+  // Show only the branch the current round-card belongs to (W under W
+  // matches, L under L matches), and pick at most 3 columns: the previous
+  // round, the current round, and the next round on that branch. At the
+  // edges (first/last round) the missing neighbour is simply omitted, so
+  // the view auto-shrinks to 2 columns at NKW-1-1 / NKL-9-1 etc.
+  //
+  // 5-1 and 5-2 (and 6-1 / 6-2) are the same QF / SF slot, just two legs of
+  // one tie. We collapse them into a single "pair2" column for display, and
+  // map either leg's round code to the same slot for the "current" pointer.
+  const W_SEQ=['NKW-1-1','NKW-2-1','NKW-3-1','NKW-4-1','NKW-5-1','NKW-6-1','NKW-7-1'];
+  const L_SEQ=['NKL-5-1','NKL-6-1','NKL-7-1','NKL-8-1','NKL-9-1'];
+  const LABELS={
+    'NKW-1-1':'R1 · 128 → 64', 'NKW-2-1':'R2 · 64 → 32',
+    'NKW-3-1':'R3 · 32 → 16',  'NKW-4-1':'R16 · 16 → 8',
+    'NKW-5-1':'QF · 8 → 4',    'NKW-6-1':'SF · 4 → 2',  'NKW-7-1':'Final',
+    'NKL-5-1':'L-R5 · 8 → 4',  'NKL-6-1':'L-R6 · 8 → 4',
+    'NKL-7-1':'L-R7 · 4 → 2',  'NKL-8-1':'L-R8 · 4 → 2', 'NKL-9-1':'3rd/4th'
+  };
+  const SIZES={
+    'NKW-1-1':64,'NKW-2-1':32,'NKW-3-1':16,'NKW-4-1':8,
+    'NKW-5-1':4,'NKW-6-1':2,'NKW-7-1':1,
+    'NKL-5-1':4,'NKL-6-1':4,'NKL-7-1':2,'NKL-8-1':2,'NKL-9-1':1
+  };
+  // Map leg-2 codes to their leg-1 slot so the slot lookup works regardless
+  // of which leg the user is viewing.
+  const _slotOf=(code)=>String(code||'').replace(/^NKW-5-2/i,'NKW-5-1').replace(/^NKW-6-2/i,'NKW-6-1');
+  const curSlot=_slotOf(curR);
+  let seq, branch;
+  if(/^NKW-/i.test(curSlot)){ seq=W_SEQ; branch='W'; }
+  else if(/^NKL-/i.test(curSlot)){ seq=L_SEQ; branch='L'; }
+  else return '';
+  const idx=seq.indexOf(curSlot);
+  if(idx<0) return '';
+  const picks=[];
+  if(idx>0) picks.push(seq[idx-1]);
+  picks.push(seq[idx]);
+  if(idx<seq.length-1) picks.push(seq[idx+1]);
+  const _isPair=(code)=>code==='NKW-5-1'||code==='NKW-6-1';
+  const cols=picks.map(code=>_column(code,LABELS[code]||code,SIZES[code]||0,_isPair(code)?'pair2':'single')).join('');
 
-  return `<div class="nkb2-wrap">
-    <div class="nkb2-hdr">🏆 NK final stages${season?' — '+esc(seasonLabel(season)):''} <span class="nkb2-sub">(QF · SF · Final on each side · two-legged ties shown as one cell with aggregate)</span></div>
+  const sideCls=branch==='W'?'nkb2-side-w':'nkb2-side-l';
+  const subLabel=picks.length===3?'previous · current · next':(idx===0?'current · next':'previous · current');
+  return `<div class="nkb2-wrap nkb2-single">
+    <div class="nkb2-hdr">${branch==='W'?'🏆':'🥉'} ${branch==='W'?'Winner':'Loser'} branch — ${esc(curR)}${season?' · '+esc(seasonLabel(season)):''} <span class="nkb2-sub">${esc(subLabel)} · two-legged QF/SF shown as one cell with aggregate</span></div>
     <div class="nkb2-scroll">
-      <div class="nkb2-side nkb2-side-w">
-        <div class="nkb2-side-hdr">Winners bracket → 1st place</div>
-        <div class="nkb2-cols">${wCols}</div>
-      </div>
-      <div class="nkb2-trophy">🏆</div>
-      <div class="nkb2-side nkb2-side-l">
-        <div class="nkb2-side-hdr">Losers bracket → 3rd place</div>
-        <div class="nkb2-cols">${lCols}</div>
+      <div class="nkb2-side ${sideCls}">
+        <div class="nkb2-cols">${cols}</div>
       </div>
     </div>
   </div>`;
