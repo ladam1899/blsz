@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.1</title>
+<title>League Manager v2026.05.13.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -843,6 +843,10 @@ async function readBlob(id){
 }
 async function writeToDrive(name,content,existId,mimeType='text/csv'){
   setSS('busy');
+  if(!accessToken){
+    setSS('err');
+    throw new Error('Not signed in — accessToken is empty. Click Sign in again.');
+  }
   try{
     if(existId){
       const m=await dGet(`files/${existId}`,'?fields=mimeType').catch(()=>null);
@@ -852,17 +856,39 @@ async function writeToDrive(name,content,existId,mimeType='text/csv'){
       }
     }
     if(existId){
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existId}?uploadType=media`,{
+      const resp=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existId}?uploadType=media`,{
         method:'PATCH',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':mimeType},body:content});
+      if(!resp.ok){
+        const txt=await resp.text().catch(()=>'');
+        setSS('err');
+        throw new Error(`Drive PATCH ${name} ${resp.status}: ${txt.slice(0,200)}`);
+      }
       setSS('ok');return existId;
     } else {
       const form=new FormData();
       form.append('metadata',new Blob([JSON.stringify({name,parents:[FOLDER_ID],mimeType})],{type:'application/json'}));
       form.append('file',new Blob([content],{type:mimeType}));
       const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:`Bearer ${accessToken}`},body:form});
-      const d=await r.json();setSS('ok');return d.id;
+      if(!r.ok){
+        const txt=await r.text().catch(()=>'');
+        setSS('err');
+        throw new Error(`Drive POST ${name} ${r.status}: ${txt.slice(0,200)}`);
+      }
+      const d=await r.json();
+      if(!d.id){
+        setSS('err');
+        throw new Error(`Drive POST ${name} returned no id: ${JSON.stringify(d).slice(0,200)}`);
+      }
+      setSS('ok');return d.id;
     }
-  }catch(e){setSS('err');toast(e.message,'err');return existId;}
+  }catch(e){
+    // Re-throw so the caller (saveSheet → edFlushDirty) can record the
+    // failure, keep the dirty counter, and schedule a retry. Show a toast
+    // for visibility — used to be silent.
+    setSS('err');
+    console.error('[writeToDrive] failed:',name,e);
+    throw e;
+  }
 }
 
 // ── CSV ───────────────────────────────────────────────────────
@@ -6941,9 +6967,26 @@ async function edFlushDirty(){
   }
 }
 
-// Compatibility shim — older callers (Save Now button, generateSeasonFromDraw,
-// etc.) still call edForceSave(). Now it just triggers an immediate flush.
-async function edForceSave(){return edFlushDirty();}
+// Save Now button handler. Forces an immediate flush of every dirty sheet
+// and gives the user direct feedback so they know something happened.
+async function edForceSave(){
+  const dirtyBefore=_lmTotalDirty();
+  const sheetsBefore=Object.keys(edDirty).filter(s=>edDirty[s]>0);
+  if(dirtyBefore===0){
+    toast('Nothing to save — everything is already up to date','');
+    return;
+  }
+  toast(`💾 Saving ${dirtyBefore} change${dirtyBefore===1?'':'s'} across ${sheetsBefore.length} sheet${sheetsBefore.length===1?'':'s'} (${sheetsBefore.join(', ')})…`,'');
+  await edFlushDirty();
+  const dirtyAfter=_lmTotalDirty();
+  if(dirtyAfter===0){
+    toast(`✅ Saved ${dirtyBefore} change${dirtyBefore===1?'':'s'} to Drive`,'');
+  } else if(edSaveState==='error'){
+    toast(`⚠ Save failed — ${edSaveError||'see console'}. ${dirtyAfter} change${dirtyAfter===1?'':'s'} still pending; retry queued.`,'err');
+  } else {
+    toast(`Partial save: ${dirtyBefore-dirtyAfter} done, ${dirtyAfter} still pending — retrying.`,'warn');
+  }
+}
 
 function edUpdateSB(){
   const d=DB[edTab];
