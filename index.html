@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.4</title>
+<title>League Manager v2026.05.13.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -608,7 +608,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2678,28 +2678,37 @@ function _hbAutumnPerformance(season){
   // Detect spring boundary so we only sum AUTUMN-half rolls.
   const sy=(()=>{const mm=String(season||'').match(/^(\d{4})_/);return mm?parseInt(mm[1])+1:NaN;})();
   const splitDate=isNaN(sy)?'':(sy+'-01-01');
-  const acc=new Map(); // team_id → {sum, count}
+  const acc=new Map(); // team_id → {sum, samples, matches}
   const _add=(tid,v)=>{
     if(!tid)return;
     const n=parseFloat(v);
     if(isNaN(n))return;
-    if(!acc.has(tid))acc.set(tid,{sum:0,count:0});
-    const a=acc.get(tid); a.sum+=n; a.count++;
+    if(!acc.has(tid))acc.set(tid,{sum:0,samples:0,matches:0});
+    const a=acc.get(tid); a.sum+=n; a.samples++;
+  };
+  const _addMatch=(tid)=>{
+    if(!tid)return;
+    if(!acc.has(tid))acc.set(tid,{sum:0,samples:0,matches:0});
+    acc.get(tid).matches++;
   };
   m.r.forEach(r=>{
     const date=String(r[di]||'').trim(); if(!date)return;
     if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
     if(splitDate&&date>=splitDate)return;   // skip spring rows
     const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
+    _addMatch(h); _addMatch(a);
     homeCols.forEach(ci=>{if(ci>=0)_add(h,r[ci]);});
     awayCols.forEach(ci=>{if(ci>=0)_add(a,r[ci]);});
   });
   acc.forEach((v,tid)=>{
-    if(!v.count)return;
-    const avg=v.sum/v.count;
-    let perfDelta=Math.round((avg-50)/5);
+    if(!v.samples)return;
+    const avg=v.sum/v.samples;
+    // Perf Δ is the fractional formula (avg − 50) / 5, rounded to 1 decimal,
+    // clamped ±10. Only applied when the team played MORE THAN 10 matches
+    // in the autumn half — otherwise the sample is too thin to act on.
+    let perfDelta=v.matches>10?Math.round((avg-50)/5*10)/10:0;
     if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
-    out.set(tid,{avg:Math.round(avg*10)/10, samples:v.count, perfDelta});
+    out.set(tid,{avg:Math.round(avg*10)/10, samples:v.samples, matches:v.matches, perfDelta, applied:v.matches>10});
   });
   return out;
 }
@@ -2753,7 +2762,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       });
       if(!anyReal) _autSource[tt.tid]='default';
     });
-    // Initial Your Δ = existing _S.skills - autumn.skills, or perfDelta when
+    // Initial My Δ = existing _S.skills - autumn.skills, or perfDelta when
     // no _S row exists yet.
     const _initAdj=(tid)=>{
       const s=_hbReadSkill(tid,sTag,'skills');
@@ -2762,27 +2771,38 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       const perf=_perfMap.get(tid);
       return perf?perf.perfDelta:0;
     };
-    const _clampSkills=(v)=>Math.max(0,Math.min(100,v));
+    // Skills can legitimately exceed 100 (e.g. a baseline of 120) — only
+    // floor at 0, don't impose an upper cap that would silently demote teams.
+    const _clampSkills=(v)=>Math.max(0,v);
+    const _fmtDelta=(n)=>{
+      if(n===0)return '0';
+      const r=Math.round(n*10)/10;
+      const s=(Number.isInteger(r)?String(r):r.toFixed(1));
+      return (r>0?'+':'')+s;
+    };
 
     const rowsHtml=teamsArr.map(tt=>{
       const a=_autAll[tt.tid].skills;
       const perf=_perfMap.get(tt.tid);
       const adj=_initAdj(tt.tid);
-      const newVal=_clampSkills(a+adj);
+      const newVal=_clampSkills(Math.round(a+adj));
+      const recVal=perf?_clampSkills(Math.round(a+perf.perfDelta)):a;
       const avgStr=perf?String(perf.avg):'—';
-      const sampStr=perf?String(perf.samples):'—';
-      const perfStr=perf?(perf.perfDelta>0?'+':'')+String(perf.perfDelta):'—';
-      const perfCls=perf?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'';
+      const nStr=perf?String(perf.matches):'—';
+      const perfStr=perf?(perf.applied?_fmtDelta(perf.perfDelta):'0'):'—';
+      const perfCls=perf&&perf.applied?(perf.perfDelta>0?'hb-perf-up':perf.perfDelta<0?'hb-perf-down':'hb-perf-zero'):'hb-perf-zero';
       const aCls='hb-aut'+(_autSource[tt.tid]==='default'?' hb-aut-default':'');
-      const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Autumn `skills` value';
-      const avgTitle=perf?`Average of ${perf.samples} rand-roll cell(s) across this team's autumn matches (home: first/second/extra att+def + pen; away: same)`:'No autumn rolls recorded';
+      const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Previous half-season `skills` value';
+      const avgTitle=perf?`Average of ${perf.samples} rand-roll cell(s) across this team's ${perf.matches} autumn match(es). Perf Δ only applies when matches > 10 (this team: ${perf.matches}${perf.applied?' — applied':' — too few, treated as 0'})`:'No autumn rolls recorded';
+      const recTitle=perf&&perf.applied?`Previous skills (${a}) + Perf Δ (${_fmtDelta(perf.perfDelta)})`:'Same as previous skills (perf Δ not applied)';
       return `<tr data-row="${esc(tt.tid)}">`+
         `<td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>`+
         `<td class="hb-avg" title="${esc(avgTitle)}">${esc(avgStr)}</td>`+
-        `<td class="hb-samp" title="Number of rand-roll cells averaged">${esc(sampStr)}</td>`+
-        `<td class="hb-perf ${perfCls}" title="round((avg − 50) / 5), clamped ±10">${esc(perfStr)}</td>`+
+        `<td class="hb-samp" title="Matches played in autumn (perf Δ applies only when > 10)">${esc(nStr)}</td>`+
         `<td class="${aCls}" title="${esc(aTitle)}">${esc(String(a))}</td>`+
-        `<td class="hb-adj"><input type="number" step="1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:60px"></td>`+
+        `<td class="hb-perf ${perfCls}" title="(avg − 50) / 5, rounded to 0.1, clamped ±10. Applied only when matches > 10">${esc(perfStr)}</td>`+
+        `<td class="hb-rec" title="${esc(recTitle)}">${esc(String(recVal))}</td>`+
+        `<td class="hb-adj"><input type="number" step="0.1" value="${adj}" data-tid="${esc(tt.tid)}" style="width:64px"></td>`+
         `<td class="hb-spr" data-out="${esc(tt.tid)}">${esc(String(newVal))}</td>`+
         `</tr>`;
     }).join('');
@@ -2793,17 +2813,20 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
     md.innerHTML=
       `<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>`+
-      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's autumn matches. 0..100 scale. Perf Δ = round((avg − 50) / 5), clamped ±10. Your Δ is pre-filled with Perf Δ.</span></p>`+
+      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's autumn matches. 0..100 scale. n = autumn matches played. Perf Δ = (avg − 50) / 5, one decimal, clamped ±10; applied only when n > 10. Recommended skills = prev + Perf Δ. My Δ is pre-filled with Perf Δ.</span></p>`+
       `<div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">`+
         `<table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">`+
           `<thead><tr style="background:var(--surface2)">`+
             `<th class="hb-team" style="position:sticky;left:0;background:var(--surface2);text-align:left;padding:6px 10px">Team</th>`+
             `<th title="Average of every rand-roll cell (0..100) across this team's autumn matches">Rand avg</th>`+
-            `<th title="How many rand-roll cells were averaged">n</th>`+
-            `<th title="round((avg − 50) / 5), clamped ±10">Perf Δ</th>`+
-            `<th>Aut. skills</th><th>Your Δ</th><th>New skills</th>`+
+            `<th title="Autumn matches played. Perf Δ applies only when > 10">n</th>`+
+            `<th title="Previous half-season `+"`skills`"+` value (autumn)">Prev skills</th>`+
+            `<th title="(avg − 50) / 5, one decimal, clamped ±10. Applied only when n > 10">Perf Δ</th>`+
+            `<th title="Prev skills + Perf Δ (suggested new value)">Recommended skills</th>`+
+            `<th title="Your manual adjustment; pre-filled with Perf Δ">My Δ</th>`+
+            `<th title="Prev skills + My Δ (rounded; floored at 0, no upper cap)">New skills</th>`+
           `</tr></thead>`+
-          `<tbody>${rowsHtml||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>`+
+          `<tbody>${rowsHtml||'<tr><td colspan="8" style="padding:14px;text-align:center;color:var(--muted)">No teams found.</td></tr>'}</tbody>`+
         `</table>`+
       `</div>`+
       `<div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;align-items:center;">`+
@@ -2834,6 +2857,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       '.hb-table td.hb-perf.hb-perf-zero{color:var(--muted);}'+
       '.hb-table td.hb-spr{font-weight:700;}'+
       '.hb-table td.hb-spr.changed{color:var(--blue);}'+
+      '.hb-table td.hb-rec{color:var(--muted);font-weight:500;}'+
       '.hb-table td.hb-adj input{padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);text-align:center;font-family:"JetBrains Mono",monospace;font-size:12px;}'+
       '.hb-table td.hb-adj input:focus{outline:1px solid var(--blue);border-color:var(--blue);}';
     document.head.appendChild(styleTag);
@@ -2845,19 +2869,19 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       let changed=0;
       inputs.forEach(inp=>{
         const tid=inp.dataset.tid;
-        let v=parseInt(inp.value); if(isNaN(v))v=0;
+        let v=parseFloat(inp.value); if(isNaN(v))v=0;
         if(v>100)v=100; if(v<-100)v=-100;
         const a=_autAll[tid].skills;
         const out=md.querySelector('td.hb-spr[data-out="'+tid+'"]');
         if(out){
-          const s=_clampSkills(a+v);
+          const s=_clampSkills(Math.round(a+v));
           out.textContent=String(s);
           if(v!==0)out.classList.add('changed'); else out.classList.remove('changed');
         }
         if(v!==0)changed++;
       });
       const sEl=md.querySelector('#hbSummary');
-      if(sEl)sEl.textContent=changed+' of '+teamsArr.length+' teams adjusted from autumn';
+      if(sEl)sEl.textContent=changed+' of '+teamsArr.length+' teams adjusted from previous half';
     };
     inputs.forEach(inp=>inp.addEventListener('input',updateAll));
     md.querySelector('#hbReset').onclick=()=>{
@@ -2876,10 +2900,10 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
       let upd=0,ins=0,noop=0;
       teamsArr.forEach(tt=>{
         const inp=md.querySelector('input[data-tid="'+tt.tid+'"]');
-        let adj=inp?parseInt(inp.value):0; if(isNaN(adj))adj=0;
+        let adj=inp?parseFloat(inp.value):0; if(isNaN(adj))adj=0;
         const values={};
         _HB_SKILL_COLS.forEach(k=>{
-          if(k==='skills') values[k]=_clampSkills(_autAll[tt.tid].skills+adj);
+          if(k==='skills') values[k]=_clampSkills(Math.round(_autAll[tt.tid].skills+adj));
           else values[k]=_autAll[tt.tid][k];
         });
         const op=_hbUpsertSpringSkill(tt.tid,sTag,values);
