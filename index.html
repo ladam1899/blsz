@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.10</title>
+<title>League Manager v2026.05.13.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -456,7 +456,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .blsz-flat tbody td.b-league-cell{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--surface);}
 /* Per-level standings table: change-column header + cell */
 .st-table th.c-chg,.st-table td.c-chg{width:34px;text-align:center;}
-.st-table th.c-dest,.st-table td.c-dest{width:46px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);}
+.st-table th.c-dest,.st-table td.c-dest{width:52px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap;}
 /* MB-B place tiers — colours only on the place badge (the row background
    stays white). White (keep) = stays in the level's top sub-group, grey
    (mid) = lower playoff in the same level, red (mix) = mixed group with a
@@ -738,7 +738,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1981,17 +1981,19 @@ function _kkDestForPlace(phase,level,placeInGroup){
   if(phase==='KKROM'){
     const ri=_romanToInt(lvl);
     if(isNaN(ri))return '';
+    // Like KKABC, the destination column shows the final BLSZ-rank RANGE that
+    // the team's place-in-group lands in after the next phase's cross-group
+    // re-sort, not the opaque slot number. KKROM I-IX feed KKABC (BLSZ 1-27);
+    // X-XV feed KKJKL (BLSZ 28-45). Every group-1st in the same band shares a
+    // range (the cross-group sort then picks the exact slot).
     if(ri>=1&&ri<=9){
-      // I..IX feed KKABC.
-      if(p===1) return String(ri);          // group-winner position
-      if(p===2) return String(9+ri);        // 10..18
-      if(p===3) return String(18+ri);       // 19..27
+      if(p===1) return '1-9';
+      if(p===2) return '10-18';
+      if(p===3) return '19-27';
     } else if(ri>=10&&ri<=15){
-      // X..XV feed KKJKL.
-      const idx=ri-9; // 1..6
-      if(p===1) return String(27+idx);      // 28..33
-      if(p===2) return String(33+idx);      // 34..39
-      if(p===3) return String(39+idx);      // 40..45
+      if(p===1) return '28-33';
+      if(p===2) return '34-39';
+      if(p===3) return '40-45';
     }
     return '';
   }
@@ -2046,37 +2048,41 @@ function _kkDestForPlace(phase,level,placeInGroup){
   return '';
 }
 
+// Map an MB-R Roman group → final BLSZ MB-R rank range (e.g. 'III' → '13-22').
+// Single source of truth for the matches-view destination column.
+const _MBR_RANGES={'I':'1-6','II':'7-12','III':'13-22','IV':'23-28','V':'29-34','VI':'35-44','VII':'45-52','VIII':'53-60','IX':'61-68','X':'69-76'};
 function _mbBPlaceTier(group, place){
   const g=String(group||'').trim(); const p=parseInt(place);
-  if(!g||!p||p<1) return {cls:'',dest:''};
+  if(!g||!p||p<1) return {cls:'',dest:'',destRange:''};
+  const _r=(roman,cls)=>({cls,dest:roman,destRange:_MBR_RANGES[roman]||''});
   // MB1 (8 teams): 1-3→I (white), 4-6→II (grey), 7-8→III (red, mixed with MB2 top)
   if(g==='1M'||g==='1N'){
-    if(p<=3) return {cls:'mbb-keep',dest:'I'};
-    if(p<=6) return {cls:'mbb-mid', dest:'II'};
-    return {cls:'mbb-mix',dest:'III'};
+    if(p<=3) return _r('I','mbb-keep');
+    if(p<=6) return _r('II','mbb-mid');
+    return _r('III','mbb-mix');
   }
   // MB2 (8 teams): 1-2→III (red), 3-4→IV (white), 5-6→V (grey), 7-8→VI (red)
   if(g==='2A'||g==='2B'||g==='2C'){
-    if(p<=2) return {cls:'mbb-mix', dest:'III'};
-    if(p<=4) return {cls:'mbb-keep',dest:'IV'};
-    if(p<=6) return {cls:'mbb-mid', dest:'V'};
-    return {cls:'mbb-mix',dest:'VI'};
+    if(p<=2) return _r('III','mbb-mix');
+    if(p<=4) return _r('IV','mbb-keep');
+    if(p<=6) return _r('V','mbb-mid');
+    return _r('VI','mbb-mix');
   }
   // MB3 (8 teams): 1→VI (red), 2-3→VII (white), 4-5→VIII (grey),
   //                6-7→IX (grey), 8→X (red, mixed with MB4)
   if(g==='3NY'||g==='3K'||g==='3É'||g==='3D'){
-    if(p===1) return {cls:'mbb-mix', dest:'VI'};
-    if(p<=3)  return {cls:'mbb-keep',dest:'VII'};
-    if(p<=5)  return {cls:'mbb-mid', dest:'VIII'};
-    if(p<=7)  return {cls:'mbb-mid', dest:'IX'};
-    return {cls:'mbb-mix',dest:'X'};
+    if(p===1) return _r('VI','mbb-mix');
+    if(p<=3)  return _r('VII','mbb-keep');
+    if(p<=5)  return _r('VIII','mbb-mid');
+    if(p<=7)  return _r('IX','mbb-mid');
+    return _r('X','mbb-mix');
   }
   // MB4 (1 team): the single team is the bottom of the structure and joins
   // the MB-R group X mix.
   if(g==='4K'||g==='4NY'||g==='4É'||g==='4D'){
-    if(p===1) return {cls:'mbb-mix', dest:'X'};
+    if(p===1) return _r('X','mbb-mix');
   }
-  return {cls:'',dest:''};
+  return {cls:'',dest:'',destRange:''};
 }
 
 // Phase prefix that marks a 3-team round-robin KK group (3 rounds, 3 matches
@@ -2115,16 +2121,18 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   // Header label + tooltip per phase.
   const _kkColLabel=(()=>{
     if(!isKK)return '';
-    if(kkPhase==='KKARA') return 'Next';     // → KKROM 1..27 / KKJKL 28..45
-    if(kkPhase==='KKROM') return 'KKABC/JKL';// next-phase BLSZ slot
-    if(kkPhase==='KKABC') return 'KKGOR';    // next-phase BLSZ slot
-    if(kkPhase==='KKJKL'||kkPhase==='KKGOR') return 'Place'; // final BLSZ place
+    // Every KK destination column is expressed in terms of the final BLSZ
+    // KK rank (1-45), so use a single short header label across all phases.
+    if(kkPhase==='KKARA') return 'KK';
+    if(kkPhase==='KKROM') return 'KK';
+    if(kkPhase==='KKABC') return 'KK';
+    if(kkPhase==='KKJKL'||kkPhase==='KKGOR') return 'KK';
     return '';
   })();
   const _kkColTitle=(()=>{
     if(!isKK)return '';
     if(kkPhase==='KKARA') return 'KKARA top-3 → KKROM places 1–27; 4th–5th → KKJKL 28–45';
-    if(kkPhase==='KKROM') return 'KKROM I–IX winners→1–9, seconds→10–18, thirds→19–27 (KKABC); X–XV winners→28–33, seconds→34–39, thirds→40–45 (KKJKL)';
+    if(kkPhase==='KKROM') return 'KKROM I–IX place-in-group → final BLSZ KK rank range: 1st→1-9 (via KKABC), 2nd→10-18, 3rd→19-27. X–XV: 1st→28-33 (via KKJKL), 2nd→34-39, 3rd→40-45.';
     if(kkPhase==='KKABC') return 'KKABC region + place → KKGOR group → final BLSZ rank range. A/B/C: 1-3 / 4-6 / 7-9 (α/β/γ). D/E/F: 10-12 / 13-15 / 16-18 (δ/ε/ζ). G/H/I: 19-21 / 22-24 / 25-27 (η/θ/ι).';
     if(kkPhase==='KKJKL') return 'KKJKL is a final phase: places 28–45 (J 28–33, K 34–39, L 40–45)';
     if(kkPhase==='KKGOR') return 'KKGOR is a final phase: places 1–27 (α 1–3, β 4–6, … ι 25–27)';
@@ -2314,9 +2322,10 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   } else {
     const _showDest=isMbB||isKK||isMbR;
     const _mbrColTitle='MB-R overall BLSZ rank for this place. I 1-6, II 7-12, III 13-22, IV 23-28, V 29-34, VI 35-44, VII 45-52, VIII 53-60, IX 61-68, X 69-76.';
-    const _destHdr=isMbB?'<th class="c-dest" title="MB-R playoff group this place feeds into">→</th>'
+    const _mbbColTitle='MB-R playoff group this place feeds into, shown as the overall MB-R rank range. I 1-6, II 7-12, III 13-22, IV 23-28, V 29-34, VI 35-44, VII 45-52, VIII 53-60, IX 61-68, X 69-76.';
+    const _destHdr=isMbB?`<th class="c-dest" title="${esc(_mbbColTitle)}">MB</th>`
                   :(isKK?`<th class="c-dest" title="${esc(_kkColTitle)}">${esc(_kkColLabel)}</th>`
-                  :(isMbR?`<th class="c-dest" title="${esc(_mbrColTitle)}">BLSZ</th>`:''));
+                  :(isMbR?`<th class="c-dest" title="${esc(_mbrColTitle)}">MB</th>`:''));
     html+=`<table class="st-table">
       <colgroup><col class="c-pos"><col class="c-chg">${_showDest?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
       <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${_destHdr}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
@@ -2362,7 +2371,9 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
       const tier=isMbB?_mbBPlaceTier(level,pos):{cls:'',dest:''};
       let destCell='';
       if(isMbB){
-        destCell=`<td class="c-dest" title="MB-R group ${esc(tier.dest||'')}">${esc(tier.dest||'')}</td>`;
+        const _mbbVal=tier.destRange||'';
+        const _mbbTtl=tier.dest?`MB-R group ${tier.dest} (${tier.destRange||''})`:'';
+        destCell=`<td class="c-dest" title="${esc(_mbbTtl)}">${esc(_mbbVal)}</td>`;
       } else if(isKK){
         const kd=_kkDestForPlace(kkPhase,level,pos);
         destCell=`<td class="c-dest" title="${esc(_kkColTitle)}">${esc(kd)}</td>`;
