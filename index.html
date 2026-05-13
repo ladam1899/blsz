@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.13.7</title>
+<title>League Manager v2026.05.13.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -738,7 +738,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.13.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4687,26 +4687,25 @@ function _pickMB4Teams(excludeIds){
     const groups=['4K','4NY','4É','4D'];
     const t=DB.teams;
     const ii=t.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
-    // Prefer `long_name` (matches the rest of the app — Results table, profile
-    // popup etc.). Fall back per-row to `full_name`, then `name`, then `team_id`.
-    // Per-row chaining (not per-column) so a blank cell in one preferred column
-    // doesn't drag the whole dropdown back to bare IDs.
-    const fnLong=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
-    const fnFull=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='full_name');
-    const fnName=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='name');
     // MB-4 picks must come from the BLSZ organisation only (the federation
     // we're running this app for). Teams in other orgs are excluded.
     const oi=t.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
-    const _cell=(r,i)=>i>=0?String(r[i]||'').trim():'';
+    // Resolve the display name via `teamById`, which already understands the
+    // `full_name` "Short, Long Official Name" comma-split AND the `long_name`
+    // override column. Reading raw cells (the previous approach) missed the
+    // split and showed bare IDs whenever `long_name` was empty.
     const options=t.r.map(r=>{
       const id=ii>=0?String(r[ii]||'').trim():'';
-      const name=_cell(r,fnLong)||_cell(r,fnFull)||_cell(r,fnName)||id;
+      if(!id)return null;
+      const tb=(typeof teamById==='function')?teamById(id):{long_name:'',full_name:'',name:id};
+      // `teamById(...).name` already returns long_name || full_name || id.
+      const name=String(tb.long_name||tb.full_name||tb.name||id).trim()||id;
       const org=oi>=0?String(r[oi]||'').trim():'';
-      // Show the long name and the id together so the user can disambiguate
+      // Show the resolved name and the id together so the user can disambiguate
       // two teams that share a display name (e.g. reserves vs first XI).
       const label=name===id?id:(name+' ('+id+')');
       return{id,name,label,org};
-    }).filter(o=>o.id&&!excludeIds.has(o.id)&&o.org.toUpperCase()==='BLSZ')
+    }).filter(o=>o&&o.id&&!excludeIds.has(o.id)&&o.org.toUpperCase()==='BLSZ')
       .sort((a,b)=>a.name.localeCompare(b.name));
     const ov=document.createElement('div');
     ov.className='panel-overlay open';ov.style.zIndex='500';
