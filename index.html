@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.3</title>
+<title>League Manager v2026.05.14.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -743,7 +743,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1623,6 +1623,18 @@ function _lgCurrentRound(all,cur){
   const today=all.find(r=>r.date===cur);if(today)return today;
   return all.find(r=>r.date>=cur)||all[all.length-1];
 }
+// On a gameday that hosts several rounds (e.g. NKW-5-2 + NKL-5-1 on the same
+// date), the reveal button should chew through them one at a time — pick the
+// first round whose reveal stage is still < 2 (i.e. not yet fully revealed /
+// not yet skipped). Returns null when every today-round is already at stage 2
+// or there is no today-round at all; the caller then falls through to the
+// generic `_lgCurrentRound` for the "next round" advance action.
+function _lgPendingTodayRound(all,cur){
+  if(!all||!all.length||!cur)return null;
+  const today=all.filter(r=>r.date===cur);
+  if(!today.length)return null;
+  return today.find(r=>((revealStages[r.key]||0)<2))||null;
+}
 function _lgCssId(s){return String(s||'').replace(/[^a-zA-Z0-9_-]/g,'_');}
 
 function renderLeagueView(){
@@ -1706,13 +1718,19 @@ function renderLeagueView(){
   // the user has picked via the Round dropdowns. Clicking also resets
   // lgSelRound so the view scrolls back to the actual current round.
   // Stages cycle: Kick-off → Reveal First Half → Reveal Full Time → Next Round.
-  const currentActual=current;
+  // On a gameday with several rounds, advance through them ONE AT A TIME.
+  // `currentActual` is the first today-round still pending (reveal stage <2);
+  // if every today-round is already revealed/skipped we fall through to the
+  // calendar-based current round, whose only remaining action is the date
+  // advance (Next Round).
+  const _pendingToday=_lgPendingTodayRound(allRounds,curDate);
+  const _everythingTodayDone=(!_pendingToday) && allRounds.some(r=>r.date===curDate);
+  const currentActual=_pendingToday||current;
   const stageNow=currentActual?(revealStages[currentActual.key]||0):0;
-  // Does the current round actually have any match rows in matches.csv? If
-  // not, there's nothing to "reveal" — the only meaningful action is to skip
-  // forward to the next round. Once the user adds matches manually via the
-  // Play page, this branch flips back to the normal first-half/full-time
-  // reveal flow on the next render.
+  // Does the active reveal round actually have any match rows in matches.csv?
+  // If not, there's nothing to "reveal" — the only meaningful action is to
+  // mark this round as revealed (and on the next click move to the next
+  // pending round on the same gameday, then to the next gameday).
   const _curHasMatches=(()=>{
     if(!currentActual) return false;
     const mc=_lgMatchCols();
@@ -1721,7 +1739,8 @@ function renderLeagueView(){
   })();
   let revealLabel='▶ Reveal First Half',revealAction='reveal',revealCls='db-now';
   if(!currentActual){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
-  else if(!_curHasMatches){revealLabel='⏭ Skip Round (empty)';revealAction='next';revealCls='db-now next';}
+  else if(_everythingTodayDone){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
+  else if(!_curHasMatches){revealLabel='⏭ Skip Round (empty)';revealAction='reveal';revealCls='db-now next';}
   else if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
   else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
   else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
@@ -1806,8 +1825,27 @@ function lgRevealBtnClick(action, btn){
     }
     if(action==='reveal'){
       const all=_lgCalendarRounds();
-      const cur=_lgCurrentRound(all,currentDate());
-      if(cur){lgRevealNextStage(cur.key);return;}
+      const cd=currentDate();
+      // Prefer the first pending round of TODAY so multi-round gamedays
+      // (e.g. NKW-5-2 + NKL-5-1) are revealed one click at a time. Falls
+      // back to the generic current-round picker when nothing is pending
+      // today (shouldn't happen in practice, but keeps the handler safe).
+      const cur=_lgPendingTodayRound(all,cd)||_lgCurrentRound(all,cd);
+      if(cur){
+        // Empty rounds skip straight to stage 2 (no first-half / full-time
+        // intermediate state to show), so the next render advances to the
+        // next pending round on the same date — or flips the button to
+        // "Next Round" if every today-round is done.
+        const mc=_lgMatchCols();
+        const hasMatches=mc.rounds>=0 && DB.matches.r.some(r=>String(r[mc.rounds]||'').trim()===cur.round);
+        if(!hasMatches){
+          revealStages[cur.key]=2;
+          renderLeagueView();
+          return;
+        }
+        lgRevealNextStage(cur.key);
+        return;
+      }
     }
     renderLeagueView();
   };
