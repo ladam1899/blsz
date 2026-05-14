@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.7</title>
+<title>League Manager v2026.05.14.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -5573,6 +5573,23 @@ async function generateSeasonFromDraw(targetSeason, half){
     mbrLevels.forEach(lvl=>{
       resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity));
     });
+    // Consolidated `MB` table: places 1..76 derived from each Roman level via
+    // _BLSZ_MBR_OFFSETS. Easier to read than scanning every level row when the
+    // user (or downstream draws — KK qualifying via phase 3) needs to look up
+    // "who finished 23rd overall in MB-R last season". Per-level rows above
+    // remain in results.csv — this just adds a consolidated parallel set.
+    if(typeof _BLSZ_MBR_OFFSETS==='object'){
+      Object.keys(_BLSZ_MBR_OFFSETS).forEach(lvl=>{
+        const off=_BLSZ_MBR_OFFSETS[lvl];
+        const tbl=_mbRLevelRunningTable(lvl,Infinity);
+        if(!Array.isArray(tbl)) return;
+        tbl.forEach((row,i)=>{
+          if(!row||!row.id) return;
+          _upsertResultsRow(targetSeason,'MB',off+i+1,row.id);
+          resRows++;
+        });
+      });
+    }
   }
 
   // ── PHASE 3: KK cup phases ─────────────────────────────────────
@@ -5634,6 +5651,39 @@ async function generateSeasonFromDraw(targetSeason, half){
       levels.forEach(lvl=>{
         resRows+=_writeFinalTable(targetSeason,`${phaseName}-${lvl}`,_tableFn(lvl));
       });
+      // Consolidated `KK` table — only after KKGOR (the final KK phase that
+      // awards points 1..27). Uses _BLSZ_KK_OFFSETS to convert (group-letter,
+      // place-in-group) → continuous BLSZ KK rank. KKJKL adds 28..45 to the
+      // same `KK` table for the lower bracket. Per-group rows above (KKGOR-α,
+      // KKJKL-j, …) stay too — this only adds the consolidated parallel set.
+      if(phaseName==='KKGOR'&&typeof _BLSZ_KK_OFFSETS==='object'){
+        levels.forEach(lvl=>{
+          const letter=String(lvl).trim().charAt(0);
+          const off=_BLSZ_KK_OFFSETS[letter];
+          if(off==null) return;
+          const tbl=_tableFn(lvl);
+          if(!Array.isArray(tbl)) return;
+          tbl.forEach((row,i)=>{
+            if(!row||!row.id) return;
+            _upsertResultsRow(targetSeason,'KK',off+i+1,row.id);
+            resRows++;
+          });
+        });
+      }
+      if(phaseName==='KKJKL'&&typeof _BLSZ_KK_OFFSETS==='object'){
+        levels.forEach(lvl=>{
+          const letter=String(lvl).trim().charAt(0);
+          const off=_BLSZ_KK_OFFSETS[letter];
+          if(off==null) return;
+          const tbl=_tableFn(lvl);
+          if(!Array.isArray(tbl)) return;
+          tbl.forEach((row,i)=>{
+            if(!row||!row.id) return;
+            _upsertResultsRow(targetSeason,'KK',off+i+1,row.id);
+            resRows++;
+          });
+        });
+      }
     }
   };
   // Order matters — each stage's output feeds the next.
