@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.1</title>
+<title>League Manager v2026.05.14.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -79,8 +79,13 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-date:focus{border-color:var(--green);}
 .db-gen{background:var(--blue);color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
 .db-gen:hover{background:#2563c7;}
-.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
+.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;display:inline-flex;align-items:center;gap:7px;}
 .db-now:hover{background:var(--green-m);}
+.db-now-spin{display:none;width:11px;height:11px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:db-now-spin .65s linear infinite;}
+.db-now.loading{cursor:wait;opacity:.85;}
+.db-now.loading .db-now-spin{display:inline-block;}
+.db-now.loading:hover{background:var(--green);}
+@keyframes db-now-spin{to{transform:rotate(360deg);}}
 .db-current{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);padding:4px 10px;background:var(--green-l);border-radius:4px;}
 .rc-group-hdr{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;color:var(--muted);padding:10px 10px 4px;border-top:1px solid var(--border);margin-top:6px;}
 .rc-group-hdr:first-child{border-top:none;margin-top:0;}
@@ -738,7 +743,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1703,8 +1708,20 @@ function renderLeagueView(){
   // Stages cycle: Kick-off → Reveal First Half → Reveal Full Time → Next Round.
   const currentActual=current;
   const stageNow=currentActual?(revealStages[currentActual.key]||0):0;
+  // Does the current round actually have any match rows in matches.csv? If
+  // not, there's nothing to "reveal" — the only meaningful action is to skip
+  // forward to the next round. Once the user adds matches manually via the
+  // Play page, this branch flips back to the normal first-half/full-time
+  // reveal flow on the next render.
+  const _curHasMatches=(()=>{
+    if(!currentActual) return false;
+    const mc=_lgMatchCols();
+    if(mc.rounds<0) return false;
+    return DB.matches.r.some(r=>String(r[mc.rounds]||'').trim()===currentActual.round);
+  })();
   let revealLabel='▶ Reveal First Half',revealAction='reveal',revealCls='db-now';
   if(!currentActual){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
+  else if(!_curHasMatches){revealLabel='⏭ Skip Round (empty)';revealAction='next';revealCls='db-now next';}
   else if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
   else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
   else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
@@ -1727,7 +1744,7 @@ function renderLeagueView(){
         ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
       </select>
       <input type="date" class="db-date" value="${esc(curDate)}" onchange="lgSetCurrentDate(this.value)" title="Set current_date manually">
-      <button class="${revealCls}" onclick="lgRevealBtnClick('${revealAction}')" title="Play the current round — reveal first half, full time, then advance to the next round">${esc(revealLabel)}</button>
+      <button class="${revealCls}" id="lgRevealBtn" onclick="lgRevealBtnClick('${revealAction}',this)" title="Play the current round — reveal first half, full time, then advance to the next round"><span class="db-now-spin"></span><span class="db-now-label">${esc(revealLabel)}</span></button>
     </div>
     <div class="lg-cols">
       <div class="lg-rounds-scroll" id="lgRoundsScroll"></div>
@@ -1767,18 +1784,35 @@ function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
 function lgGoCurrent(){lgFilter={season:'',roundType:'',roundNum:'',search:''};lgSelRound=null;renderLeagueView();}
 // Filter-bar reveal/next handler. Always resets lgSelRound so the
 // re-rendered view scrolls back to the actual current round.
-function lgRevealBtnClick(action){
+function lgRevealBtnClick(action, btn){
   lgSelRound=null;
-  if(action==='next'){
-    advanceToNextRound();
-    return;
+  // Visual feedback: the work itself runs synchronously (reveal-stage bump
+  // or advanceToNextRound, both of which trigger a re-render that wipes the
+  // button), so we add the `.loading` class first and force a paint by
+  // pushing the actual work onto the next animation frame. That guarantees
+  // at least one rendered frame with the spinner visible before the heavy
+  // re-render — crucial on Generate-Spring transitions which can take
+  // hundreds of ms on phones.
+  if(btn){
+    btn.classList.add('loading');
+    btn.disabled=true;
+    const lbl=btn.querySelector('.db-now-label');
+    if(lbl) lbl.textContent='Working…';
   }
-  if(action==='reveal'){
-    const all=_lgCalendarRounds();
-    const cur=_lgCurrentRound(all,currentDate());
-    if(cur){lgRevealNextStage(cur.key);return;}
-  }
-  renderLeagueView();
+  const _run=()=>{
+    if(action==='next'){
+      advanceToNextRound();
+      return;
+    }
+    if(action==='reveal'){
+      const all=_lgCalendarRounds();
+      const cur=_lgCurrentRound(all,currentDate());
+      if(cur){lgRevealNextStage(cur.key);return;}
+    }
+    renderLeagueView();
+  };
+  // Two rAFs so the spinner CSS animation has at least one frame to start.
+  requestAnimationFrame(()=>requestAnimationFrame(_run));
 }
 let _lgSearchT=null;
 function lgSearchChange(v){
