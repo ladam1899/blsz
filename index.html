@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.11</title>
+<title>League Manager v2026.05.14.13</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.13</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1569,12 +1569,21 @@ function _lgFilterRounds(all){
   const cur=currentDate();
   const mbrGateBySeason={};
   const mbbPresentInSeason={};
-  // Pre-compute, per season, whether MB-B is present and whether all its rounds
-  // are strictly in the past (date < current_date).
+  // Pre-compute, per FOOTBALL season (derived from each round's date — NOT
+  // the calendar.csv `season` column, which may be empty in older schemas),
+  // whether MB-B is present in that season and whether all its rounds are
+  // strictly in the past (date < current_date).
+  // The legacy code keyed by `x.season` directly, which collapsed every row
+  // to season='' for calendar files without a `season` column. That bucket
+  // would always contain at least one future MB-B round, so the MB-R gate
+  // permanently hid MB-R from the Matches view. Re-bucketing by
+  // `seasonFor(x.date)` fixes the cross-season leakage too: MB-R of season
+  // X is gated against MB-B of the SAME season X only.
+  const _seasonOf=(x)=>(typeof seasonFor==='function'&&x.date)?seasonFor(x.date):(x.season||'');
   const collectSeason=(season)=>{
     if(season in mbrGateBySeason)return;
     const mbb=all.filter(x=>{
-      if(season&&x.season&&x.season!==season)return false;
+      if(season&&_seasonOf(x)!==season)return false;
       const p=_lgRoundTypeAndNumber(x.round);
       return p&&p.type==='MB-B';
     });
@@ -1606,10 +1615,13 @@ function _lgFilterRounds(all){
     if(lgFilter.roundType&&(!parsed||parsed.type!==lgFilter.roundType))return false;
     if(lgFilter.roundNum&&(!parsed||String(parsed.num)!==String(lgFilter.roundNum)))return false;
     // Hide MB-R rounds for a season until every MB-B round for that season
-    // is strictly in the past on the current timeline.
+    // is strictly in the past on the current timeline. Uses seasonFor(date)
+    // so calendars without a `season` column don't collapse every round
+    // into one bucket.
     if(parsed&&parsed.type==='MB-R'){
-      collectSeason(r.season||'');
-      if(mbbPresentInSeason[r.season||'']&&!mbrGateBySeason[r.season||''])return false;
+      const rs=_seasonOf(r);
+      collectSeason(rs);
+      if(mbbPresentInSeason[rs]&&!mbrGateBySeason[rs])return false;
     }
     // Free-text search matches the round code itself, the competition column,
     // the date, the season, or any cell in any matches.csv row for this round.
@@ -2892,6 +2904,23 @@ async function advanceToNextRound(){
       _juneNewSeasonPopupShown.delete(nextSeason);
       toast('Season rollover cancelled — current date kept where it is','warn');
       return;
+    }
+    // SAFETY NET: snapshot the current matches.csv to Drive as
+    // `matches_<curSeason>.csv` before regenerating. The new-season
+    // generation should NOT touch the old season (per v11 upsert fix), but
+    // if it ever does, the user can restore from this snapshot. The
+    // snapshot file is independent of `matches.csv` and is not read back
+    // by the app — it's a pure write-once safety net.
+    try{
+      const csv=serCSV(DB.matches.h, DB.matches.r);
+      const fname=`matches_${curSeason||'unknown'}.csv`;
+      await writeToDrive(fname, csv, null); // no existId → always creates fresh
+      toast(`💾 Snapshot saved: ${fname}`,'');
+      console.log(`[advanceToNextRound] wrote pre-rollover snapshot ${fname}`);
+    }catch(e){
+      // Don't block the rollover on snapshot failure — just warn loudly.
+      console.error('[advanceToNextRound] snapshot save failed:',e);
+      toast('⚠ Snapshot save failed — rollover continues anyway. See console.','warn');
     }
     try{
       await generateSeasonFromDraw(nextSeason,'A');
