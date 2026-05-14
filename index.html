@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.2</title>
+<title>League Manager v2026.05.14.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -79,10 +79,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-date:focus{border-color:var(--green);}
 .db-gen{background:var(--blue);color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
 .db-gen:hover{background:#2563c7;}
-.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;display:inline-flex;align-items:center;gap:7px;}
+.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;white-space:nowrap;height:30px;line-height:1;}
 .db-now:hover{background:var(--green-m);}
-.db-now-spin{display:none;width:11px;height:11px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:db-now-spin .65s linear infinite;}
-.db-now.loading{cursor:wait;opacity:.85;}
+.db-now-spin{display:none;width:10px;height:10px;border:1.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;vertical-align:-1px;margin-right:5px;animation:db-now-spin .55s linear infinite;}
+.db-now.loading{cursor:wait;}
 .db-now.loading .db-now-spin{display:inline-block;}
 .db-now.loading:hover{background:var(--green);}
 @keyframes db-now-spin{to{transform:rotate(360deg);}}
@@ -743,7 +743,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
