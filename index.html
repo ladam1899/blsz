@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.5</title>
+<title>League Manager v2026.05.14.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3726,6 +3726,8 @@ let _playNeutralStadium='';    // stadium name chosen from dropdown when neutral
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
 let _playStage='ready';
 let _playRound='FRIENDLY';     // round code written into matches.csv for this match
+let _playLevel='';             // free-text value written into matches.csv `level` column (for CHL groups etc.)
+let _playReveal=false;         // false = quiet save (all periods at once, no stepped reveal); true = step-by-step UI
 let _playOrg='BLSZ';           // preferred ORG — default selection only, team dropdowns still list all teams (grouped by ORG)
 // Return the set of round codes the user may pick from in the Play view's
 // Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
@@ -3872,6 +3874,12 @@ function _playNextLabel(){
     return'💾 Save to matches.csv';
   }
   // sim mode
+  if(!_playReveal){
+    // Quiet mode — one press runs every period and saves directly.
+    if(_playStage==='ready')return'▶ Simulate & Save';
+    if(_playStage==='saved')return'✓ Saved';
+    return'💾 Save to matches.csv';
+  }
   switch(_playStage){
     case'ready':return'▶ Play 1st Half';
     case'h1done':return'▶ Play 2nd Half';
@@ -3986,7 +3994,15 @@ function renderPlayView(){
             <button class="play-opt-btn ${_playNeutral?'active':''}" onclick="_playSetNeutral(true)" title="No home-support bonus applied" ${locked?'disabled':''}>⚖ Neutral</button>
           </div>
         </div>
+        <div class="play-opt-group">
+          <div class="play-opt-label">Reveal</div>
+          <div class="play-opt-buttons">
+            <button class="play-opt-btn ${!_playReveal?'active':''}" onclick="_playSetReveal(false)" title="Quiet save — run all periods at once and write the row directly. No stage-by-stage reveal." ${locked?'disabled':''}>🤫 Quiet</button>
+            <button class="play-opt-btn ${_playReveal?'active':''}" onclick="_playSetReveal(true)" title="Step through periods (1H → 2H → ET → PEN) one by one before saving" ${locked?'disabled':''}>👀 Step</button>
+          </div>
+        </div>
         ${_playRoundPickerHTML(locked)}
+        ${_playLevelInputHTML(locked)}
         ${_playNeutral?_playStadiumPickerHTML(locked):''}
       </div>
       ${_playMode==='manual'?_playManualHTML():''}
@@ -4067,6 +4083,20 @@ function _playRoundPickerHTML(locked){
     </select>
   </div>`;
 }
+// Free-text Level input — written into the matches.csv `level` column.
+// Useful for tagging the CHL group label etc. when the round itself is a
+// generic placeholder like "CHL-GR-1". Saved as-is (no normalization).
+function _playLevelInputHTML(locked){
+  const safe=esc(_playLevel||'');
+  return`<div class="play-stadium-row">
+    <label>Level:</label>
+    <input type="text" class="play-stadium-sel" value="${safe}"
+           oninput="_playSetLevel(this.value)"
+           ${locked?'disabled':''}
+           placeholder="(optional, e.g. CHL group A)"
+           title="Free-text written into matches.csv `level` column for this match — used to distinguish e.g. CHL groups under the same round code">
+  </div>`;
+}
 
 function _playManualHTML(){
   const cup=_playIsCup();
@@ -4138,6 +4168,8 @@ function _playSetType(t){
 }
 function _playSetMode(m){if(_playStage!=='ready')return;_playMode=m;_playReset();}
 function _playSetRound(v){if(_playStage!=='ready')return;_playRound=String(v||'FRIENDLY').trim()||'FRIENDLY';renderPlayView();}
+function _playSetLevel(v){if(_playStage!=='ready')return;_playLevel=String(v==null?'':v);}
+function _playSetReveal(r){if(_playStage!=='ready')return;_playReveal=!!r;renderPlayView();}
 function _playSetOrg(v){if(_playStage!=='ready')return;_playOrg=String(v||'').trim();renderPlayView();}
 function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;_playSyncType();renderPlayView();}
 function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;renderPlayView();}
@@ -4181,11 +4213,43 @@ function _playNextStep(){
   }
 
   // SIMULATE MODE — run exactly one period per press, or save when final.
+  // When `_playReveal === false` (quiet mode, the default), all periods run
+  // in a single press and the row is saved immediately — no stage-by-stage
+  // UI reveal. Cup periods are skipped when the prior period already
+  // settled the tie.
   const halfS=halfSeasonFor(currentDate());
   const hSk=teamSkillsFor(_playHome,halfS);
   const aSk=teamSkillsFor(_playAway,halfS);
   const H=hSk.skills+(_playNeutral?0:hSk.home);
   const A=aSk.skills;
+
+  if(!_playReveal && _playStage==='ready'){
+    _playData=_emptyPlayData();
+    const r1=simPeriodDetailed(H,A,hSk.attack_1h,hSk.defence_1h,aSk.attack_1h,aSk.defence_1h);
+    _playData.h1=r1.homeG; _playData.a1=r1.awayG;
+    _playData.first_home_att=r1.hAttRnd; _playData.first_home_def=r1.hDefRnd;
+    _playData.first_away_att=r1.aAttRnd; _playData.first_away_def=r1.aDefRnd;
+    const r2=simPeriodDetailed(H,A,hSk.attack_2h,hSk.defence_2h,aSk.attack_2h,aSk.defence_2h);
+    _playData.h2=r2.homeG; _playData.a2=r2.awayG;
+    _playData.second_home_att=r2.hAttRnd; _playData.second_home_def=r2.hDefRnd;
+    _playData.second_away_att=r2.aAttRnd; _playData.second_away_def=r2.aDefRnd;
+    _playData.calcLog.push(`<b>Quiet sim</b> · 1H ${r1.homeG}-${r1.awayG} · 2H ${r2.homeG}-${r2.awayG}`);
+    if(_playIsCup() && _playIsCupTiedAt2H()){
+      const re=simPeriodDetailed(H,A,hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
+      _playData.het=re.homeG; _playData.aet=re.awayG;
+      _playData.extra_home_att=re.hAttRnd; _playData.extra_home_def=re.hDefRnd;
+      _playData.extra_away_att=re.aAttRnd; _playData.extra_away_def=re.aDefRnd;
+      _playData.calcLog.push(`ET ${re.homeG}-${re.awayG}`);
+      if(_playIsETTied()){
+        const rp=simPenaltiesDetailed(hSk,aSk,_playNeutral);
+        _playData.hpen=rp.hpen; _playData.apen=rp.apen;
+        _playData.pen_home=rp.hRnd; _playData.pen_away=rp.aRnd;
+        _playData.calcLog.push(`PEN ${rp.hpen}-${rp.apen}`);
+      }
+    }
+    _playSaveToMatches();
+    return;
+  }
 
   const runPeriod=(label,hAtt,hDef,aAtt,aDef)=>{
     const r=simPeriodDetailed(H,A,hAtt,hDef,aAtt,aDef);
@@ -4317,7 +4381,7 @@ async function _playSaveToMatches(){
   const rowObj={
     date:scheduledDate,
     rounds:roundCode,
-    level:'',
+    level:String(_playLevel||''),
     match_type:String(_playType),
     match_number:String(_playNextMatchNumber()),
     stadion_name:stadium||'',
