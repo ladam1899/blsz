@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.4</title>
+<title>League Manager v2026.05.14.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -79,10 +79,12 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-date:focus{border-color:var(--green);}
 .db-gen{background:var(--blue);color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
 .db-gen:hover{background:#2563c7;}
-.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;white-space:nowrap;height:30px;line-height:1;}
+.db-now{margin-left:auto;background:var(--green);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;white-space:nowrap;box-sizing:border-box;}
 .db-now:hover{background:var(--green-m);}
-.db-now-spin{display:none;width:10px;height:10px;border:1.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;vertical-align:-1px;margin-right:5px;animation:db-now-spin .55s linear infinite;}
-.db-now.loading{cursor:wait;}
+.db-now-label{color:#fff;}
+.db-now-spin{display:none;width:10px;height:10px;border:1.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-1px;margin-right:6px;animation:db-now-spin .55s linear infinite;}
+.db-now.loading{cursor:wait;color:#fff;}
+.db-now.loading .db-now-label{color:#fff;}
 .db-now.loading .db-now-spin{display:inline-block;}
 .db-now.loading:hover{background:var(--green);}
 @keyframes db-now-spin{to{transform:rotate(360deg);}}
@@ -743,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1778,23 +1780,30 @@ function renderLeagueView(){
   }
 
   // Anchor the selected round near the top of the viewport, but leave room
-  // for the sticky header + filter bar so the round's title stays visible.
+  // for the sticky header + nav + date-bar so the round's title stays
+  // visible. Use the canonical selectors that actually exist in the DOM
+  // ('header', '.nav', '.date-bar'); the legacy '.lg-*' selectors were
+  // never present and made the heuristic fall through to its 120px
+  // fallback — which still pinned the round title underneath the date bar
+  // on mid-sized screens. Add a generous breathing-room margin so the
+  // header line ("MB-R-15 · Saturday 19 May 2001") sits clearly below the
+  // chrome instead of grazing it.
   requestAnimationFrame(()=>{
     if(!anchor)return;
     const el=document.getElementById('lgRc-'+_lgCssId(anchor.key));
     if(!el)return;
-    // Try to measure the real top-anchored chrome (sticky header + filter bar
-    // + date bar) so the anchor round isn't hidden behind it. Falls back to
-    // a safe fixed offset when nothing measurable is around.
     let chromeH=0;
-    ['.hdr','.site-header','header','.lg-filter','.lg-date','.lg-filter-row','.lg-datebar','.lg-toolbar'].forEach(sel=>{
+    ['header','.nav','.date-bar'].forEach(sel=>{
       const n=document.querySelector(sel);if(!n)return;
       const cs=getComputedStyle(n);
-      if(cs.position==='sticky'||cs.position==='fixed'){chromeH+=n.getBoundingClientRect().height;}
+      if(cs.position==='sticky'||cs.position==='fixed'){
+        chromeH+=n.getBoundingClientRect().height;
+      }
     });
-    if(chromeH<60)chromeH=120; // sensible minimum so the round title breathes
+    if(chromeH<60)chromeH=180; // sensible minimum so the round title breathes
+    const breathingRoom=18;
     const rect=el.getBoundingClientRect();
-    const y=window.scrollY+rect.top-chromeH-8;
+    const y=window.scrollY+rect.top-chromeH-breathingRoom;
     window.scrollTo({top:Math.max(0,y),behavior:'auto'});
   });
 }
@@ -1813,10 +1822,15 @@ function lgRevealBtnClick(action, btn){
   // re-render — crucial on Generate-Spring transitions which can take
   // hundreds of ms on phones.
   if(btn){
+    // Pin the button to its current size so swapping in the spinner doesn't
+    // make it reflow wider or narrower than before. The label text stays
+    // exactly as it was (no "Working…" swap) — only the small spinner is
+    // injected in front of it.
+    const r=btn.getBoundingClientRect();
+    btn.style.minWidth=r.width+'px';
+    btn.style.minHeight=r.height+'px';
     btn.classList.add('loading');
     btn.disabled=true;
-    const lbl=btn.querySelector('.db-now-label');
-    if(lbl) lbl.textContent='Working…';
   }
   const _run=()=>{
     if(action==='next'){
