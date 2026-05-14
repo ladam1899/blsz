@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.6</title>
+<title>League Manager v2026.05.14.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3726,8 +3726,8 @@ let _playNeutralStadium='';    // stadium name chosen from dropdown when neutral
 let _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
 let _playStage='ready';
 let _playRound='FRIENDLY';     // round code written into matches.csv for this match
-let _playLevel='';             // free-text value written into matches.csv `level` column (for CHL groups etc.)
-let _playReveal=false;         // false = quiet save (all periods at once, no stepped reveal); true = step-by-step UI
+let _playLevel='';             // free-text value written into matches.csv level column (e.g. CHL group A)
+let _playReveal=false;         // false = quiet save (one click runs everything); true = step-by-step reveal
 let _playOrg='BLSZ';           // preferred ORG — default selection only, team dropdowns still list all teams (grouped by ORG)
 // Return the set of round codes the user may pick from in the Play view's
 // Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
@@ -3998,7 +3998,7 @@ function renderPlayView(){
           <div class="play-opt-label">Reveal</div>
           <div class="play-opt-buttons">
             <button class="play-opt-btn ${!_playReveal?'active':''}" onclick="_playSetReveal(false)" title="Quiet save — run all periods at once and write the row directly. No stage-by-stage reveal." ${locked?'disabled':''}>🤫 Quiet</button>
-            <button class="play-opt-btn ${_playReveal?'active':''}" onclick="_playSetReveal(true)" title="Step through periods (1H → 2H → ET → PEN) one by one before saving" ${locked?'disabled':''}>👀 Step</button>
+            <button class="play-opt-btn ${_playReveal?'active':''}" onclick="_playSetReveal(true)" title="Step through periods (1H to 2H to ET to PEN) one by one before saving" ${locked?'disabled':''}>👀 Step</button>
           </div>
         </div>
         ${_playRoundPickerHTML(locked)}
@@ -4083,9 +4083,11 @@ function _playRoundPickerHTML(locked){
     </select>
   </div>`;
 }
-// Free-text Level input — written into the matches.csv `level` column.
-// Useful for tagging the CHL group label etc. when the round itself is a
-// generic placeholder like "CHL-GR-1". Saved as-is (no normalization).
+// Free-text Level input — written into the matches.csv level column. Useful
+// for tagging CHL group A vs B etc. under the same round code.
+// IMPORTANT: the title attribute MUST NOT contain backtick characters; this
+// function body is a template literal delimited by backticks, and an inner
+// backtick would terminate it early (that was the v6 bug).
 function _playLevelInputHTML(locked){
   const safe=esc(_playLevel||'');
   return`<div class="play-stadium-row">
@@ -4094,7 +4096,7 @@ function _playLevelInputHTML(locked){
            oninput="_playSetLevel(this.value)"
            ${locked?'disabled':''}
            placeholder="(optional, e.g. CHL group A)"
-           title="Free-text written into matches.csv `level` column for this match — used to distinguish e.g. CHL groups under the same round code">
+           title="Free-text written into the matches.csv level column for this match. Use to distinguish e.g. CHL groups under the same round code.">
   </div>`;
 }
 
@@ -4213,10 +4215,10 @@ function _playNextStep(){
   }
 
   // SIMULATE MODE — run exactly one period per press, or save when final.
-  // When `_playReveal === false` (quiet mode, the default), all periods run
-  // in a single press and the row is saved immediately — no stage-by-stage
-  // UI reveal. Cup periods are skipped when the prior period already
-  // settled the tie.
+  // When _playReveal is false (Quiet mode, the default) all periods run in
+  // a single press and the row saves immediately — no stage-by-stage UI
+  // reveal. Cup periods are skipped when an earlier period already settled
+  // the tie.
   const halfS=halfSeasonFor(currentDate());
   const hSk=teamSkillsFor(_playHome,halfS);
   const aSk=teamSkillsFor(_playAway,halfS);
