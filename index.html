@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.8</title>
+<title>League Manager v2026.05.14.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2827,6 +2827,9 @@ function openHeadToHead(aId,bId){
 // season per session. Cleared when the user clicks Cancel so the next
 // ⏭ Next Round click re-prompts.
 const _springPopupShown=new Set();
+// Symmetric "shown once per session" guard for the June (spring → new autumn)
+// crossing. Keyed by the NEW season (the one starting on the autumn side).
+const _juneNewSeasonPopupShown=new Set();
 
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
@@ -2834,29 +2837,67 @@ async function advanceToNextRound(){
   const all=_lgCalendarRounds();
   const next=all.find(r=>r.date>cur);
   if(!next){toast('No more rounds scheduled','warn');return;}
-  // Half-season boundary trigger: fires when THIS click crosses Jan 1 of
-  // the next round's season. We compute the Jan-1 split from the NEXT
-  // round's date so a Dec → Jan jump is handled correctly even when the
-  // football-season string wraps.
+
+  // ── HALF-SEASON BOUNDARY TRIGGERS ────────────────────────────────
+  // Two independent crossings can fire on a single ⏭ click:
+  //   (1) Jan 1 of the next round's season  → autumn-half ends → spring popup,
+  //       then run the spring generation.
+  //   (2) Mid-June rollover                 → spring half ends → new-autumn
+  //       popup, then run the AUTUMN generation of the NEXT season.
+  // We compute both crossings up-front from the NEXT round's date so a long
+  // jump (e.g. Dec → July) doesn't lose either step.
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
+  // January split (Jan 1 of the spring half of `nextSeason`).
   const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-  const split=isNaN(sy)?'':(sy+'-01-01');
-  const isCrossing=!!(split && (!cur || cur<split) && next.date>=split);
-  console.log(`[advanceToNextRound] cur=${cur} next=${next.date} season=${nextSeason} split=${split} crossing=${isCrossing} shown=${_springPopupShown.has(nextSeason)}`);
-  if(isCrossing && !_springPopupShown.has(nextSeason)){
+  const janSplit=isNaN(sy)?'':(sy+'-01-01');
+  const isJanCrossing=!!(janSplit && (!cur || cur<janSplit) && next.date>=janSplit);
+  // June rollover: midnight of mid-June of `nextSeason`'s spring year. After
+  // this point the date belongs to a NEW season (the one starting that autumn).
+  // halfSeasonFor() considers June 15 the cutover, so we use the same.
+  const curSeason=cur?(typeof seasonFor==='function'?seasonFor(cur):''):'';
+  const junSplitForCur=(()=>{
+    const m=String(curSeason||'').match(/^(\d{4})_/);
+    if(!m) return '';
+    return (parseInt(m[1])+1)+'-06-15';
+  })();
+  const isJunCrossing=!!(curSeason && nextSeason && curSeason!==nextSeason
+                         && junSplitForCur && (!cur || cur<junSplitForCur)
+                         && next.date>=junSplitForCur);
+  console.log(`[advanceToNextRound] cur=${cur} next=${next.date} curSeason=${curSeason} nextSeason=${nextSeason} janSplit=${janSplit} junSplit=${junSplitForCur} janX=${isJanCrossing} junX=${isJunCrossing}`);
+
+  if(isJanCrossing && !_springPopupShown.has(nextSeason)){
     _springPopupShown.add(nextSeason);
-    const ok=await _confirmHalfBoundary(nextSeason, split, next.date);
+    const ok=await _confirmHalfBoundary(nextSeason, janSplit, next.date, 'A->S');
     if(!ok){
       _springPopupShown.delete(nextSeason);
       toast('Half-season transition cancelled — current date kept where it is','warn');
       return;
     }
-    // Run the spring generation now (MB-4 picker + sim + NSZK + groups).
     try{
       await generateSeasonFromDraw(nextSeason,'S');
     }catch(e){
       console.error('[advanceToNextRound] spring sim failed:',e);
       toast('Spring generation failed — see console','err');
+      return;
+    }
+  }
+  if(isJunCrossing && !_juneNewSeasonPopupShown.has(nextSeason)){
+    _juneNewSeasonPopupShown.add(nextSeason);
+    // The popup describes `curSeason` (the just-finished season) and writes
+    // skill rows under `nextSeason_A`. After Continue, we run the autumn
+    // generation of the NEW season — spring (_S) of that new season will be
+    // generated when the user crosses the following January.
+    const ok=await _confirmHalfBoundary(curSeason, junSplitForCur, next.date, 'S->newA');
+    if(!ok){
+      _juneNewSeasonPopupShown.delete(nextSeason);
+      toast('Season rollover cancelled — current date kept where it is','warn');
+      return;
+    }
+    try{
+      await generateSeasonFromDraw(nextSeason,'A');
+    }catch(e){
+      console.error('[advanceToNextRound] autumn sim failed:',e);
+      toast('New-season autumn generation failed — see console','err');
       return;
     }
   }
@@ -2924,7 +2965,13 @@ function _hbUpsertSpringSkill(teamId, halfTag, values){
 //
 // Returns Map<team_id, {avg, samples, perfDelta}>. Only teams with at
 // least one valid roll show up.
-function _hbAutumnPerformance(season){
+function _hbAutumnPerformance(season){ return _hbHalfPerformance(season,'A'); }
+// Generalised version: half ∈ {'A','S'} controls which half-season's rows are
+// summed. 'A' (autumn) = rows whose date < <spring-year>-01-01.
+// 'S' (spring) = rows whose date is between <spring-year>-01-01 (inclusive)
+// and <spring-year>-06-15 (exclusive) — i.e. the entire spring half, before
+// the June football-season rollover. Same return shape as the original.
+function _hbHalfPerformance(season, half){
   const out=new Map();
   const m=DB.matches; if(!m||!m.r||!m.h)return out;
   const _hi=(n)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
@@ -2933,9 +2980,10 @@ function _hbAutumnPerformance(season){
   if(di<0||hi<0||ai<0)return out;
   const homeCols=['first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home'].map(_hi);
   const awayCols=['first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'].map(_hi);
-  // Detect spring boundary so we only sum AUTUMN-half rolls.
   const sy=(()=>{const mm=String(season||'').match(/^(\d{4})_/);return mm?parseInt(mm[1])+1:NaN;})();
-  const splitDate=isNaN(sy)?'':(sy+'-01-01');
+  const janSplit=isNaN(sy)?'':(sy+'-01-01');
+  const junSplit=isNaN(sy)?'':(sy+'-06-15');
+  const wantHalf=String(half||'A').toUpperCase()==='S'?'S':'A';
   const acc=new Map(); // team_id → {sum, samples, matches}
   const _add=(tid,v)=>{
     if(!tid)return;
@@ -2952,7 +3000,12 @@ function _hbAutumnPerformance(season){
   m.r.forEach(r=>{
     const date=String(r[di]||'').trim(); if(!date)return;
     if(season&&typeof seasonFor==='function'&&seasonFor(date)!==season)return;
-    if(splitDate&&date>=splitDate)return;   // skip spring rows
+    if(wantHalf==='A'){
+      if(janSplit && date>=janSplit) return;
+    } else {
+      if(janSplit && date<janSplit) return;
+      if(junSplit && date>=junSplit) return;
+    }
     const h=String(r[hi]||'').trim(), a=String(r[ai]||'').trim();
     _addMatch(h); _addMatch(a);
     homeCols.forEach(ci=>{if(ci>=0)_add(h,r[ci]);});
@@ -2961,9 +3014,6 @@ function _hbAutumnPerformance(season){
   acc.forEach((v,tid)=>{
     if(!v.samples)return;
     const avg=v.sum/v.samples;
-    // Perf Δ is the fractional formula (avg − 50) / 5, rounded to 1 decimal,
-    // clamped ±10. Only applied when the team played MORE THAN 10 matches
-    // in the autumn half — otherwise the sample is too thin to act on.
     let perfDelta=v.matches>10?Math.round((avg-50)/5*10)/10:0;
     if(perfDelta>10)perfDelta=10; if(perfDelta<-10)perfDelta=-10;
     out.set(tid,{avg:Math.round(avg*10)/10, samples:v.samples, matches:v.matches, perfDelta, applied:v.matches>10});
@@ -2973,9 +3023,30 @@ function _hbAutumnPerformance(season){
 // The popup: one row per team. Only `skills` editable; per-period columns
 // copied from autumn into spring untouched. Returns true on Continue (after
 // upserting _S rows), false on Cancel.
-function _confirmHalfBoundary(season,splitDate,nextDate){
+// `mode` controls which half-season boundary we are crossing:
+//   'A->S' (default, January) — read autumn (_A) of `season`, write spring (_S) of same `season`.
+//   'S->newA' (June)          — read spring (_S) of `season`, write autumn (_A) of the NEXT season.
+// `season` always names the half-season being LEFT behind. So in June mode,
+// `season` = "2000_01" (the just-finished season) and the new rows go into
+// "2001_02_A".
+function _confirmHalfBoundary(season,splitDate,nextDate,mode){
   return new Promise(resolve=>{
-    const aTag=season+'_A', sTag=season+'_S';
+    const isJune=String(mode||'')==='S->newA';
+    // src* = the half-season we read baselines from; dst* = where the new
+    // skills row gets written. In January we stay inside the same season,
+    // in June we cross into the next season's autumn.
+    const _nextSeasonStr=(s)=>{
+      const m=String(s||'').match(/^(\d{4})_(\d{2})$/);
+      if(!m) return s;
+      const y=parseInt(m[1])+1;
+      return `${y}_${String((y+1)%100).padStart(2,'0')}`;
+    };
+    const aTag=isJune?(season+'_S'):(season+'_A');
+    const sTag=isJune?(_nextSeasonStr(season)+'_A'):(season+'_S');
+    const dstSeason=isJune?_nextSeasonStr(season):season;
+    const srcHalf=isJune?'S':'A';
+    const crossingLabel=isJune?`AUTUMN half of ${esc(_nextSeasonStr(season)||'?')}`:`SPRING half of ${esc(season||'?')}`;
+    const previousLabel=isJune?`spring half of ${esc(season||'?')}`:`autumn half of ${esc(season||'?')}`;
     // Build the team list from teams.csv (one row per team), falling back
     // to the team_skills row list if teams.csv is empty.
     const teamsArr=(function(){
@@ -3008,7 +3079,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     // Read autumn baseline per team. Fall back to defaultSkills() when the
     // team has no _A row so every team is always editable.
     const _defaults=(typeof defaultSkills==='function')?defaultSkills():{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};
-    const _perfMap=_hbAutumnPerformance(season);
+    const _perfMap=_hbHalfPerformance(season,srcHalf);
     const _autAll={}, _autSource={};
     teamsArr.forEach(tt=>{
       _autAll[tt.tid]={}; _autSource[tt.tid]='A';
@@ -3071,7 +3142,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
     md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:min(96vw,900px);max-height:90vh;z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;';
     md.innerHTML=
       `<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>`+
-      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>SPRING half of ${esc(season||'?')}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from autumn. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's autumn matches. 0..100 scale. n = autumn matches played. Perf Δ = (avg − 50) / 5, one decimal, clamped ±10; applied only when n > 10. Recommended skills = prev + Perf Δ. My Δ is pre-filled with Perf Δ.</span></p>`+
+      `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>${crossingLabel}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from the ${previousLabel}. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's matches in the ${previousLabel}. 0..100 scale. n = matches played in that half. Perf Δ = (avg − 50) / 5, one decimal, clamped ±10; applied only when n > 10. Recommended skills = prev + Perf Δ. My Δ is pre-filled with Perf Δ.</span></p>`+
       `<div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">`+
         `<table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">`+
           `<thead><tr style="background:var(--surface2)">`+
@@ -3168,7 +3239,8 @@ function _confirmHalfBoundary(season,splitDate,nextDate){
         if(op==='inserted')ins++; else if(op==='updated')upd++; else noop++;
       });
       try{ if(typeof saveSheet==='function') saveSheet('team_skills'); }catch(e){}
-      toast('Spring skills: '+ins+' inserted · '+upd+' updated · '+noop+' unchanged','');
+      const tag=isJune?'New-season autumn':'Spring';
+      toast(tag+' skills: '+ins+' inserted · '+upd+' updated · '+noop+' unchanged','');
       cleanup();
       resolve(true);
     };
