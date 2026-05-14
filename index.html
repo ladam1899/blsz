@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.9</title>
+<title>League Manager v2026.05.14.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -5361,15 +5361,33 @@ function _writeFinalTable(season, competition, table){
 function _upsertMatchRow(row){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const ri=_hi('rounds'),li=_hi('level'),mni=_hi('match_number');
+  const ri=_hi('rounds'),li=_hi('level'),mni=_hi('match_number'),di=_hi('date');
   if(ri<0)return(m.r.push(row),'inserted');
   const newRounds=String(row[ri]||'').trim();
   const newLevel=li>=0?String(row[li]||'').trim():'';
   const newMn=mni>=0?String(row[mni]||'').trim():'';
+  // Season is part of the upsert key — round codes (`MB-B-8`, `MB-R-3`,
+  // `NKW-1-1`, …) repeat across seasons, so without it a new season's draw
+  // would overwrite the previous season's rows that share the same
+  // (rounds, level, match_number). Use seasonFor(date) for both sides.
+  const newDate=di>=0?String(row[di]||'').trim():'';
+  const newSeason=(typeof seasonFor==='function'&&newDate)?seasonFor(newDate):'';
   const idx=m.r.findIndex(r=>{
     if(String(r[ri]||'').trim()!==newRounds)return false;
     if(li>=0&&String(r[li]||'').trim()!==newLevel)return false;
     if(mni>=0&&String(r[mni]||'').trim()!==newMn)return false;
+    if(di>=0){
+      const rDate=String(r[di]||'').trim();
+      const rSeason=(typeof seasonFor==='function'&&rDate)?seasonFor(rDate):'';
+      // Both sides must agree on season. If either side is missing (no date
+      // recorded), require an exact date string match as a defensive fallback
+      // so we still don't accidentally collide across seasons via blanks.
+      if(newSeason&&rSeason){
+        if(newSeason!==rSeason)return false;
+      } else if(rDate!==newDate){
+        return false;
+      }
+    }
     return true;
   });
   if(idx>=0){m.r[idx]=row;return'updated';}
@@ -5829,34 +5847,39 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(id){ _upsertResultsRow(targetSeason,'NK',i+1,id); resRows++; }
     });
   }
-  // ── PHASE 5: NSZK Super Cup (semi + final) ─────────────────────
-  // Only fires on a complete-season run (ALL) or the spring half (S). The
-  // three trophies that seed NSZK — MB-R I winner, NK winner, KK winner —
-  // have ranked tables by now, so we can look them up from results.csv.
-  // The semi pairs (NK winner) vs (KK winner); the final pairs (SF winner)
-  // vs (MB-R I winner). If two of the three winners are the same team, the
-  // duplicated trophy's RUNNER-UP takes its seed. Both matches are mt=11
-  // (neutral venue). Rows are upserted by (rounds, level, match_number).
+  // ── PHASE 5: NSZK Super Cup ─────────────────────────────────────
+  // Three trophies seed NSZK: MB-R I winner, NK winner, KK winner. The shape
+  // of the tournament depends on how many of those three are DISTINCT teams:
+  //
+  //   3 distinct → semi (NSZK-ED: NK vs KK) + final (NSZK-F: MB-R I vs SF
+  //                winner). Places 1 = F winner, 2 = F loser.
+  //   2 distinct → no semi; NSZK-F is played directly between the two
+  //                distinct teams. MB-R I winner is always "home" when it's
+  //                one of the two (or even when it isn't — it stays the
+  //                table-of-record team). Places 1 + 2 awarded.
+  //   1 distinct → that team won everything; no NSZK matches are played.
+  //                Place 1 is awarded; no place 2.
+  //
+  // The previous "duplicated trophy uses its runner-up" rule was removed —
+  // per user spec, the doubled-up team simply plays the final directly.
+  // Both matches are mt=11 (neutral venue). Rows are upserted by
+  // (rounds, level, match_number) so re-runs are idempotent.
   if((_half==='ALL'||_half==='S')&&typeof _resultByPlace==='function'){
     const _seed=(comp,place)=>typeof _resultByPlace==='function'?_resultByPlace(targetSeason,comp,place):'';
-    // Pick MB-R I winner (place 1 in competition 'I' for this season).
-    let mbrI=_seed('I',1);
-    // NK winner (place 1 in 'NK'); KK winner = best KKGOR group α (alfa) winner
-    // recorded as place 1 in 'KKGOR-α (alfa)'.
-    let nkW=_seed('NK',1);
-    let kkW=_seed('KKGOR-α (alfa)',1);
-    // Duplicate-winner fallback: if any two of the three seeds collide, the
-    // duplicated trophy uses its runner-up.
-    if(mbrI && (mbrI===nkW)) nkW=_seed('NK',2)||nkW;
-    if(mbrI && (mbrI===kkW)) kkW=_seed('KKGOR-α (alfa)',2)||kkW;
-    if(nkW && (nkW===kkW))   kkW=_seed('KKGOR-α (alfa)',2)||kkW;
-    // Calendar dates: NSZK-ED + NSZK-F (look up from calendar map).
+    const mbrI=_seed('I',1);
+    const nkW =_seed('NK',1);
+    const kkW =_seed('KKGOR-α (alfa)',1);
+    // How many distinct teams among the three seeds (ignoring empty strings)?
+    const seeds=[mbrI,nkW,kkW].filter(Boolean);
+    const distinct=[...new Set(seeds)];
     const dateED=(calMap.get('NSZK-ED')||{}).date||'';
     const dateF =(calMap.get('NSZK-F') ||{}).date||'';
-    if(!dateED) missingDates.add('NSZK-ED');
     if(!dateF)  missingDates.add('NSZK-F');
-    if(nkW&&kkW&&mbrI){
-      // Semi
+    if(!mbrI||!nkW||!kkW){
+      console.log('[GenerateSeason] NSZK skipped — missing seed:',{mbrI,nkW,kkW});
+    } else if(distinct.length===3){
+      if(!dateED) missingDates.add('NSZK-ED');
+      // SEMI: NK winner vs KK winner.
       const {row:rEd,simulated:sEd}=_buildSimulatedMatchRow({
         rounds:'NSZK-ED',level:'',mt:'11',mn:'1',
         date:dateED,homeId:nkW,awayId:kkW
@@ -5864,10 +5887,9 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!sEd) blank++;
       const opEd=_upsertMatchRow(rEd);
       if(opEd==='updated') upd++; else ins++;
-      // Resolve SF winner from the just-written row.
       const sfWinner=_nkSingleLegWinner('NSZK-ED','1');
       const finalAway=sfWinner||nkW;
-      // Final
+      // FINAL: MB-R I winner vs SF winner.
       const {row:rF,simulated:sF}=_buildSimulatedMatchRow({
         rounds:'NSZK-F',level:'',mt:'11',mn:'1',
         date:dateF,homeId:mbrI,awayId:finalAway
@@ -5875,13 +5897,35 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!sF) blank++;
       const opF=_upsertMatchRow(rF);
       if(opF==='updated') upd++; else ins++;
-      // Results: 1 = NSZK-F winner, 2 = NSZK-F loser.
       const fWin=_nkSingleLegWinner('NSZK-F','1');
       const fLos=_nkSingleLegLoser ('NSZK-F','1');
       if(fWin){_upsertResultsRow(targetSeason,'NSZK',1,fWin);resRows++;}
       if(fLos){_upsertResultsRow(targetSeason,'NSZK',2,fLos);resRows++;}
+    } else if(distinct.length===2){
+      // Skip semi entirely. The final is between the two distinct teams.
+      // MB-R I winner stays "home" if it's one of the two; otherwise pick
+      // the team that appears twice (mbrI in this branch is one of the
+      // distinct teams by definition, so this is just defensive).
+      const homeId=mbrI;
+      const awayId=distinct.find(t=>t!==mbrI)||distinct[0];
+      const {row:rF,simulated:sF}=_buildSimulatedMatchRow({
+        rounds:'NSZK-F',level:'',mt:'11',mn:'1',
+        date:dateF,homeId,awayId
+      });
+      if(!sF) blank++;
+      const opF=_upsertMatchRow(rF);
+      if(opF==='updated') upd++; else ins++;
+      const fWin=_nkSingleLegWinner('NSZK-F','1');
+      const fLos=_nkSingleLegLoser ('NSZK-F','1');
+      if(fWin){_upsertResultsRow(targetSeason,'NSZK',1,fWin);resRows++;}
+      if(fLos){_upsertResultsRow(targetSeason,'NSZK',2,fLos);resRows++;}
+      console.log('[GenerateSeason] NSZK-ED skipped — only 2 distinct trophy winners:',{mbrI,nkW,kkW});
     } else {
-      console.log('[GenerateSeason] NSZK skipped — missing seed:',{mbrI,nkW,kkW});
+      // distinct.length === 1: one team won MB-R I + NK + KK. They take
+      // place 1 with full points; no final is played, no place 2 awarded.
+      const winner=distinct[0];
+      _upsertResultsRow(targetSeason,'NSZK',1,winner); resRows++;
+      console.log('[GenerateSeason] NSZK degenerate — one team swept all three trophies:',winner);
     }
   }
 
