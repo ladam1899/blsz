@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.9</title>
+<title>League Manager v2026.05.15.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3045,17 +3045,7 @@ async function advanceToNextRound(){
   }
   if(isJunCrossing && !_juneNewSeasonPopupShown.has(nextSeason)){
     _juneNewSeasonPopupShown.add(nextSeason);
-    // The popup describes `curSeason` (the just-finished season) and writes
-    // skill rows under `nextSeason_A`. After Continue, we run the autumn
-    // generation of the NEW season — spring (_S) of that new season will be
-    // generated when the user crosses the following January.
-    const ok=await _confirmHalfBoundary(curSeason, junSplitForCur, next.date, 'S->newA');
-    if(!ok){
-      _juneNewSeasonPopupShown.delete(nextSeason);
-      toast('Season rollover cancelled — current date kept where it is','warn');
-      return;
-    }
-    // SAFETY NET: snapshot the current matches.csv to Drive as
+    // STEP 1 — SAFETY NET: snapshot the current matches.csv to Drive as
     // `matches_<curSeason>.csv` before regenerating. The new-season
     // generation should NOT touch the old season (per v11 upsert fix), but
     // if it ever does, the user can restore from this snapshot. The
@@ -3072,6 +3062,35 @@ async function advanceToNextRound(){
       console.error('[advanceToNextRound] snapshot save failed:',e);
       toast('⚠ Snapshot save failed — rollover continues anyway. See console.','warn');
     }
+    // STEP 2 — finalize the just-finished season's `BLSZ` aggregate ranking
+    // in results.csv. The new-season draw resolves place tokens (KKQ-77..160,
+    // NK W-R1 1..128, …) against this row set; without it most rows come
+    // out blank. `MB` 1..76 is already there (Generate Season writes it
+    // after MB-R), so we only need to add BLSZ.
+    try{
+      const n=_writeBlszOverallRanking(curSeason);
+      if(n>0){
+        await saveSheet('results');
+        toast(`📊 Wrote ${n} BLSZ rows for ${curSeason}`,'');
+        console.log(`[advanceToNextRound] BLSZ aggregate ${n} rows for ${curSeason}`);
+      } else {
+        console.warn(`[advanceToNextRound] BLSZ aggregate produced 0 rows for ${curSeason} — next season's high-place tokens may resolve blank.`);
+      }
+    }catch(e){
+      console.error('[advanceToNextRound] BLSZ write failed:',e);
+      toast('⚠ BLSZ ranking write failed — new season may have blank rows.','warn');
+    }
+    // STEP 3 — popup describes `curSeason` (the just-finished season) and
+    // writes skill rows under `nextSeason_A`. After Continue, we run the
+    // autumn generation of the NEW season — spring (_S) of that new season
+    // will be generated when the user crosses the following January.
+    const ok=await _confirmHalfBoundary(curSeason, junSplitForCur, next.date, 'S->newA');
+    if(!ok){
+      _juneNewSeasonPopupShown.delete(nextSeason);
+      toast('Season rollover cancelled — current date kept where it is','warn');
+      return;
+    }
+    // STEP 4 — generate the new season's autumn half.
     try{
       await generateSeasonFromDraw(nextSeason,'A');
     }catch(e){
@@ -5353,14 +5372,26 @@ function _placeToTeamMap(season){
   }
   if(si<0||pi<0||ti<0)return map;
   const rowsForSeason=rows.filter(r=>String(r[si]||'').trim()===season);
-  // First pass: 'overall' or 'MB' rows (whole-league rankings)
+  // First pass: 'MB' rows (MB-R overall, 1..76). KKQ-1..76 and MB-B base
+  // place tokens read this first.
   rowsForSeason.forEach(r=>{
     const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
-    if(comp!=='overall'&&comp!=='mb')return;
+    if(comp!=='mb')return;
     const p=parseInt(r[pi]);if(isNaN(p))return;
     map.set(p,String(r[ti]||'').trim());
   });
-  // Second pass: fill any missing places from other competitions (defensive fallback)
+  // Second pass: 'BLSZ' or 'overall' fill any missing places. BLSZ is the
+  // aggregate ranking covering every team that earned BLSZ points (well
+  // beyond 76) — so KKQ-77..160 and NK W-R1's 128-team seed resolve here
+  // when MB only ranks the top 76. `overall` is the legacy alias.
+  rowsForSeason.forEach(r=>{
+    const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
+    if(comp!=='blsz'&&comp!=='overall')return;
+    const p=parseInt(r[pi]);if(isNaN(p))return;
+    if(!map.has(p))map.set(p,String(r[ti]||'').trim());
+  });
+  // Third pass: any other competition (per-group standings, NK podium, …)
+  // fills any places still missing. Defensive fallback.
   rowsForSeason.forEach(r=>{
     const p=parseInt(r[pi]);if(isNaN(p))return;
     const tid=String(r[ti]||'').trim();if(!tid)return;
@@ -5588,6 +5619,44 @@ function _resultByPlace(season, competition, place){
     return String(r[ti]||'').trim();
   }
   return '';
+}
+// Compute + write the BLSZ aggregate ranking for `season` as
+// `(season, 'BLSZ', place, team_id)` rows in results.csv. Mirrors what the
+// BLSZ view shows — sum of curPts across MB-B + MB-R + KK + NK + NSZK,
+// sorted desc, ties broken by long-name. Used by the next-season draws via
+// `_placeToTeamMap` (after MB) to resolve place tokens above the MB-R
+// 76-team ranking — KKQ runs into ranks 77..160, NK W-R1 needs all 128.
+// Returns the number of rows written. Quietly produces 0 when the
+// projection has no scored matches yet.
+function _writeBlszOverallRanking(season){
+  if(!season) return 0;
+  if(typeof _blszBuildProjection!=='function') return 0;
+  let proj;
+  try{ proj=_blszBuildProjection(season); }
+  catch(e){ console.warn('[BLSZ-overall] projection failed:',e); return 0; }
+  if(!proj) return 0;
+  const sums=new Map(); // tid -> {pts,tid}
+  ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
+    Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
+      const cur=sums.get(tid)||{pts:0,tid};
+      cur.pts += (info && typeof info.curPts==='number')?info.curPts:0;
+      sums.set(tid,cur);
+    });
+  });
+  if(!sums.size) return 0;
+  const arr=[...sums.values()].map(e=>{
+    const t=(typeof teamById==='function')?teamById(e.tid):{name:e.tid};
+    return {tid:e.tid, pts:e.pts, name:String((t&&(t.long_name||t.name))||e.tid)};
+  }).sort((a,b)=>(b.pts-a.pts)||String(a.name).localeCompare(String(b.name),'hu'));
+  // Keep ALL teams (even 0-pts) since downstream draws (NK W-R1 needs 128
+  // teams) can run out of contenders if we filter too aggressively. The
+  // tie-break by name keeps the ranking deterministic.
+  let n=0;
+  arr.forEach((t,i)=>{
+    _upsertResultsRow(season,'BLSZ',i+1,t.tid);
+    n++;
+  });
+  return n;
 }
 function _upsertResultsRow(season, competition, place, teamId){
   const d=DB.results;
@@ -6265,6 +6334,23 @@ async function generateSeasonFromDraw(targetSeason, half){
       _upsertResultsRow(targetSeason,'NSZK',1,winner); resRows++;
       console.log('[GenerateSeason] NSZK degenerate — one team swept all three trophies:',winner);
     }
+  }
+
+  // Finalize the BLSZ aggregate ranking for this season. NEXT season's draws
+  // resolve KKQ-77..160 and NK W-R1's 128-team seed against these rows; on a
+  // spring/ALL run the projection is fully populated, on an autumn-only run
+  // it's partial (autumn matches only) which still gives the next-season
+  // draw something to work with.
+  try{
+    const overallN=_writeBlszOverallRanking(targetSeason);
+    if(overallN>0){
+      resRows+=overallN;
+      console.log(`[GenerateSeason] BLSZ aggregate ${overallN} rows for ${targetSeason}`);
+    } else {
+      console.warn(`[GenerateSeason] BLSZ aggregate produced 0 rows for ${targetSeason}.`);
+    }
+  }catch(e){
+    console.error('[GenerateSeason] BLSZ aggregate write failed:',e);
   }
 
   console.log(`[GenerateSeason] upserted ${upd} updated + ${ins} inserted, ${blank} blank-team rows, ${resRows} results rows, missingDates=${missingDates.size}`);
