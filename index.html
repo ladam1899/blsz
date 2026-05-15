@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.2</title>
+<title>League Manager v2026.05.15.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -75,7 +75,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-search{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);outline:none;font-family:'Inter',sans-serif;min-width:220px;flex:1 1 220px;max-width:360px;}
 .db-search:focus{border-color:var(--green);}
 .db-search::-webkit-search-cancel-button{cursor:pointer;}
-.db-date{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text);outline:none;font-family:'JetBrains Mono',monospace;width:140px;}
+.db-date{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text);outline:none;font-family:'JetBrains Mono',monospace;width:140px;cursor:pointer;}
 .db-date:focus{border-color:var(--green);}
 .db-gen{background:var(--blue);color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:background .15s;}
 .db-gen:hover{background:#2563c7;}
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1776,7 +1776,12 @@ function renderLeagueView(){
         <option value="">All</option>
         ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
       </select>
-      <input type="date" class="db-date" value="${esc(curDate)}" onchange="lgSetCurrentDate(this.value)" title="Set current_date manually">
+      <select class="db-date" onchange="lgSetCurrentDate(this.value)" title="Jump current_date — only dates that have at least one round in calendar.csv are listed">${(()=>{
+        const haveCur=allRounds.some(r=>r.date===curDate);
+        const dates=[...new Set(allRounds.map(r=>r.date).filter(Boolean))].sort();
+        if(!haveCur&&curDate)dates.push(curDate);
+        return dates.map(d=>`<option value="${esc(d)}"${d===curDate?' selected':''}>${esc(d)}</option>`).join('');
+      })()}</select>
       <button class="${revealCls}" id="lgRevealBtn" onclick="lgRevealBtnClick('${revealAction}',this)" title="Play the current round — reveal first half, full time, then advance to the next round"><span class="db-now-spin"></span><span class="db-now-label">${esc(revealLabel)}</span></button>
     </div>
     <div class="lg-cols">
@@ -1788,7 +1793,41 @@ function renderLeagueView(){
   if(!visible.length){
     scroll.innerHTML=`<div class="round-card"><div class="rc-body"><div class="empty" style="padding:30px 16px;font-size:13px">No rounds match these filters.<br><small>Try clearing filters (↺ Reset), or add rows in ⚙ Data Editor → Calendar (date in <b>YYYY-MM-DD</b> format).</small></div></div></div>`;
   } else {
-    scroll.innerHTML=visible.map(r=>renderLeagueRoundCardHTML(r,curDate,anchor)).join('');
+    // Render-window: only render the anchor round + a small window of
+    // siblings, with nav buttons to step through the full visible list.
+    // Renders ALL visible rounds when the user has actively narrowed the
+    // result set with a filter (Type / Round / Search), because in that
+    // case the user wants to see everything that matched.
+    const userFilteredDown = !!(lgFilter.roundType || lgFilter.roundNum || (lgFilter.search&&lgFilter.search.length));
+    const showAllOnce=_lgShowAll; _lgShowAll=false;
+    let windowed=visible;
+    let windowInfo=null;
+    if(!userFilteredDown && !showAllOnce){
+      const anchorIdx=anchor?visible.findIndex(r=>r.key===anchor.key):-1;
+      if(anchorIdx>=0){
+        const lo=Math.max(0,anchorIdx-1);
+        const hi=Math.min(visible.length-1,anchorIdx+1);
+        windowed=visible.slice(lo,hi+1);
+        windowInfo={lo,hi,total:visible.length,anchorIdx};
+      }
+    }
+    let html='';
+    if(windowInfo){
+      const prevKey=windowInfo.lo>0?visible[windowInfo.lo-1].key:'';
+      const nextKey=windowInfo.hi<windowInfo.total-1?visible[windowInfo.hi+1].key:'';
+      const prevAttr=prevKey?`onclick="lgPickRound('${esc(prevKey).replace(/'/g,'&#39;')}')"`:'disabled';
+      const nextAttr=nextKey?`onclick="lgPickRound('${esc(nextKey).replace(/'/g,'&#39;')}')"`:'disabled';
+      html+=`<div class="lg-pager" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-size:12px;color:var(--muted);">
+        <button class="tbtn" ${prevAttr} title="Previous round in the calendar">◀ Prev</button>
+        <span style="font-family:'JetBrains Mono',monospace;">${windowInfo.anchorIdx+1} / ${windowInfo.total} rounds in calendar</span>
+        <span style="display:flex;gap:6px;align-items:center;">
+          <button class="tbtn" onclick="lgShowAllRounds()" title="Render every matching round at once (slower)">Show all</button>
+          <button class="tbtn" ${nextAttr} title="Next round in the calendar">Next ▶</button>
+        </span>
+      </div>`;
+    }
+    html+=windowed.map(r=>renderLeagueRoundCardHTML(r,curDate,anchor)).join('');
+    scroll.innerHTML=html;
   }
 
   // Anchor the selected round near the top of the viewport, but leave room
@@ -1821,6 +1860,11 @@ function renderLeagueView(){
 }
 
 function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
+// Render-all flag: when true, the Matches view skips its anchor-windowing
+// optimisation and renders every visible round. Resets back to false on the
+// next renderLeagueView() call so it only sticks for one render.
+let _lgShowAll=false;
+function lgShowAllRounds(){_lgShowAll=true;renderLeagueView();}
 function lgGoCurrent(){lgFilter={season:'',roundType:'',roundNum:'',search:''};lgSelRound=null;renderLeagueView();}
 // Filter-bar reveal/next handler. Always resets lgSelRound so the
 // re-rendered view scrolls back to the actual current round.
@@ -5616,6 +5660,58 @@ async function generateSeasonFromDraw(targetSeason, half){
   const nkCount=_flatCount(nkByKey);
   if(!mbB.length&&!mbR.length&&!kkTotal&&!nkCount){
     toast('draw.csv has no MB-B, MB-R, KK or NK rows','warn');return;
+  }
+
+  // ── PRE-GENERATION SANITY CHECK ────────────────────────────────
+  // Walk every draw row whose date falls in the requested half and verify
+  // it has (a) a calendar entry and (b) a non-empty date string. Anything
+  // missing surfaces in a confirm() popup BEFORE any rows are written,
+  // so the user can cancel and fix the calendar instead of producing
+  // dated/undated mismatches that later corrupt the season.
+  {
+    const tSpringYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+    const tSplit=isNaN(tSpringYear)?'':(tSpringYear+'-01-01');
+    const dateForHalf=(d)=>{
+      if(!d||!tSplit) return _half==='A';
+      if(_half==='A') return d<tSplit;
+      return d>=tSplit;
+    };
+    const missingCal=new Set();          // round codes with no calendar entry at all
+    const wrongHalf=new Set();           // round codes whose calendar date is in the OTHER half
+    const allRounds=new Set();
+    d.r.forEach(r=>{
+      const rnd=String(r[ri]||'').trim(); if(!rnd) return;
+      allRounds.add(rnd);
+      // Only the phases we know how to generate participate in the check.
+      const known=/^MB-B-/i.test(rnd)||/^MB-R-/i.test(rnd)
+        ||/^KKQ-/i.test(rnd)||/^KKARA-/i.test(rnd)||/^KKROM-/i.test(rnd)
+        ||/^KKABC-/i.test(rnd)||/^KKJKL-/i.test(rnd)||/^KKGOR-/i.test(rnd)
+        ||/^NK-?[WL]-\d+-\d+$/i.test(rnd);
+      if(!known) return;
+      const cal=calMap.get(rnd);
+      const cd=cal?cal.date:'';
+      if(!cd){ missingCal.add(rnd); return; }
+      if(!dateForHalf(cd)) wrongHalf.add(rnd);
+    });
+    const issues=[];
+    if(missingCal.size){
+      const sample=[...missingCal].sort().slice(0,12);
+      issues.push(`❌ ${missingCal.size} round code(s) have NO date in calendar.csv:\n   ${sample.join(', ')}${missingCal.size>sample.length?', …':''}`);
+    }
+    if(wrongHalf.size){
+      const sample=[...wrongHalf].sort().slice(0,12);
+      issues.push(`⚠ ${wrongHalf.size} round code(s) have a calendar date that falls in the OTHER half (not ${_half}):\n   ${sample.join(', ')}${wrongHalf.size>sample.length?', …':''}`);
+    }
+    if(issues.length){
+      const msg=`Pre-generation check for season ${targetSeason} (${_half}-half) found problems:\n\n`+
+        issues.join('\n\n')+
+        `\n\nThese rounds will be SKIPPED (no row written). The new season may have gaps.\n\nContinue anyway?`;
+      console.warn('[GenerateSeason] pre-check warnings',{missingCal:[...missingCal], wrongHalf:[...wrongHalf]});
+      if(!confirm(msg)){
+        toast('Generate Season cancelled by pre-check','warn');
+        return;
+      }
+    }
   }
 
   // Collect the MB-team-ids so the MB-4 picker can exclude them.
