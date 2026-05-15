@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.4</title>
+<title>League Manager v2026.05.15.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -87,6 +87,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .db-now.loading .db-now-label{color:#fff;}
 .db-now.loading .db-now-spin{display:inline-block;}
 .db-now.loading:hover{background:var(--green);}
+.db-day-rounds{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.db-day-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-family:'JetBrains Mono',monospace;cursor:pointer;transition:all .12s;}
+.db-day-chip:hover{border-color:var(--text);background:var(--surface2);}
+.db-day-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.db-day-empty{font-size:11px;color:var(--muted);font-style:italic;padding:0 6px;}
 @keyframes db-now-spin{to{transform:rotate(360deg);}}
 .db-current{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);padding:4px 10px;background:var(--green-l);border-radius:4px;}
 .rc-group-hdr{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.08em;color:var(--muted);padding:10px 10px 4px;border-top:1px solid var(--border);margin-top:6px;}
@@ -745,7 +750,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1789,17 +1794,44 @@ function renderLeagueView(){
         <option value="">All</option>
         ${typeOpts.map(t=>`<option value="${esc(t)}"${lgFilter.roundType===t?' selected':''}>${esc(t)}</option>`).join('')}
       </select>
-      <span class="db-label">Round</span>
-      <select class="db-sel" onchange="lgFilterChange('roundNum',this.value)">
-        <option value="">All</option>
-        ${numOpts.map(n=>`<option value="${esc(n)}"${lgFilter.roundNum===n?' selected':''}>${esc(n)}</option>`).join('')}
-      </select>
-      <select class="db-date" onchange="lgSetCurrentDate(this.value)" title="Jump current_date — only dates that have at least one round in calendar.csv are listed">${(()=>{
-        const haveCur=allRounds.some(r=>r.date===curDate);
-        const dates=[...new Set(allRounds.map(r=>r.date).filter(Boolean))].sort();
+      <select class="db-date" onchange="lgSetCurrentDate(this.value)" title="Jump current_date — only dates with at least one round in calendar.csv are listed (scoped to the selected Season and Type when set)">${(()=>{
+        // Date list is scoped by BOTH the selected Season AND the selected
+        // Type. Picking Type = NK-W (say) narrows the date dropdown to just
+        // the dates that have an NK-W round. Picking Season too narrows
+        // those dates to the season the user is playing through.
+        const inSeason=(r)=>!lgFilter.season || _seasonOfRound(r)===lgFilter.season;
+        const inType=(r)=>{
+          if(!lgFilter.roundType) return true;
+          const p=_lgRoundTypeAndNumber(r.round);
+          return p && p.type===lgFilter.roundType;
+        };
+        const matches=(r)=>inSeason(r)&&inType(r);
+        const haveCur=allRounds.some(r=>r.date===curDate && matches(r));
+        const dates=[...new Set(allRounds.filter(matches).map(r=>r.date).filter(Boolean))].sort();
         if(!haveCur&&curDate)dates.push(curDate);
         return dates.map(d=>`<option value="${esc(d)}"${d===curDate?' selected':''}>${esc(d)}</option>`).join('');
       })()}</select>
+      <span class="db-day-rounds" title="Rounds on the selected date">${(()=>{
+        // Chip row showing every round-card on `curDate`, dot-coloured by its
+        // competition via compColor() — same swatch the round-card header
+        // uses. Each chip is clickable: it anchors the Matches view to that
+        // round-card so the user can pick which round to play next when a
+        // single gameday hosts multiple rounds (NK + KK + …). Filtered by
+        // Season AND Type the same way the date dropdown is.
+        const inSeason=(r)=>!lgFilter.season || _seasonOfRound(r)===lgFilter.season;
+        const inType=(r)=>{
+          if(!lgFilter.roundType) return true;
+          const p=_lgRoundTypeAndNumber(r.round);
+          return p && p.type===lgFilter.roundType;
+        };
+        const here=allRounds.filter(r=>r.date===curDate).filter(r=>inSeason(r)&&inType(r));
+        if(!here.length) return '<span class="db-day-empty">No rounds today</span>';
+        return here.map(r=>{
+          const col=(typeof compColor==='function')?compColor(r.competition):'var(--muted)';
+          const k=esc(r.key).replace(/'/g,'&#39;');
+          return `<button class="db-day-chip" onclick="lgPickRound('${k}')" title="${esc(r.competition)} · ${esc(r.round)}"><span class="db-day-dot" style="background:${col}"></span>${esc(r.round)}</button>`;
+        }).join('');
+      })()}</span>
       <button class="${revealCls}" id="lgRevealBtn" onclick="lgRevealBtnClick('${revealAction}',this)" title="Play the current round — reveal first half, full time, then advance to the next round"><span class="db-now-spin"></span><span class="db-now-label">${esc(revealLabel)}</span></button>
     </div>
     <div class="lg-cols">
