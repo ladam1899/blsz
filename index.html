@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.8</title>
+<title>League Manager v2026.05.15.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3019,6 +3019,13 @@ async function advanceToNextRound(){
                          && next.date>=junSplitForCur);
   console.log(`[advanceToNextRound] cur=${cur} next=${next.date} curSeason=${curSeason} nextSeason=${nextSeason} janSplit=${janSplit} junSplit=${junSplitForCur} janX=${isJanCrossing} junX=${isJunCrossing}`);
 
+  // After a successful rollover (Jan 1 spring or Jun 15 autumn) we override
+  // the destination date with the FIRST calendar entry of the just-generated
+  // half — that's the earliest match the user can play in the new half —
+  // and pin the Matches season filter to that season. Tracked here so the
+  // post-rollover `setState` below knows what to apply.
+  let _jumpToSeason='', _jumpToHalf='';
+
   if(isJanCrossing && !_springPopupShown.has(nextSeason)){
     _springPopupShown.add(nextSeason);
     const ok=await _confirmHalfBoundary(nextSeason, janSplit, next.date, 'A->S');
@@ -3034,6 +3041,7 @@ async function advanceToNextRound(){
       toast('Spring generation failed — see console','err');
       return;
     }
+    _jumpToSeason=nextSeason; _jumpToHalf='S';
   }
   if(isJunCrossing && !_juneNewSeasonPopupShown.has(nextSeason)){
     _juneNewSeasonPopupShown.add(nextSeason);
@@ -3071,10 +3079,33 @@ async function advanceToNextRound(){
       toast('New-season autumn generation failed — see console','err');
       return;
     }
+    _jumpToSeason=nextSeason; _jumpToHalf='A';
   }
-  setState('current_date',next.date,true);
+
+  // If a rollover ran, jump current_date to the earliest calendar entry of
+  // the just-generated half and pin the Matches season filter to that
+  // season. Without this, the date would only advance to `next.date` —
+  // which can be later in the half (the original ⏭ target) — and the
+  // user wouldn't see the first match of the new half they just paid the
+  // popup cost for.
+  let _destDate=next.date;
+  if(_jumpToSeason && _jumpToHalf){
+    try{
+      const all=_lgCalendarRounds();
+      const dates=all
+        .map(r=>r.date)
+        .filter(d=>d && seasonFor(d)===_jumpToSeason
+                    && halfSeasonFor(d).endsWith('_'+_jumpToHalf));
+      if(dates.length){
+        _destDate=dates.sort()[0];
+        lgFilter.season=_jumpToSeason;
+        toast(`Jumped to first ${_jumpToHalf==='A'?'autumn':'spring'} match of ${_jumpToSeason}: ${_destDate}`,'');
+      }
+    }catch(e){ console.warn('[advanceToNextRound] post-rollover jump failed:',e); }
+  }
+  setState('current_date',_destDate,true);
   lgSelRound=null;
-  toast(`Current date → ${next.date}`,'');
+  if(!_jumpToSeason) toast(`Current date → ${_destDate}`,'');
   renderLeagueView();
 }
 
