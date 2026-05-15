@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.3</title>
+<title>League Manager v2026.05.15.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1610,7 +1610,7 @@ function _lgFilterRounds(all){
     return false;
   };
   return all.filter(r=>{
-    if(lgFilter.season&&r.season!==lgFilter.season)return false;
+    if(lgFilter.season && _seasonOf(r)!==lgFilter.season)return false;
     const parsed=_lgRoundTypeAndNumber(r.round);
     if(lgFilter.roundType&&(!parsed||parsed.type!==lgFilter.roundType))return false;
     if(lgFilter.roundNum&&(!parsed||String(parsed.num)!==String(lgFilter.roundNum)))return false;
@@ -1669,14 +1669,32 @@ function renderLeagueView(){
     if(hit)anchor=hit;
   }
 
-  const allSeasons=[...new Set(allRounds.map(r=>r.season))].filter(Boolean).sort();
+  // Season per round: prefer the calendar.csv `season` column when present,
+  // otherwise derive from the round's date via seasonFor(). Older calendar
+  // schemas have no season column, so the column-only approach left
+  // allSeasons empty and the dropdown unusable.
+  const _seasonOfRound=(r)=>{
+    if(r&&r.season) return r.season;
+    if(r&&r.date&&typeof seasonFor==='function') return seasonFor(r.date)||'';
+    return '';
+  };
+  const allSeasons=[...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
+  // Default the season filter to whatever covers `current_date` so the
+  // Matches view boots into the user's actual playing season instead of
+  // showing every round across every year. Only seed the default the
+  // first time (when no explicit filter has been chosen) AND only when
+  // that season actually exists in allSeasons; otherwise leave it blank.
+  if(!lgFilter.season && typeof seasonFor==='function'){
+    const _cs=seasonFor(curDate);
+    if(_cs && allSeasons.includes(_cs)) lgFilter.season=_cs;
+  }
   const allYears=[...new Set(allRounds.map(r=>r.date.slice(0,4)))].filter(Boolean).sort();
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
   // Build round-type and round-number option sets, respecting the other
   // filters (season/year/month and, conditionally, the companion dropdown).
   const baseForRounds=allRounds.filter(r=>{
-    if(lgFilter.season&&r.season!==lgFilter.season)return false;
+    if(lgFilter.season && _seasonOfRound(r)!==lgFilter.season)return false;
     if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
     return true;
@@ -5663,50 +5681,63 @@ async function generateSeasonFromDraw(targetSeason, half){
   }
 
   // ── PRE-GENERATION SANITY CHECK ────────────────────────────────
-  // Walk every draw row whose date falls in the requested half and verify
-  // it has (a) a calendar entry and (b) a non-empty date string. Anything
-  // missing surfaces in a confirm() popup BEFORE any rows are written,
-  // so the user can cancel and fix the calendar instead of producing
-  // dated/undated mismatches that later corrupt the season.
+  // Only warn when a draw row would actually be processed in THIS half-run
+  // and the calendar can't tell us its date. Rows scheduled in the OTHER
+  // half are intentional (same draw.csv covers both halves) — those get
+  // skipped silently by _buildOrStub, no warning needed.
+  //
+  // We classify each draw row's expected half by the phase prefix:
+  //   A-half: MB-B, KKQ, KKARA, KKROM, NK W rounds 1-5, NK L round 5.
+  //   S-half: MB-R, KKABC, KKJKL, KKGOR, NK W rounds 6-7, NK L rounds 6-9.
+  // A row missing from calendar.csv only matters when its expected half
+  // matches the half we're generating now.
   {
-    const tSpringYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-    const tSplit=isNaN(tSpringYear)?'':(tSpringYear+'-01-01');
-    const dateForHalf=(d)=>{
-      if(!d||!tSplit) return _half==='A';
-      if(_half==='A') return d<tSplit;
-      return d>=tSplit;
+    const _expectedHalfForRound=(rnd)=>{
+      // A-half phases (autumn)
+      if(/^MB-B-/i.test(rnd)) return 'A';
+      if(/^KKQ-/i.test(rnd))  return 'A';
+      if(/^KKARA-/i.test(rnd)) return 'A';
+      if(/^KKROM-/i.test(rnd)) return 'A';
+      // S-half phases (spring)
+      if(/^MB-R-/i.test(rnd)) return 'S';
+      if(/^KKABC-/i.test(rnd)) return 'S';
+      if(/^KKJKL-/i.test(rnd)) return 'S';
+      if(/^KKGOR-/i.test(rnd)) return 'S';
+      // NK splits by round number: W-1..W-5 and L-5 = A; W-6/7 and L-6..9 = S.
+      let m=rnd.match(/^NK-?W-(\d+)-\d+$/i);
+      if(m){ const n=parseInt(m[1]); return n<=5?'A':'S'; }
+      m=rnd.match(/^NK-?L-(\d+)-\d+$/i);
+      if(m){ const n=parseInt(m[1]); return n<=5?'A':'S'; }
+      return null; // unknown phase — not our problem
     };
-    const missingCal=new Set();          // round codes with no calendar entry at all
-    const wrongHalf=new Set();           // round codes whose calendar date is in the OTHER half
-    const allRounds=new Set();
+    // Calendar lookup that tolerates the same NK-code aliases _normNkRounds
+    // does (NK-W-1-1 ↔ NKW-1-1, NKL-5-2 → NKW-5-2).
+    const _calDateFor=(rnd)=>{
+      const tryKeys=new Set([rnd]);
+      if(typeof _normNkRounds==='function') tryKeys.add(_normNkRounds(rnd));
+      // Hand-roll the inverse forms so a draw.csv with "NK-W-1-1" finds a
+      // calendar.csv with "NKW-1-1" and vice versa.
+      tryKeys.add(rnd.replace(/^NK-W-/i,'NKW-').replace(/^NK-L-/i,'NKL-'));
+      tryKeys.add(rnd.replace(/^NKW-/i,'NK-W-').replace(/^NKL-/i,'NK-L-'));
+      for(const k of tryKeys){
+        const c=calMap.get(k);
+        if(c&&c.date) return c.date;
+      }
+      return '';
+    };
+    const missingCal=new Set();
     d.r.forEach(r=>{
       const rnd=String(r[ri]||'').trim(); if(!rnd) return;
-      allRounds.add(rnd);
-      // Only the phases we know how to generate participate in the check.
-      const known=/^MB-B-/i.test(rnd)||/^MB-R-/i.test(rnd)
-        ||/^KKQ-/i.test(rnd)||/^KKARA-/i.test(rnd)||/^KKROM-/i.test(rnd)
-        ||/^KKABC-/i.test(rnd)||/^KKJKL-/i.test(rnd)||/^KKGOR-/i.test(rnd)
-        ||/^NK-?[WL]-\d+-\d+$/i.test(rnd);
-      if(!known) return;
-      const cal=calMap.get(rnd);
-      const cd=cal?cal.date:'';
-      if(!cd){ missingCal.add(rnd); return; }
-      if(!dateForHalf(cd)) wrongHalf.add(rnd);
+      const exp=_expectedHalfForRound(rnd); if(!exp) return;
+      if(exp!==_half) return; // wrong-half rows aren't in scope for this run
+      if(!_calDateFor(rnd)) missingCal.add(rnd);
     });
-    const issues=[];
     if(missingCal.size){
       const sample=[...missingCal].sort().slice(0,12);
-      issues.push(`❌ ${missingCal.size} round code(s) have NO date in calendar.csv:\n   ${sample.join(', ')}${missingCal.size>sample.length?', …':''}`);
-    }
-    if(wrongHalf.size){
-      const sample=[...wrongHalf].sort().slice(0,12);
-      issues.push(`⚠ ${wrongHalf.size} round code(s) have a calendar date that falls in the OTHER half (not ${_half}):\n   ${sample.join(', ')}${wrongHalf.size>sample.length?', …':''}`);
-    }
-    if(issues.length){
       const msg=`Pre-generation check for season ${targetSeason} (${_half}-half) found problems:\n\n`+
-        issues.join('\n\n')+
-        `\n\nThese rounds will be SKIPPED (no row written). The new season may have gaps.\n\nContinue anyway?`;
-      console.warn('[GenerateSeason] pre-check warnings',{missingCal:[...missingCal], wrongHalf:[...wrongHalf]});
+        `❌ ${missingCal.size} round code(s) have NO date in calendar.csv:\n   ${sample.join(', ')}${missingCal.size>sample.length?', …':''}\n\n`+
+        `These rounds will be SKIPPED (no row written). The new season may have gaps.\n\nContinue anyway?`;
+      console.warn('[GenerateSeason] pre-check missing dates:',[...missingCal]);
       if(!confirm(msg)){
         toast('Generate Season cancelled by pre-check','warn');
         return;
