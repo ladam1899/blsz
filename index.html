@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.1</title>
+<title>League Manager v2026.05.15.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3076,6 +3076,60 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
     const srcHalf=isJune?'S':'A';
     const crossingLabel=isJune?`AUTUMN half of ${esc(_nextSeasonStr(season)||'?')}`:`SPRING half of ${esc(season||'?')}`;
     const previousLabel=isJune?`spring half of ${esc(season||'?')}`:`autumn half of ${esc(season||'?')}`;
+    // Build a per-half preview of which competition rounds will be (re)generated
+    // when the user clicks Continue. Reads draw.csv, partitions by phase, and
+    // counts the rows that fall inside the target half via the same date-split
+    // rule generateSeasonFromDraw uses. Returns an HTML snippet shown inside
+    // the popup so the user knows exactly what is about to be written.
+    const _previewHtml=(()=>{
+      const targetHalf=isJune?'A':'S';
+      const targetSeason=dstSeason;
+      // Compute the Jan-1 split for the target season so we can decide which
+      // draw rows fall in this half. Note: draw.csv has no date column; we
+      // look up each round's date from calendar.csv.
+      const tSpringYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+      const tSplit=isNaN(tSpringYear)?'':(tSpringYear+'-01-01');
+      const inThisHalf=(d)=>{
+        if(!d||!tSplit) return targetHalf==='A';
+        if(targetHalf==='A') return d<tSplit;
+        return d>=tSplit;
+      };
+      const cal=(typeof _roundsToDateMap==='function')?_roundsToDateMap(targetSeason):new Map();
+      const d=DB.draw; if(!d||!d.r) return '';
+      const _dhi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+      const ri=_dhi('rounds');
+      if(ri<0) return '';
+      const phaseCounts={'MB-B':0,'MB-R':0,'KKQ':0,'KKARA':0,'KKROM':0,'KKABC':0,'KKJKL':0,'KKGOR':0,'NK-W':0,'NK-L':0};
+      const phaseRoundSet={'MB-B':new Set(),'MB-R':new Set(),'KKQ':new Set(),'KKARA':new Set(),'KKROM':new Set(),'KKABC':new Set(),'KKJKL':new Set(),'KKGOR':new Set(),'NK-W':new Set(),'NK-L':new Set()};
+      d.r.forEach(r=>{
+        const rnd=String(r[ri]||'').trim(); if(!rnd) return;
+        const dt=(cal.get(rnd)||{}).date||'';
+        if(!inThisHalf(dt)) return;
+        let key='';
+        if(/^MB-B-/i.test(rnd)) key='MB-B';
+        else if(/^MB-R-/i.test(rnd)) key='MB-R';
+        else if(/^KKQ-/i.test(rnd)) key='KKQ';
+        else if(/^KKARA-/i.test(rnd)) key='KKARA';
+        else if(/^KKROM-/i.test(rnd)) key='KKROM';
+        else if(/^KKABC-/i.test(rnd)) key='KKABC';
+        else if(/^KKJKL-/i.test(rnd)) key='KKJKL';
+        else if(/^KKGOR-/i.test(rnd)) key='KKGOR';
+        else if(/^NK-?W-/i.test(rnd)) key='NK-W';
+        else if(/^NK-?L-/i.test(rnd)) key='NK-L';
+        if(!key) return;
+        phaseCounts[key]++;
+        phaseRoundSet[key].add(rnd);
+      });
+      const items=Object.keys(phaseCounts).filter(k=>phaseCounts[k]>0).map(k=>{
+        const rounds=[...phaseRoundSet[k]].sort();
+        const rangeLabel=rounds.length<=1
+          ? (rounds[0]||'')
+          : `${rounds[0]} → ${rounds[rounds.length-1]}`;
+        return `<li><b>${esc(k)}</b> · ${phaseCounts[k]} match${phaseCounts[k]===1?'':'es'} · <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${esc(rangeLabel)}</span></li>`;
+      }).join('');
+      if(!items) return `<div style="margin:8px 0;padding:8px 12px;background:var(--surface2);border-left:3px solid var(--gold);border-radius:4px;color:var(--text);font-size:12px;"><b>⚠ Nothing to generate</b> — no draw rows fall in this half. Check draw.csv and calendar.csv dates.</div>`;
+      return `<details style="margin:6px 0 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;" open><summary style="cursor:pointer;font-weight:600;font-size:12px;color:var(--text);">📋 Will generate on Continue (${targetHalf}-half of ${esc(targetSeason)}):</summary><ul style="margin:8px 0 0 18px;padding:0;font-size:12px;line-height:1.6;">${items}</ul></details>`;
+    })();
     // Build the team list from teams.csv (one row per team), falling back
     // to the team_skills row list if teams.csv is empty.
     const teamsArr=(function(){
@@ -3172,6 +3226,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
     md.innerHTML=
       `<h3 style="margin:0 0 4px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">New half-season — adjust team skills</h3>`+
       `<p style="margin:0 0 10px;color:var(--text);font-size:12px;">Crossing into <b>${crossingLabel}</b> on <b>${esc(nextDate)}</b>. Only the overall <code>skills</code> value is editable here; every other per-period stat (att/def 1H/2H/ET, pen, home) is preserved from the ${previousLabel}. <span style="color:var(--muted)">Rand avg = mean of every rand-roll cell (first/second/extra att+def + pen, both home and away) across this team's matches in the ${previousLabel}. 0..100 scale. n = matches played in that half. Perf Δ = (avg − 50) / 5, one decimal, clamped ±10; applied only when n > 10. Recommended skills = prev + Perf Δ. My Δ is pre-filled with Perf Δ.</span></p>`+
+      _previewHtml+
       `<div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px;">`+
         `<table class="hb-table" style="width:100%;border-collapse:collapse;font-size:12px;">`+
           `<thead><tr style="background:var(--surface2)">`+
@@ -5432,10 +5487,11 @@ function _clearAutoMatchesForSeason(targetSeason, half, splitDate){
   const di=_hi('date'), noi=_hi('notes');
   if(di<0||noi<0)return 0;
   const inHalfHere=(d)=>{
-    if(half==='ALL'||!splitDate)return true;
-    if(!d) return half==='A';
+    if(!splitDate) return true;                            // legacy callers without splitDate
+    if(!d) return half==='A';                              // undated → assume autumn
     if(half==='A') return d<splitDate;
-    return d>=splitDate;
+    if(half==='S') return d>=splitDate;
+    return true;                                           // unknown half → don't filter
   };
   const before=m.r.length;
   m.r=m.r.filter(r=>{
@@ -5465,15 +5521,20 @@ async function generateSeasonFromDraw(targetSeason, half){
   const prev=_prevSeasonStr(targetSeason);
   if(!prev){toast('Target season must be YYYY_YY format','err');return;}
   ensureMatchCols();
-  // Half-season gating. `half` ∈ {'A','S','ALL'}; defaults to 'ALL' for back-
-  // compat with any legacy callers. The cutoff date is Jan 1 of the season's
-  // SPRING year (e.g. season '2000_01' → cutoff '2001-01-01'). Autumn rows
-  // have date STRICTLY BEFORE this; spring rows are >= this date.
-  const _half=(half==='A'||half==='S')?half:'ALL';
+  // Half-season gating. `half` ∈ {'A','S'} — REQUIRED, no whole-season mode.
+  // The cutoff date is Jan 1 of the season's SPRING year (e.g. '2000_01'
+  // → '2001-01-01'). Autumn rows are date STRICTLY BEFORE this; spring is
+  // date >= this. Any other value for `half` is rejected up-front; we used
+  // to silently fall back to 'ALL', which let buggy callers generate both
+  // halves in one shot and made it easy to overwrite played data.
+  if(half!=='A'&&half!=='S'){
+    toast(`Generate Season: half must be 'A' or 'S' (got: ${esc(String(half))}).`,'err');
+    return;
+  }
+  const _half=half;
   const springYear=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
   const splitDate=isNaN(springYear)?'':(springYear+'-01-01');
   const inHalf=(dateStr)=>{
-    if(_half==='ALL') return true;
     if(!dateStr||!splitDate) return _half==='A';        // no date → assume autumn
     if(_half==='A') return String(dateStr)<splitDate;   // strictly before Jan 1
     return String(dateStr)>=splitDate;                  // spring: from Jan 1
@@ -5482,7 +5543,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   // Returns null when the row should not be touched in this run (existing
   // rows from the other half are preserved unchanged).
   const _buildOrStub=(ctx)=>{
-    if(_half!=='ALL'&&!inHalf(ctx.date)) return null;
+    if(!inHalf(ctx.date)) return null;
     return _buildSimulatedMatchRow(ctx);
   };
   // ── Clean slate for THIS season's auto rows ────────────────────
@@ -5565,7 +5626,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   // that uses MB-4 teams) plays in the spring half. Autumn-only runs skip
   // the modal entirely; the picks happen later when the user crosses Jan 1.
   let mb4Picks=new Map();
-  const needsMB4=(_half==='S'||_half==='ALL') && d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
+  const needsMB4=(_half==='S') && d.r.some(r=>/^MB-R-/i.test(String(r[ri]||'').trim()) &&
     (/^(4K|4NY|4É|4D)(\s|$)/.test(String(r[hpi]||'').trim())||
      /^(4K|4NY|4É|4D)(\s|$)/.test(String(r[api]||'').trim())));
   if(needsMB4){
@@ -5649,7 +5710,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   // Only write final tables when the WHOLE season is complete (ALL or spring).
   // After an autumn-only run the spring rows are still blank, so the tables
   // would be misleading.
-  if(_half==='ALL'||_half==='S'){
+  if(_half==='S'){
     const mbbGroups=[...new Set(mbB.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbbGroups.forEach(g=>{
       resRows+=_writeFinalTable(targetSeason,g,_mbBGroupTable(g));
@@ -5687,7 +5748,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   }
   // MB-R finished — write each level's final table into results.csv.
   // Competition = the Roman-numeral level (e.g. 'I', 'II', …, 'X').
-  if(_half==='ALL'||_half==='S'){
+  if(_half==='S'){
     const mbrLevels=[...new Set(mbR.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbrLevels.forEach(lvl=>{
       resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity));
@@ -5762,7 +5823,7 @@ async function generateSeasonFromDraw(targetSeason, half){
       KKABC:_kkabcGroupTable, KKJKL:_kkjklGroupTable,
       KKGOR:_kkgorGroupTable
     }[phaseName];
-    if(_tableFn&&(_half==='ALL'||_half==='S')){
+    if(_tableFn&&(_half==='S')){
       const levels=new Set();
       for(const arr of byRnd.values())
         for(const r of arr){
@@ -5869,7 +5930,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   // 3=L-final (3rd-place play-off) winner, 4=L-final loser. Competition='NK'.
   // Only when the season is complete (ALL or spring run). After autumn-only
   // run, NK final rows are still blank stubs.
-  if(nkCount&&(_half==='ALL'||_half==='S')){
+  if(nkCount&&(_half==='S')){
     const _wWin=_nkSingleLegWinner('NKW-7-1','1');
     const _wLos=_nkSingleLegLoser ('NKW-7-1','1');
     const _lWin=_nkSingleLegWinner('NKL-9-1','1');
@@ -5895,7 +5956,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   // per user spec, the doubled-up team simply plays the final directly.
   // Both matches are mt=11 (neutral venue). Rows are upserted by
   // (rounds, level, match_number) so re-runs are idempotent.
-  if((_half==='ALL'||_half==='S')&&typeof _resultByPlace==='function'){
+  if((_half==='S')&&typeof _resultByPlace==='function'){
     const _seed=(comp,place)=>typeof _resultByPlace==='function'?_resultByPlace(targetSeason,comp,place):'';
     const mbrI=_seed('I',1);
     const nkW =_seed('NK',1);
