@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.10</title>
+<title>League Manager v2026.05.15.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -5635,22 +5635,35 @@ function _writeBlszOverallRanking(season){
   try{ proj=_blszBuildProjection(season); }
   catch(e){ console.warn('[BLSZ-overall] projection failed:',e); return 0; }
   if(!proj) return 0;
-  const sums=new Map(); // tid -> {pts,tid}
+  const sums=new Map(); // tid -> pts
   ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
     Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
-      const cur=sums.get(tid)||{pts:0,tid};
-      cur.pts += (info && typeof info.curPts==='number')?info.curPts:0;
-      sums.set(tid,cur);
+      const cur=sums.get(tid)||0;
+      sums.set(tid, cur + ((info && typeof info.curPts==='number')?info.curPts:0));
     });
   });
+  // Pull EVERY team from teams.csv so the ranking covers all 128+ teams that
+  // NK W-R1 (and other high-place tokens) reference. Teams that didn't
+  // score any BLSZ points get pts=0 and fall through to the deterministic
+  // name-based tie-break at the bottom of the ranking.
+  const td=DB.teams;
+  const allTeams=[];
+  if(td&&td.r&&td.h){
+    const ii=td.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
+    if(ii>=0){
+      td.r.forEach(r=>{
+        const id=String(r[ii]||'').trim();
+        if(!id) return;
+        if(!sums.has(id)) sums.set(id, 0);
+        allTeams.push(id);
+      });
+    }
+  }
   if(!sums.size) return 0;
-  const arr=[...sums.values()].map(e=>{
-    const t=(typeof teamById==='function')?teamById(e.tid):{name:e.tid};
-    return {tid:e.tid, pts:e.pts, name:String((t&&(t.long_name||t.name))||e.tid)};
+  const arr=[...sums.entries()].map(([tid,pts])=>{
+    const t=(typeof teamById==='function')?teamById(tid):{name:tid};
+    return {tid, pts, name:String((t&&(t.long_name||t.name))||tid)};
   }).sort((a,b)=>(b.pts-a.pts)||String(a.name).localeCompare(String(b.name),'hu'));
-  // Keep ALL teams (even 0-pts) since downstream draws (NK W-R1 needs 128
-  // teams) can run out of contenders if we filter too aggressively. The
-  // tie-break by name keeps the ranking deterministic.
   let n=0;
   arr.forEach((t,i)=>{
     _upsertResultsRow(season,'BLSZ',i+1,t.tid);
