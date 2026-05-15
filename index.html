@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.6</title>
+<title>League Manager v2026.05.15.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -5336,10 +5336,18 @@ function _roundsToDateMap(targetSeason){
     return map;
   }
   d.r.forEach(r=>{
-    const rowSeason=si>=0?String(r[si]||'').trim():'';
-    if(targetSeason&&rowSeason&&rowSeason!==targetSeason)return;
     const rawDate=String(r[di]||'').trim();if(!rawDate)return;
     const iso=normalizeDate(rawDate)||rawDate;
+    // Determine the row's season. Prefer an explicit `season` column when
+    // present; otherwise derive from the date via seasonFor(). This is the
+    // critical fix: calendars WITHOUT a `season` column used to bypass the
+    // filter entirely, which made round codes that repeat year-over-year
+    // (KKQ-1, MB-B-1, NKW-1-1, …) all collapse to the FIRST year's date,
+    // and the next-season draw silently overwrote prev-season rows with
+    // wrong dates.
+    let rowSeason=si>=0?String(r[si]||'').trim():'';
+    if(!rowSeason && typeof seasonFor==='function') rowSeason=seasonFor(iso)||'';
+    if(targetSeason && rowSeason && rowSeason!==targetSeason) return;
     // Every cell in a non-system column that contains a non-empty value is a round key.
     for(let c=0;c<r.length;c++){
       if(systemCols.has(c))continue;
