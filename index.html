@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.7</title>
+<title>League Manager v2026.05.15.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2026,7 +2026,31 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   const isAnchor=!!(anchor&&info.key===anchor.key);
   const col=compColor(info.competition);
   const c=_lgMatchCols();
-  const rows=c.rounds>=0?DB.matches.r.filter(r=>String(r[c.rounds]||'').trim()===info.round):[];
+  // Round codes repeat every season (KKQ-1 exists in 2000_01, 2001_02, …),
+  // so filtering by `rounds` alone pulls in matches from every season for
+  // any round that shares the code. The round-card's identity is really
+  // (round, date) — same code on different dates means a different season's
+  // staging of that round. Match by BOTH so each card only shows its own
+  // matches.
+  //
+  // When the row has no date recorded (a fresh skeleton from Generate
+  // Season that hasn't had its date filled in), fall back to seasonFor()
+  // on whatever date IS present elsewhere on the row, OR — if everything
+  // is blank — accept it (the row will be invisible anyway because it has
+  // no teams). The stricter check kills the cross-season leak; the
+  // permissive fallback keeps half-baked rows visible to the editor.
+  const _infoSeason=(typeof seasonFor==='function')?(info.season||seasonFor(info.date)||''):info.season||'';
+  const rows=c.rounds>=0?DB.matches.r.filter(r=>{
+    if(String(r[c.rounds]||'').trim()!==info.round) return false;
+    const rDate=c.date>=0?String(r[c.date]||'').trim():'';
+    if(!rDate) return true; // accept undated rows (rare)
+    if(rDate===info.date) return true;
+    if(_infoSeason && typeof seasonFor==='function'){
+      const rs=seasonFor(rDate);
+      if(rs===_infoSeason) return true;
+    }
+    return false;
+  }):[];
   // reveal: 'full' (past), 'hidden' (future), or 0|1|2 (current anchor)
   let reveal;
   if(status==='past')reveal='full';
