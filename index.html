@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.14.14</title>
+<title>League Manager v2026.05.15.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -745,7 +745,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.14.14</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2892,15 +2892,6 @@ async function advanceToNextRound(){
       toast('Spring generation failed — see console','err');
       return;
     }
-    // Defensive: in case generateSeasonFromDraw produced any spring matches
-    // without re-writing the overall (e.g. early-error code path), make
-    // sure the season's overall ranking is up-to-date now. The Generate
-    // Season helper already does this on S/ALL, so this is a no-op in the
-    // happy path and a recovery hook otherwise.
-    try{
-      const n=_writeBlszOverallRanking(nextSeason);
-      if(n>0) await saveSheet('results');
-    }catch(e){ console.warn('[advanceToNextRound] overall write after Jan rollover failed:',e); }
   }
   if(isJunCrossing && !_juneNewSeasonPopupShown.has(nextSeason)){
     _juneNewSeasonPopupShown.add(nextSeason);
@@ -2930,27 +2921,6 @@ async function advanceToNextRound(){
       // Don't block the rollover on snapshot failure — just warn loudly.
       console.error('[advanceToNextRound] snapshot save failed:',e);
       toast('⚠ Snapshot save failed — rollover continues anyway. See console.','warn');
-    }
-    // CRITICAL: finalize the just-finished season's `overall` ranking BEFORE
-    // we generate the new season. The new-season draw reads
-    // `_placeToTeamMap(curSeason)` to resolve plain-integer place tokens
-    // (`MB-1`, `MB-7`, …) — without an `overall` row set for curSeason
-    // those tokens fall through to the second-pass fallback (any team at
-    // that place from any competition), which is incomplete and produces
-    // empty match rows. Running the overall write here guarantees the new
-    // draw has a coherent ranking to seed from.
-    try{
-      const n=_writeBlszOverallRanking(curSeason);
-      if(n>0){
-        await saveSheet('results');
-        toast(`📊 Finalised ${n} overall ranking rows for ${curSeason}`,'');
-        console.log(`[advanceToNextRound] wrote ${n} overall ranking rows for ${curSeason}`);
-      } else {
-        console.warn(`[advanceToNextRound] overall ranking produced 0 rows for ${curSeason} — new season draw may have blanks.`);
-      }
-    }catch(e){
-      console.error('[advanceToNextRound] overall write before June rollover failed:',e);
-      toast('⚠ overall ranking write failed — new season may have blank rows.','warn');
     }
     try{
       await generateSeasonFromDraw(nextSeason,'A');
@@ -5383,43 +5353,6 @@ function _resultByPlace(season, competition, place){
   }
   return '';
 }
-// Compute the BLSZ aggregate ranking for `season` from played matches and
-// upsert it as `(season, 'overall', place, team_id)` rows in results.csv.
-// Mirrors what the BLSZ view shows. Returns the number of rows written.
-// This is what next-season draws read via `_placeToTeamMap(prev)`.
-function _writeBlszOverallRanking(season){
-  if(!season) return 0;
-  if(typeof _blszBuildProjection!=='function') return 0;
-  let proj;
-  try{ proj=_blszBuildProjection(season); }
-  catch(e){ console.warn('[overall] projection failed:',e); return 0; }
-  if(!proj) return 0;
-  // Sum curPts across buckets per team.
-  const sums=new Map(); // tid -> {pts, name}
-  ['MB-B','MB-R','KK','NK','NSZK'].forEach(bucket=>{
-    Object.entries(proj[bucket]||{}).forEach(([tid,info])=>{
-      const cur=sums.get(tid)||{pts:0,tid};
-      cur.pts += (info && typeof info.curPts==='number')?info.curPts:0;
-      sums.set(tid,cur);
-    });
-  });
-  if(!sums.size) return 0;
-  // Stable secondary sort by long-name so ties are deterministic.
-  const arr=[...sums.values()].map(e=>{
-    const t=(typeof teamById==='function')?teamById(e.tid):{name:e.tid};
-    return {tid:e.tid, pts:e.pts, name:String((t&&(t.long_name||t.name))||e.tid)};
-  }).sort((a,b)=>(b.pts-a.pts)||String(a.name).localeCompare(String(b.name),'hu'));
-  // Drop teams with no points so they don't pollute the ranking; tie-breakers
-  // still work because we sort first. (A team with 0 BLSZ pts in every bucket
-  // didn't play any league match this season — a placeholder team etc.)
-  const ranked=arr.filter(t=>t.pts>0);
-  let n=0;
-  ranked.forEach((t,i)=>{
-    _upsertResultsRow(season,'overall',i+1,t.tid);
-    n++;
-  });
-  return n;
-}
 function _upsertResultsRow(season, competition, place, teamId){
   const d=DB.results;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
@@ -5759,13 +5692,13 @@ async function generateSeasonFromDraw(targetSeason, half){
     mbrLevels.forEach(lvl=>{
       resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity));
     });
-    // Consolidated `MB-R` table: places 1..76 derived from each Roman level
-    // via _BLSZ_MBR_OFFSETS. This is the pure MB-R ranking, distinct from
-    // the BLSZ aggregate `overall` (which sums MB-B + MB-R + KK + NK + NSZK
-    // and is written separately by _writeBlszOverallRanking at end-of-run).
-    // The competition name was renamed from `MB` to `MB-R` so the two don't
-    // collide — `_placeToTeamMap` reads `overall`/`MB` for the next season's
-    // draws, and we want those to be the BLSZ aggregate, not the MB-R-only.
+    // Consolidated `MB` table: places 1..76 derived from each Roman level
+    // via _BLSZ_MBR_OFFSETS. This is the project's canonical "whole MB-R
+    // ranking" row set — by long-standing convention the competition column
+    // literally reads `MB` (even though semantically it's just MB-R 1..76,
+    // not a BLSZ aggregate). KKQ tokens (`MB-50`, …) and MB-B base place
+    // tokens both read these rows via `_placeToTeamMap`. Per-level rows
+    // (`MB-R-I`, etc.) keep being written above for display purposes.
     if(typeof _BLSZ_MBR_OFFSETS==='object'){
       Object.keys(_BLSZ_MBR_OFFSETS).forEach(lvl=>{
         const off=_BLSZ_MBR_OFFSETS[lvl];
@@ -5773,7 +5706,7 @@ async function generateSeasonFromDraw(targetSeason, half){
         if(!Array.isArray(tbl)) return;
         tbl.forEach((row,i)=>{
           if(!row||!row.id) return;
-          _upsertResultsRow(targetSeason,'MB-R',off+i+1,row.id);
+          _upsertResultsRow(targetSeason,'MB',off+i+1,row.id);
           resRows++;
         });
       });
@@ -6024,20 +5957,6 @@ async function generateSeasonFromDraw(targetSeason, half){
       const winner=distinct[0];
       _upsertResultsRow(targetSeason,'NSZK',1,winner); resRows++;
       console.log('[GenerateSeason] NSZK degenerate — one team swept all three trophies:',winner);
-    }
-  }
-
-  // Compute + write the BLSZ aggregate `overall` ranking. This is what the
-  // NEXT season's MB-B base rows and KK qualifying tokens resolve their
-  // integer place tokens against via `_placeToTeamMap`. Only meaningful
-  // when at least one results-writing phase has run, i.e. on S or ALL.
-  if(_half==='ALL'||_half==='S'){
-    const overallN=_writeBlszOverallRanking(targetSeason);
-    if(overallN>0){
-      resRows+=overallN;
-      console.log(`[GenerateSeason] wrote ${overallN} overall ranking rows for ${targetSeason}`);
-    } else {
-      console.warn(`[GenerateSeason] BLSZ overall ranking produced 0 rows for ${targetSeason} — next-season draws may not resolve.`);
     }
   }
 
