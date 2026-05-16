@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.16.3</title>
+<title>League Manager v2026.05.16.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4958,17 +4958,26 @@ function _mbRLevelRunningTable(level,uptoRoundNum, season){
 // ── KK helper tables ──────────────────────────────────────────
 // Winner of a specific KKQ-<roundNum> match (by match_number). Returns team_id
 // or '' if not found / not yet simulated.
-function _kkqMatchWinner(roundNum,matchNum){
+function _kkqMatchWinner(roundNum,matchNum,season){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
   const ri=_hi('rounds'),mni=_hi('match_number'),hi=_hi('home_id'),ai=_hi('away_id'),
-        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time');
+        hsi=_hi('home_score_full_time'),asi=_hi('away_score_full_time'),di=_hi('date');
   if(ri<0||mni<0||hi<0||ai<0||hsi<0||asi<0)return '';
   const want='KKQ-'+roundNum;
   for(let i=0;i<m.r.length;i++){
     const r=m.r[i];
     if(String(r[ri]||'').trim().toUpperCase()!==want.toUpperCase())continue;
     if(String(r[mni]||'').trim()!==String(matchNum))continue;
+    // Season scope — without it, KKQ-1 match #7 from EVERY past season
+    // matches and we'd return the FIRST one (always 2000_01). That made
+    // second-season KKQ-2 draws read last season's winners, producing
+    // same-team-vs-same-team pairings in some slots. (v16.4 fix.)
+    if(season && di>=0){
+      const rowDate=String(r[di]||'').trim();
+      const rowSeason=(rowDate && typeof seasonFor==='function')?seasonFor(rowDate):'';
+      if(rowSeason && rowSeason!==season) continue;
+    }
     const hs=parseInt(r[hsi]),as=parseInt(r[asi]);
     const hid=String(r[hi]||'').trim(),aid=String(r[ai]||'').trim();
     if(isNaN(hs)||isNaN(as))return '';
@@ -5056,7 +5065,7 @@ function _normNkRounds(rnd){
 }
 // Finds a single matches.csv row by (rounds, match_number). Returns an object
 // with parsed score fields, or null.
-function _nkFindMatchRow(rounds,matchNum){
+function _nkFindMatchRow(rounds,matchNum,season){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
   const ri=_hi('rounds'),mni=_hi('match_number'),hi=_hi('home_id'),ai=_hi('away_id'),
@@ -5078,6 +5087,14 @@ function _nkFindMatchRow(rounds,matchNum){
       ? gotMnNum===wantMnNum
       : gotMnStr===wantMnStr;
     if(!mnMatches)continue;
+    // Season scope — NK rounds recur year-over-year, so without this filter
+    // we'd return the FIRST seen row (typically last season's), producing
+    // same-team-vs-same-team draws in later rounds. v16.4.
+    if(season && di>=0){
+      const rowDate=String(r[di]||'').trim();
+      const rowSeason=(rowDate && typeof seasonFor==='function')?seasonFor(rowDate):'';
+      if(rowSeason && rowSeason!==season) continue;
+    }
     const hs=parseInt(r[hsi]),as=parseInt(r[asi]);
     if(isNaN(hs)||isNaN(as))return null;
     // Also parse ET/PEN from notes in case this was a mt=1 single-leg
@@ -5098,16 +5115,16 @@ function _nkFindMatchRow(rounds,matchNum){
 }
 // Winner of a single-leg NK match (match_type=1, with ET/pen recorded in
 // scores + notes). Returns team_id or ''.
-function _nkSingleLegWinner(rounds,matchNum){
-  const r=_nkFindMatchRow(rounds,matchNum);
+function _nkSingleLegWinner(rounds,matchNum,season){
+  const r=_nkFindMatchRow(rounds,matchNum,season);
   if(!r||!r.home_id||!r.away_id)return '';
   if(r.h_ft>r.a_ft)return r.home_id;
   if(r.h_ft<r.a_ft)return r.away_id;
   return '';
 }
 // Loser of a single-leg NK match.
-function _nkSingleLegLoser(rounds,matchNum){
-  const r=_nkFindMatchRow(rounds,matchNum);
+function _nkSingleLegLoser(rounds,matchNum,season){
+  const r=_nkFindMatchRow(rounds,matchNum,season);
   if(!r||!r.home_id||!r.away_id)return '';
   if(r.h_ft>r.a_ft)return r.away_id;
   if(r.h_ft<r.a_ft)return r.home_id;
@@ -5115,25 +5132,31 @@ function _nkSingleLegLoser(rounds,matchNum){
 }
 // Finds the leg-2 row that pairs with a given leg-1 match (same teams, home↔away
 // reversed). Returns the parsed row object or null.
-function _nkFindLeg2For(leg1Rounds,leg1MatchNum){
+function _nkFindLeg2For(leg1Rounds,leg1MatchNum,season){
   const leg2Rounds=_NK_LEG2_OF[leg1Rounds];
   if(!leg2Rounds)return null;
-  const leg1=_nkFindMatchRow(leg1Rounds,leg1MatchNum);
+  const leg1=_nkFindMatchRow(leg1Rounds,leg1MatchNum,season);
   if(!leg1)return null;
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id');
+  const ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),di=_hi('date');
   if(ri<0||hi<0||ai<0)return null;
   for(let i=0;i<m.r.length;i++){
     const r=m.r[i];
     if(String(r[ri]||'').trim().toUpperCase()!==leg2Rounds.toUpperCase())continue;
+    // Season scope (v16.4) — same reason as _nkFindMatchRow.
+    if(season && di>=0){
+      const rowDate=String(r[di]||'').trim();
+      const rowSeason=(rowDate && typeof seasonFor==='function')?seasonFor(rowDate):'';
+      if(rowSeason && rowSeason!==season) continue;
+    }
     const h=String(r[hi]||'').trim(),a=String(r[ai]||'').trim();
     // Leg 2: home team of leg 1 is now away of leg 2 (and vice versa).
     if(h===leg1.away_id&&a===leg1.home_id){
       // Parse this row with the same helper (gives ET/PEN from notes too).
       const mni=_hi('match_number');
       const mn=mni>=0?String(r[mni]||'').trim():'';
-      const parsed=_nkFindMatchRow(leg2Rounds,mn);
+      const parsed=_nkFindMatchRow(leg2Rounds,mn,season);
       return parsed?{leg1,leg2:parsed}:null;
     }
   }
@@ -5142,20 +5165,26 @@ function _nkFindLeg2For(leg1Rounds,leg1MatchNum){
 // Reverse of _nkFindLeg2For — given a leg-2 row's home/away, find the leg-1
 // row with the same pair but reversed. Returns the parsed leg-1 row or null.
 // Used while SIMULATING leg 2 so we can embed AGG in the leg-2 notes.
-function _nkFindLeg1BySameTeamsReversed(leg1Rounds,leg2HomeId,leg2AwayId){
+function _nkFindLeg1BySameTeamsReversed(leg1Rounds,leg2HomeId,leg2AwayId,season){
   const m=DB.matches;
   const _hi=(name)=>m.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  const ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),mni=_hi('match_number');
+  const ri=_hi('rounds'),hi=_hi('home_id'),ai=_hi('away_id'),mni=_hi('match_number'),di=_hi('date');
   if(ri<0||hi<0||ai<0)return null;
   const wantRnd=String(leg1Rounds||'').trim().toUpperCase();
   for(let i=0;i<m.r.length;i++){
     const r=m.r[i];
     if(String(r[ri]||'').trim().toUpperCase()!==wantRnd)continue;
+    // Season scope (v16.4).
+    if(season && di>=0){
+      const rowDate=String(r[di]||'').trim();
+      const rowSeason=(rowDate && typeof seasonFor==='function')?seasonFor(rowDate):'';
+      if(rowSeason && rowSeason!==season) continue;
+    }
     const h=String(r[hi]||'').trim(),a=String(r[ai]||'').trim();
     // Leg 2 home was leg 1's away, and leg 2 away was leg 1's home.
     if(h===leg2AwayId&&a===leg2HomeId){
       const mn=mni>=0?String(r[mni]||'').trim():'';
-      return _nkFindMatchRow(leg1Rounds,mn);
+      return _nkFindMatchRow(leg1Rounds,mn,season);
     }
   }
   return null;
@@ -5164,8 +5193,8 @@ function _nkFindLeg1BySameTeamsReversed(leg1Rounds,leg2HomeId,leg2AwayId){
 // If aggregate is tied after 180', we fall back to the second leg's PEN
 // shootout if recorded, otherwise synthesise one on the fly from team skills.
 // `want` is 'win' or 'lose'.
-function _nkAggregateTeam(leg1Rounds,matchNum,want){
-  const pair=_nkFindLeg2For(leg1Rounds,matchNum);
+function _nkAggregateTeam(leg1Rounds,matchNum,want,season){
+  const pair=_nkFindLeg2For(leg1Rounds,matchNum,season);
   if(!pair)return '';
   const{leg1,leg2}=pair;
   if(!leg1.home_id||!leg1.away_id)return '';
@@ -5219,7 +5248,7 @@ function _resolvePlaceTok(tok,ctx){
     return row?{id:row.id}:{id:'',reason:'running '+p.level+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
   }
   if(p.kind==='kkq_winner'){
-    const id=_kkqMatchWinner(p.roundNum,p.matchNum);
+    const id=_kkqMatchWinner(p.roundNum,p.matchNum,ctx.season);
     return id?{id}:{id:'',reason:'KKQ'+p.roundNum+' match '+p.matchNum+' winner not yet known'};
   }
   if(p.kind==='kkara_group'){
@@ -5267,9 +5296,9 @@ function _resolvePlaceTok(tok,ctx){
     const isTwoLeg=Object.prototype.hasOwnProperty.call(_NK_LEG2_OF,ref);
     let id='';
     if(isTwoLeg){
-      id=_nkAggregateTeam(ref,p.matchNum,wantLoser?'lose':'win');
+      id=_nkAggregateTeam(ref,p.matchNum,wantLoser?'lose':'win',ctx.season);
     } else {
-      id=wantLoser?_nkSingleLegLoser(ref,p.matchNum):_nkSingleLegWinner(ref,p.matchNum);
+      id=wantLoser?_nkSingleLegLoser(ref,p.matchNum,ctx.season):_nkSingleLegWinner(ref,p.matchNum,ctx.season);
     }
     if(id)return{id};
     return{id:'',reason:'nk '+(wantLoser?'loser':'winner')+' '+ref+'-'+p.matchNum+' not resolved'};
@@ -5544,7 +5573,10 @@ function _buildSimulatedMatchRow(ctx){
         ? Object.keys(_NK_LEG2_OF).find(k=>_NK_LEG2_OF[k]===ctx.rounds)
         : null;
       if(leg1Rounds && ctx.homeId && ctx.awayId){
-        leg1Pair=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId);
+        // Season-scope the leg-1 lookup: NKW-5-1/6-1 codes recur every
+        // year, so without this we'd pair against last season's leg-1.
+        const _ctxSeason=ctx.season || (ctx.date && typeof seasonFor==='function' ? seasonFor(ctx.date) : '');
+        leg1Pair=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId,_ctxSeason);
         if(leg1Pair){
           aggH=ftH+leg1Pair.a_ft; aggA=ftA+leg1Pair.h_ft;
           aggTied=aggH===aggA;
@@ -6363,10 +6395,10 @@ async function generateSeasonFromDraw(targetSeason, half){
   // Only when the season is complete (ALL or spring run). After autumn-only
   // run, NK final rows are still blank stubs.
   if(nkCount&&(_half==='S')){
-    const _wWin=_nkSingleLegWinner('NKW-7-1','1');
-    const _wLos=_nkSingleLegLoser ('NKW-7-1','1');
-    const _lWin=_nkSingleLegWinner('NKL-9-1','1');
-    const _lLos=_nkSingleLegLoser ('NKL-9-1','1');
+    const _wWin=_nkSingleLegWinner('NKW-7-1','1',targetSeason);
+    const _wLos=_nkSingleLegLoser ('NKW-7-1','1',targetSeason);
+    const _lWin=_nkSingleLegWinner('NKL-9-1','1',targetSeason);
+    const _lLos=_nkSingleLegLoser ('NKL-9-1','1',targetSeason);
     [_wWin,_wLos,_lWin,_lLos].forEach((id,i)=>{
       if(id){ _upsertResultsRow(targetSeason,'NK',i+1,id); resRows++; }
     });
@@ -6411,7 +6443,7 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!sEd) blank++;
       const opEd=_upsertMatchRow(rEd);
       if(opEd==='updated') upd++; else ins++;
-      const sfWinner=_nkSingleLegWinner('NSZK-ED','1');
+      const sfWinner=_nkSingleLegWinner('NSZK-ED','1',targetSeason);
       const finalAway=sfWinner||nkW;
       // FINAL: MB-R I winner vs SF winner.
       const {row:rF,simulated:sF}=_buildSimulatedMatchRow({
@@ -6421,8 +6453,8 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!sF) blank++;
       const opF=_upsertMatchRow(rF);
       if(opF==='updated') upd++; else ins++;
-      const fWin=_nkSingleLegWinner('NSZK-F','1');
-      const fLos=_nkSingleLegLoser ('NSZK-F','1');
+      const fWin=_nkSingleLegWinner('NSZK-F','1',targetSeason);
+      const fLos=_nkSingleLegLoser ('NSZK-F','1',targetSeason);
       if(fWin){_upsertResultsRow(targetSeason,'NSZK',1,fWin);resRows++;}
       if(fLos){_upsertResultsRow(targetSeason,'NSZK',2,fLos);resRows++;}
     } else if(distinct.length===2){
@@ -6439,8 +6471,8 @@ async function generateSeasonFromDraw(targetSeason, half){
       if(!sF) blank++;
       const opF=_upsertMatchRow(rF);
       if(opF==='updated') upd++; else ins++;
-      const fWin=_nkSingleLegWinner('NSZK-F','1');
-      const fLos=_nkSingleLegLoser ('NSZK-F','1');
+      const fWin=_nkSingleLegWinner('NSZK-F','1',targetSeason);
+      const fLos=_nkSingleLegLoser ('NSZK-F','1',targetSeason);
       if(fWin){_upsertResultsRow(targetSeason,'NSZK',1,fWin);resRows++;}
       if(fLos){_upsertResultsRow(targetSeason,'NSZK',2,fLos);resRows++;}
       console.log('[GenerateSeason] NSZK-ED skipped — only 2 distinct trophy winners:',{mbrI,nkW,kkW});
@@ -7386,10 +7418,10 @@ function _buildSeasonStandings(season){
     };
     const wRow=findRow('NKW-7-1','1'), lRow=findRow('NKL-9-1','1');
     if(wRow||lRow){
-      const wWin=_nkSingleLegWinner('NKW-7-1','1');
-      const wLos=_nkSingleLegLoser ('NKW-7-1','1');
-      const lWin=_nkSingleLegWinner('NKL-9-1','1');
-      const lLos=_nkSingleLegLoser ('NKL-9-1','1');
+      const wWin=_nkSingleLegWinner('NKW-7-1','1',season);
+      const wLos=_nkSingleLegLoser ('NKW-7-1','1',season);
+      const lWin=_nkSingleLegWinner('NKL-9-1','1',season);
+      const lLos=_nkSingleLegLoser ('NKL-9-1','1',season);
       const podium=[wWin,wLos,lWin,lLos];
       let ready=true;
       [wRow,lRow].forEach(r=>{
