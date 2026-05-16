@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.16.1</title>
+<title>League Manager v2026.05.16.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2455,7 +2455,10 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     //      table would pool last season's group with this season's. We
     //      enforce the season filter for these even when sameTournament
     //      is true.
-    const _DOMESTIC_PREFIXES=/^(MB-B|MB-R|KKQ|KKARA|KKROM|KKABC|KKJKL|KKGOR|NKW|NKL|NK-W|NK-L)-/i;
+    // Match against the bare prefix (no trailing dash, no round number).
+    // `groupPrefix` here comes from `_roundPrefix('KKARA-1')` → `'KKARA'`,
+    // so the regex must anchor with `$` after the prefix name.
+    const _DOMESTIC_PREFIXES=/^(MB-B|MB-R|KKQ|KKARA|KKROM|KKABC|KKJKL|KKGOR|NKW|NKL|NK-W|NK-L)$/i;
     const isDomesticTournament=!!groupPrefix && _DOMESTIC_PREFIXES.test(groupPrefix);
     if(season && _rowSeason(r,d)!==season){
       if(!sameTournament) return false;          // cross-tournament rows always season-scoped
