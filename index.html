@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.16.2</title>
+<title>League Manager v2026.05.16.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2422,6 +2422,14 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     return _rdDateMap.get(rd)||d;
   };
   const _rowSeason=(r,d)=>{
+    // Trust the ROW'S OWN date first. Calendar lookups via `_rdDateMap`
+    // collapse every season's instance of a recurring round code (KKARA-1,
+    // MB-B-1, …) onto the first calendar entry seen, which is the wrong
+    // season for any row after the first. Only fall back to calendar
+    // lookups if the row has no usable date at all. (v16.3 fix — the
+    // standings tables vanished entirely after v16.2 because every
+    // 2001_02 row was being misclassified as 2000_01.)
+    if(d) return seasonFor(d);
     const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
     return _rdSeasonMap.get(rd)||seasonFor(_effDate(r,d));
   };
