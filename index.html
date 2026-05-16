@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.15.11</title>
+<title>League Manager v2026.05.16.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.15.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2441,11 +2441,27 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     const d=c.date>=0?normalizeDate(r[c.date]):'';
     const ed=_effDate(r,d);
     if(!ed)return false;
-    // Season filter only applies to rows outside the card's tournament. For
-    // same-prefix rows the prefix itself scopes the pool correctly, even
-    // when the tournament straddles the mid-June season boundary (EURO
-    // group: GR-1 in spring half, GR-2/3 in autumn half — all one pool).
-    if(!sameTournament&&season&&_rowSeason(r,d)!==season)return false;
+    // Season filter rules. Two cases:
+    //   1) Cross-half tournaments (EURO group: GR-1 in spring, GR-2/3 in
+    //      autumn — same calendar/competition, same season string overall).
+    //      For these the rounds-prefix alone scopes the pool correctly; if
+    //      we forced the season filter here we'd split the group display
+    //      across two halves. We keep the legacy behaviour by skipping the
+    //      season check for same-tournament rows.
+    //   2) DOMESTIC tournaments (MB-B, MB-R, KKQ, KKARA, KKROM, KKABC,
+    //      KKJKL, KKGOR, NK-W, NK-L) — every group is fully contained in
+    //      ONE season. The round code (e.g. `KKARA-1` / level `1`) recurs
+    //      year after year, so without an explicit season filter the
+    //      table would pool last season's group with this season's. We
+    //      enforce the season filter for these even when sameTournament
+    //      is true.
+    const _DOMESTIC_PREFIXES=/^(MB-B|MB-R|KKQ|KKARA|KKROM|KKABC|KKJKL|KKGOR|NKW|NKL|NK-W|NK-L)-/i;
+    const isDomesticTournament=!!groupPrefix && _DOMESTIC_PREFIXES.test(groupPrefix);
+    if(season && _rowSeason(r,d)!==season){
+      if(!sameTournament) return false;          // cross-tournament rows always season-scoped
+      if(isDomesticTournament) return false;     // domestic same-tournament rows ALSO season-scoped
+      // otherwise (cross-half continental tournament) → keep the row
+    }
     return true;
   });
   // Two-legged knockout tie? Any seasonLevelRows entry with match_type=2 marks
@@ -3062,23 +3078,31 @@ async function advanceToNextRound(){
       console.error('[advanceToNextRound] snapshot save failed:',e);
       toast('⚠ Snapshot save failed — rollover continues anyway. See console.','warn');
     }
-    // STEP 2 — finalize the just-finished season's `BLSZ` aggregate ranking
-    // in results.csv. The new-season draw resolves place tokens (KKQ-77..160,
-    // NK W-R1 1..128, …) against this row set; without it most rows come
-    // out blank. `MB` 1..76 is already there (Generate Season writes it
-    // after MB-R), so we only need to add BLSZ.
+    // STEP 2 — finalize the just-finished season's MB-R consolidated `MB`
+    // ranking (1..76) AND the `BLSZ` aggregate (1..N for every team in
+    // teams.csv). Both are needed by next-season draws: `MB` seeds KKQ
+    // 1..76 and MB-B base place tokens; `BLSZ` seeds KKQ 77..160 and the
+    // 128-team NK-W-R1 home/away pairs.
+    //
+    // Previously these were only written when `generateSeasonFromDraw(...,
+    // 'S')` ran. If the user plays the spring rounds manually via Reveal
+    // (no Generate Season call), the MB / BLSZ rows never got written and
+    // the next season's draws came out blank. Writing them here in the
+    // June rollover catches that case.
     try{
-      const n=_writeBlszOverallRanking(curSeason);
-      if(n>0){
+      const mbN = (typeof _writeMbConsolidatedRanking==='function')
+        ? _writeMbConsolidatedRanking(curSeason) : 0;
+      const blszN = _writeBlszOverallRanking(curSeason);
+      if(mbN>0 || blszN>0){
         await saveSheet('results');
-        toast(`📊 Wrote ${n} BLSZ rows for ${curSeason}`,'');
-        console.log(`[advanceToNextRound] BLSZ aggregate ${n} rows for ${curSeason}`);
+        toast(`📊 Finalized ${curSeason}: ${mbN} MB rows · ${blszN} BLSZ rows`,'');
+        console.log(`[advanceToNextRound] finalized ${curSeason}: MB=${mbN} BLSZ=${blszN}`);
       } else {
-        console.warn(`[advanceToNextRound] BLSZ aggregate produced 0 rows for ${curSeason} — next season's high-place tokens may resolve blank.`);
+        console.warn(`[advanceToNextRound] no MB or BLSZ rows written for ${curSeason} — next season's draws may resolve blank.`);
       }
     }catch(e){
-      console.error('[advanceToNextRound] BLSZ write failed:',e);
-      toast('⚠ BLSZ ranking write failed — new season may have blank rows.','warn');
+      console.error('[advanceToNextRound] MB / BLSZ write failed:',e);
+      toast('⚠ MB / BLSZ ranking write failed — new season may have blank rows.','warn');
     }
     // STEP 3 — popup describes `curSeason` (the just-finished season) and
     // writes skill rows under `nextSeason_A`. After Continue, we run the
@@ -4906,18 +4930,18 @@ function _tableForMatches(predicate){
 }
 
 // MB-B final table for a single group (level = '1M' / '1N' / '2A' / '3NY' / …).
-function _mbBGroupTable(group){
-  return _tableForMatches(ctx=>/^MB-B-/i.test(ctx.rounds)&&ctx.level===group);
+function _mbBGroupTable(group, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>/^MB-B-/i.test(ctx.rounds)&&ctx.level===group, season));
 }
 // Running MB-R table for a roman-numeral level, restricted to rounds < uptoRoundNum.
-function _mbRLevelRunningTable(level,uptoRoundNum){
-  return _tableForMatches(ctx=>{
+function _mbRLevelRunningTable(level,uptoRoundNum, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>{
     if(!/^MB-R-/i.test(ctx.rounds))return false;
     if(ctx.level!==level)return false;
     const m=ctx.rounds.match(/^MB-R-(\d+)$/i);
     if(!m)return false;
     return parseInt(m[1])<uptoRoundNum;
-  });
+  }, season));
 }
 
 // ── KK helper tables ──────────────────────────────────────────
@@ -4944,36 +4968,58 @@ function _kkqMatchWinner(roundNum,matchNum){
   }
   return '';
 }
-// Final table for a KKARA group (level = '1'..'9').
-function _kkaraGroupTable(group){
+// Season-aware predicate factory. Returns a function that runs `inner` on
+// the matched row and ALSO checks the row's date falls in `season`. When
+// `season` is empty/falsy, no season check is performed (legacy behaviour).
+// This keeps the year-after-year domestic groups (same `level=1` recurring
+// in KKARA every season) from pooling across multiple seasons' worth of
+// data — a cross-season pool would produce 8-team groups instead of the
+// expected 5.
+function _seasonScopedPred(inner, season){
+  if(!season || typeof seasonFor!=='function') return inner;
+  const m=DB.matches;
+  const di=m && m.h ? m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date') : -1;
+  if(di<0) return inner;
+  return (ctx)=>{
+    if(!inner(ctx)) return false;
+    const d=ctx.row ? String(ctx.row[di]||'').trim() : '';
+    if(!d) return false;
+    return seasonFor(d)===season;
+  };
+}
+// Final table for a KKARA group (level = '1'..'9'). When `season` is given,
+// the table only counts matches from that season — round codes recur
+// year-over-year, so without season scoping a multi-season database would
+// pool every year's group into one 10-team blob.
+function _kkaraGroupTable(group, season){
   const lvl=String(group);
-  return _tableForMatches(ctx=>/^KKARA-/i.test(ctx.rounds)&&ctx.level===lvl);
+  return _tableForMatches(_seasonScopedPred(ctx=>/^KKARA-/i.test(ctx.rounds)&&ctx.level===lvl, season));
 }
 // Final table for a KKROM group (level = 'I'..'XV').
-function _kkromGroupTable(level){
-  return _tableForMatches(ctx=>/^KKROM-/i.test(ctx.rounds)&&ctx.level===level);
+function _kkromGroupTable(level, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>/^KKROM-/i.test(ctx.rounds)&&ctx.level===level, season));
 }
 // Final table for a KKABC group (level = 'A'..'I').
-function _kkabcGroupTable(letter){
-  return _tableForMatches(ctx=>/^KKABC-/i.test(ctx.rounds)&&ctx.level===letter);
+function _kkabcGroupTable(letter, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>/^KKABC-/i.test(ctx.rounds)&&ctx.level===letter, season));
 }
 // Final table for a KKJKL group (level = 'J' | 'K' | 'L').
-function _kkjklGroupTable(letter){
-  return _tableForMatches(ctx=>/^KKJKL-/i.test(ctx.rounds)&&ctx.level===letter);
+function _kkjklGroupTable(letter, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>/^KKJKL-/i.test(ctx.rounds)&&ctx.level===letter, season));
 }
 // Final table for a KKGOR group (level = greek letter incl. parenthetical name).
-function _kkgorGroupTable(letter){
-  return _tableForMatches(ctx=>/^KKGOR-/i.test(ctx.rounds)&&ctx.level===letter);
+function _kkgorGroupTable(letter, season){
+  return _tableForMatches(_seasonScopedPred(ctx=>/^KKGOR-/i.test(ctx.rounds)&&ctx.level===letter, season));
 }
 // Cross-group ranking of Nth-placed teams across KKROM groups I..IX.
 // bucket 'E' = group winners, 'M' = 2nd placed, 'H' = 3rd placed.
 // Returns an array of team-table rows sorted by pts / gd / gf desc.
 const _KKROM_EMH_GROUPS=['I','II','III','IV','V','VI','VII','VIII','IX'];
-function _kkromCrossRanking(bucket){
+function _kkromCrossRanking(bucket, season){
   const idx=(bucket==='E')?0:(bucket==='M')?1:2;
   const rows=[];
   _KKROM_EMH_GROUPS.forEach(lvl=>{
-    const tbl=_kkromGroupTable(lvl);
+    const tbl=_kkromGroupTable(lvl, season);
     if(tbl[idx])rows.push(tbl[idx]);
   });
   rows.sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
@@ -5145,19 +5191,19 @@ function _resolvePlaceTok(tok,ctx){
     return id?{id}:{id:'',reason:'mb4 group '+p.group+' not picked'};
   }
   if(p.kind==='mbb_group'){
-    const tbl=ctx.mbbGroupCache[p.group]||(ctx.mbbGroupCache[p.group]=_mbBGroupTable(p.group));
+    const tbl=ctx.mbbGroupCache[p.group]||(ctx.mbbGroupCache[p.group]=_mbBGroupTable(p.group, ctx.season));
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'mbb '+p.group+' place '+p.place+' (table size '+tbl.length+')'};
   }
   if(p.kind==='running_h'){
     const lvl=ctx.currentLevel;
     if(!lvl)return{id:'',reason:'H-code needs row.level'};
-    const tbl=_mbRLevelRunningTable(lvl,ctx.currentRoundNum);
+    const tbl=_mbRLevelRunningTable(lvl,ctx.currentRoundNum, ctx.season);
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'running '+lvl+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
   }
   if(p.kind==='mbr_roman'){
-    const tbl=_mbRLevelRunningTable(p.level,ctx.currentRoundNum);
+    const tbl=_mbRLevelRunningTable(p.level,ctx.currentRoundNum, ctx.season);
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'running '+p.level+' place '+p.place+' (pre-R'+ctx.currentRoundNum+' size '+tbl.length+')'};
   }
@@ -5168,25 +5214,25 @@ function _resolvePlaceTok(tok,ctx){
   if(p.kind==='kkara_group'){
     const cache=ctx.kkaraCache||(ctx.kkaraCache={});
     const key=String(p.group);
-    const tbl=cache[key]||(cache[key]=_kkaraGroupTable(key));
+    const tbl=cache[key]||(cache[key]=_kkaraGroupTable(key, ctx.season));
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'kkara group '+p.group+' place '+p.place+' (size '+tbl.length+')'};
   }
   if(p.kind==='kkrom_direct'){
     const cache=ctx.kkromCache||(ctx.kkromCache={});
-    const tbl=cache[p.level]||(cache[p.level]=_kkromGroupTable(p.level));
+    const tbl=cache[p.level]||(cache[p.level]=_kkromGroupTable(p.level, ctx.season));
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'kkrom '+p.level+' place '+p.place+' (size '+tbl.length+')'};
   }
   if(p.kind==='kkrom_emh'){
     const cache=ctx.kkromEmhCache||(ctx.kkromEmhCache={});
-    const tbl=cache[p.bucket]||(cache[p.bucket]=_kkromCrossRanking(p.bucket));
+    const tbl=cache[p.bucket]||(cache[p.bucket]=_kkromCrossRanking(p.bucket, ctx.season));
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'kkrom EMH '+p.bucket+p.place+' (size '+tbl.length+')'};
   }
   if(p.kind==='kkabc_letter'){
     const cache=ctx.kkabcCache||(ctx.kkabcCache={});
-    const tbl=cache[p.letter]||(cache[p.letter]=_kkabcGroupTable(p.letter));
+    const tbl=cache[p.letter]||(cache[p.letter]=_kkabcGroupTable(p.letter, ctx.season));
     const row=tbl[p.place-1];
     return row?{id:row.id}:{id:'',reason:'kkabc '+p.letter+' place '+p.place+' (size '+tbl.length+')'};
   }
@@ -5628,6 +5674,42 @@ function _resultByPlace(season, competition, place){
 // 76-team ranking — KKQ runs into ranks 77..160, NK W-R1 needs all 128.
 // Returns the number of rows written. Quietly produces 0 when the
 // projection has no scored matches yet.
+// Consolidated MB-R "whole league" ranking for `season`. Builds the final
+// table per Roman level I..X using only matches.csv rows whose date falls
+// in `season`, then maps (Roman level, place-in-group) to a global MB rank
+// via _BLSZ_MBR_OFFSETS — so the Roman-I winner is MB place 1, the Roman-II
+// winner is place 7, …, Roman-X bottom is place 76. This is the row set
+// KKQ + MB-B base place tokens read first via _placeToTeamMap. Returns
+// number of rows written; 0 when MB-R isn't playable yet (no scored
+// matches for any Roman level in this season).
+function _writeMbConsolidatedRanking(season){
+  if(!season) return 0;
+  if(typeof _BLSZ_MBR_OFFSETS!=='object') return 0;
+  if(typeof _tableForMatches!=='function') return 0;
+  const m=DB.matches;
+  if(!m||!m.h||!m.r) return 0;
+  const di=m.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  if(di<0) return 0;
+  // Season-aware predicate: row is an MB-R row in `season` for the given
+  // Roman level. _tableForMatches passes the raw row in ctx.row so we can
+  // read its date and filter by seasonFor().
+  let n=0;
+  Object.keys(_BLSZ_MBR_OFFSETS).forEach(lvl=>{
+    const off=_BLSZ_MBR_OFFSETS[lvl];
+    // Use the season-aware MB-R helper directly — it already filters by
+    // season via `_seasonScopedPred`. Keeps this consolidator using the same
+    // ranking logic the matches-view standings card uses, so the two never
+    // disagree.
+    const tbl=_mbRLevelRunningTable(lvl,Infinity,season);
+    if(!Array.isArray(tbl)) return;
+    tbl.forEach((row,i)=>{
+      if(!row||!row.id) return;
+      _upsertResultsRow(season,'MB',off+i+1,row.id);
+      n++;
+    });
+  });
+  return n;
+}
 function _writeBlszOverallRanking(season){
   if(!season) return 0;
   if(typeof _blszBuildProjection!=='function') return 0;
@@ -5642,20 +5724,30 @@ function _writeBlszOverallRanking(season){
       sums.set(tid, cur + ((info && typeof info.curPts==='number')?info.curPts:0));
     });
   });
-  // Pull EVERY team from teams.csv so the ranking covers all 128+ teams that
-  // NK W-R1 (and other high-place tokens) reference. Teams that didn't
-  // score any BLSZ points get pts=0 and fall through to the deterministic
-  // name-based tie-break at the bottom of the ranking.
+  // Pull every BLSZ-org team from teams.csv so the ranking covers all 128+
+  // teams that NK W-R1 (and other high-place tokens) reference. Teams that
+  // didn't score any BLSZ points get pts=0 and sort to the bottom via the
+  // deterministic name-based tie-break. NON-BLSZ teams (foreign clubs that
+  // appear in teams.csv only for CHL / EURO / UEFA / WC fixtures) are
+  // INTENTIONALLY EXCLUDED — they don't belong in the federation's
+  // domestic ranking and would otherwise pollute the high-rank slots.
   const td=DB.teams;
-  const allTeams=[];
   if(td&&td.r&&td.h){
     const ii=td.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
+    const oi=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='org');
     if(ii>=0){
       td.r.forEach(r=>{
         const id=String(r[ii]||'').trim();
         if(!id) return;
+        // Only BLSZ-org teams get a slot in the BLSZ ranking. The MB-4
+        // picker uses the same convention (filter on `org`==='BLSZ').
+        // When the `org` column is missing entirely, fall through and
+        // include every team — old data shape compat.
+        if(oi>=0){
+          const org=String(r[oi]||'').trim().toUpperCase();
+          if(org!=='BLSZ') return;
+        }
         if(!sums.has(id)) sums.set(id, 0);
-        allTeams.push(id);
       });
     }
   }
@@ -5974,8 +6066,8 @@ async function generateSeasonFromDraw(targetSeason, half){
     const mn=mni>=0?String(r[mni]||'').trim():'';
     const hpTok=String(r[hpi]||'').trim();
     const apTok=String(r[api]||'').trim();
-    const hh=_resolvePlaceTok(hpTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{}});
-    const aa=_resolvePlaceTok(apTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{}});
+    const hh=_resolvePlaceTok(hpTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{},season:targetSeason});
+    const aa=_resolvePlaceTok(apTok,{prevOverall,mb4:mb4Picks,mbbGroupCache:{},season:targetSeason});
     const cal=calMap.get(rnd);
     if(!cal)missingDates.add(rnd);
     if(!hh.id)unresolved.push({rounds:rnd,level:lvl,mn,side:'home',tok:hpTok,reason:hh.reason});
@@ -6041,7 +6133,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   if(_half==='S'){
     const mbbGroups=[...new Set(mbB.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbbGroups.forEach(g=>{
-      resRows+=_writeFinalTable(targetSeason,g,_mbBGroupTable(g));
+      resRows+=_writeFinalTable(targetSeason,g,_mbBGroupTable(g,targetSeason));
     });
   }
 
@@ -6057,7 +6149,7 @@ async function generateSeasonFromDraw(targetSeason, half){
       const mn=mni>=0?String(r[mni]||'').trim():'';
       const hpTok=String(r[hpi]||'').trim();
       const apTok=String(r[api]||'').trim();
-      const tokCtx={prevOverall,mb4:mb4Picks,mbbGroupCache,currentLevel:lvl,currentRoundNum:n};
+      const tokCtx={prevOverall,mb4:mb4Picks,mbbGroupCache,currentLevel:lvl,currentRoundNum:n,season:targetSeason};
       const hh=_resolvePlaceTok(hpTok,tokCtx);
       const aa=_resolvePlaceTok(apTok,tokCtx);
       if(!hh.id)mbrUnresolved.push({rounds:rnd,level:lvl,mn,side:'home',tok:hpTok,reason:hh.reason});
@@ -6079,7 +6171,7 @@ async function generateSeasonFromDraw(targetSeason, half){
   if(_half==='S'){
     const mbrLevels=[...new Set(mbR.map(r=>li>=0?String(r[li]||'').trim():'').filter(Boolean))];
     mbrLevels.forEach(lvl=>{
-      resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity));
+      resRows+=_writeFinalTable(targetSeason,lvl,_mbRLevelRunningTable(lvl,Infinity,targetSeason));
     });
     // Consolidated `MB` table: places 1..76 derived from each Roman level
     // via _BLSZ_MBR_OFFSETS. This is the project's canonical "whole MB-R
@@ -6091,7 +6183,7 @@ async function generateSeasonFromDraw(targetSeason, half){
     if(typeof _BLSZ_MBR_OFFSETS==='object'){
       Object.keys(_BLSZ_MBR_OFFSETS).forEach(lvl=>{
         const off=_BLSZ_MBR_OFFSETS[lvl];
-        const tbl=_mbRLevelRunningTable(lvl,Infinity);
+        const tbl=_mbRLevelRunningTable(lvl,Infinity,targetSeason);
         if(!Array.isArray(tbl)) return;
         tbl.forEach((row,i)=>{
           if(!row||!row.id) return;
@@ -6126,7 +6218,8 @@ async function generateSeasonFromDraw(targetSeason, half){
         const tokCtx=Object.assign({
           prevOverall,mb4:mb4Picks,mbbGroupCache,
           kkaraCache,kkromCache,kkromEmhCache,kkabcCache,
-          currentLevel:lvl,currentRoundNum:n,rounds:rnd
+          currentLevel:lvl,currentRoundNum:n,rounds:rnd,
+          season:targetSeason
         },extraCtx||{});
         const hh=_resolvePlaceTok(hpTok,tokCtx);
         const aa=_resolvePlaceTok(apTok,tokCtx);
@@ -6159,7 +6252,7 @@ async function generateSeasonFromDraw(targetSeason, half){
           if(v) levels.add(v);
         }
       levels.forEach(lvl=>{
-        resRows+=_writeFinalTable(targetSeason,`${phaseName}-${lvl}`,_tableFn(lvl));
+        resRows+=_writeFinalTable(targetSeason,`${phaseName}-${lvl}`,_tableFn(lvl,targetSeason));
       });
       // Consolidated `KK` table — only after KKGOR (the final KK phase that
       // awards points 1..27). Uses _BLSZ_KK_OFFSETS to convert (group-letter,
@@ -6171,7 +6264,7 @@ async function generateSeasonFromDraw(targetSeason, half){
           const letter=String(lvl).trim().charAt(0);
           const off=_BLSZ_KK_OFFSETS[letter];
           if(off==null) return;
-          const tbl=_tableFn(lvl);
+          const tbl=_tableFn(lvl,targetSeason);
           if(!Array.isArray(tbl)) return;
           tbl.forEach((row,i)=>{
             if(!row||!row.id) return;
@@ -6185,7 +6278,7 @@ async function generateSeasonFromDraw(targetSeason, half){
           const letter=String(lvl).trim().charAt(0);
           const off=_BLSZ_KK_OFFSETS[letter];
           if(off==null) return;
-          const tbl=_tableFn(lvl);
+          const tbl=_tableFn(lvl,targetSeason);
           if(!Array.isArray(tbl)) return;
           tbl.forEach((row,i)=>{
             if(!row||!row.id) return;
@@ -6235,7 +6328,7 @@ async function generateSeasonFromDraw(targetSeason, half){
         const mn=mni>=0?String(r[mni]||'').trim():'';
         const hpTok=String(r[hpi]||'').trim();
         const apTok=String(r[api]||'').trim();
-        const tokCtx={prevOverall,mb4:mb4Picks,mbbGroupCache,currentLevel:lvl,rounds:rnd};
+        const tokCtx={prevOverall,mb4:mb4Picks,mbbGroupCache,currentLevel:lvl,rounds:rnd,season:targetSeason};
         const hh=_resolvePlaceTok(hpTok,tokCtx);
         const aa=_resolvePlaceTok(apTok,tokCtx);
         if(!hh.id)nkUnresolved.push({phase:phaseKey,rounds:rnd,mn,side:'home',tok:hpTok,reason:hh.reason});
