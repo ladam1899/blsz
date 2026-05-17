@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.16.4</title>
+<title>League Manager v2026.05.17.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -746,7 +746,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.16.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.17.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -5458,21 +5458,25 @@ function _placeToTeamMap(season){
   }
   if(si<0||pi<0||ti<0)return map;
   const rowsForSeason=rows.filter(r=>String(r[si]||'').trim()===season);
-  // First pass: 'MB' rows (MB-R overall, 1..76). KKQ-1..76 and MB-B base
-  // place tokens read this first.
-  rowsForSeason.forEach(r=>{
-    const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
-    if(comp!=='mb')return;
-    const p=parseInt(r[pi]);if(isNaN(p))return;
-    map.set(p,String(r[ti]||'').trim());
-  });
-  // Second pass: 'BLSZ' or 'overall' fill any missing places. BLSZ is the
-  // aggregate ranking covering every team that earned BLSZ points (well
-  // beyond 76) — so KKQ-77..160 and NK W-R1's 128-team seed resolve here
-  // when MB only ranks the top 76. `overall` is the legacy alias.
+  // First pass: 'BLSZ' or 'overall' rows. The BLSZ aggregate is the
+  // FEDERATION ranking (sum of MB-B + MB-R + KK + NK + NSZK pts), covering
+  // every team that earned points — and it's what the new-season MB-B
+  // base place tokens (plain integers `1`, `2`, …) need to resolve
+  // against. Reading 'MB' first put MB-R standings ahead of the BLSZ
+  // ranking, so high-MB-R but low-BLSZ teams got mis-seeded into MB-B
+  // top positions. `overall` is the legacy alias for the same concept.
+  // (v16.5 fix per user spec.)
   rowsForSeason.forEach(r=>{
     const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
     if(comp!=='blsz'&&comp!=='overall')return;
+    const p=parseInt(r[pi]);if(isNaN(p))return;
+    map.set(p,String(r[ti]||'').trim());
+  });
+  // Second pass: 'MB' rows (MB-R overall 1..76) fill any missing places.
+  // Only used when no BLSZ/overall row exists for that place.
+  rowsForSeason.forEach(r=>{
+    const comp=ci>=0?String(r[ci]||'').trim().toLowerCase():'';
+    if(comp!=='mb')return;
     const p=parseInt(r[pi]);if(isNaN(p))return;
     if(!map.has(p))map.set(p,String(r[ti]||'').trim());
   });
