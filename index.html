@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.18.3</title>
+<title>League Manager v2026.05.18.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -756,7 +756,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4173,7 +4173,18 @@ let _playStage='ready';
 let _playRound='FRIENDLY';     // round code written into matches.csv for this match
 let _playLevel='';             // free-text value written into matches.csv level column (e.g. CHL group A)
 let _playReveal=false;         // false = quiet save (one click runs everything); true = step-by-step reveal
-let _playOrg='BLSZ';           // preferred ORG — default selection only, team dropdowns still list all teams (grouped by ORG)
+let _playOrg='BLSZ';           // preferred ORG (legacy global — replaced per-side in v18.4 but kept for backward compat with helpers).
+// v18.4 — per-side ORG filters above each team picker. Defaults to BLSZ on
+// first render; switching changes the team list shown in that picker only.
+let _playHomeOrg='BLSZ';
+let _playAwayOrg='BLSZ';
+// v18.4 — single always-visible stadium combobox value. Pre-filled with the
+// home team's stadium on first render and whenever the home team changes
+// AND the user hasn't manually edited the stadium since the last home swap.
+// On save the value goes into matches.csv `stadion_name` regardless of
+// match-type or neutral flag.
+let _playStadium='';
+let _playStadiumTouched=false; // true once the user edits the stadium manually
 // Return the set of round codes the user may pick from in the Play view's
 // Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
 // EXCLUDED because those are produced by the Generate Season action (MB)
@@ -4352,47 +4363,36 @@ function renderPlayView(){
   if(!list.length){
     app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
   }
-  // Collect every distinct ORG present in teams.csv. Preferred ORG (_playOrg,
-  // defaulting to BLSZ) is listed first in the dropdown and in the team
-  // selectors so its teams are the obvious default. Teams without an org are
-  // grouped under "(no org)".
+  // v18.4 — per-side ORG filter dropdowns. Each team picker has its own ORG
+  // filter above it; selecting BLSZ in the Home org dropdown restricts the
+  // Home team list to BLSZ teams only (independent of the Away side).
   const orgsAll=[...new Set(list.map(t=>t.org||'').map(s=>s.trim()))];
   const orgs=orgsAll.filter(Boolean).sort((a,b)=>a.localeCompare(b));
   const hasNoOrg=orgsAll.some(o=>!o);
-  const orgOpts=[];
-  // Preferred ORG first (if it actually exists in the data).
-  if(_playOrg && orgs.includes(_playOrg)){
-    orgOpts.push(`<option value="${esc(_playOrg)}" selected>${esc(_playOrg)}</option>`);
-  } else if(orgs.length){
-    // Fallback: pick the first available ORG and update the state.
-    _playOrg=orgs[0];
-    orgOpts.push(`<option value="${esc(_playOrg)}" selected>${esc(_playOrg)}</option>`);
-  } else {
-    _playOrg='';
-  }
-  orgs.filter(o=>o!==_playOrg).forEach(o=>orgOpts.push(`<option value="${esc(o)}">${esc(o)}</option>`));
-  if(hasNoOrg) orgOpts.push(`<option value="(none)"${_playOrg==='(none)'?' selected':''}>(no org)</option>`);
-  // Build the team `<option>` list grouped by ORG. Preferred ORG group is first.
-  const orderedOrgs=[];
-  if(_playOrg) orderedOrgs.push(_playOrg);
-  orgs.filter(o=>o!==_playOrg).forEach(o=>orderedOrgs.push(o));
-  if(hasNoOrg && _playOrg!=='(none)') orderedOrgs.push('(none)');
-  const byOrg=new Map();
-  orderedOrgs.forEach(o=>byOrg.set(o,[]));
-  list.forEach(t=>{
-    const key=(t.org||'').trim()||'(none)';
-    if(!byOrg.has(key)) byOrg.set(key,[]);
-    byOrg.get(key).push(t);
-  });
-  if(!_playHome)_playHome=list[0].id;
-  if(!_playAway)_playAway=list[list.length>1?1:0].id;
+  const orgsAvailable=[...orgs, ...(hasNoOrg?['(none)']:[])];
+  // If either side's stored ORG isn't in the data, fall back to the first.
+  if(!orgsAvailable.includes(_playHomeOrg)) _playHomeOrg=orgsAvailable[0]||'';
+  if(!orgsAvailable.includes(_playAwayOrg)) _playAwayOrg=orgsAvailable[0]||'';
+  // Build org option lists per side, marking the selected one.
+  const _orgOpts=(sel)=>orgsAvailable.map(o=>`<option value="${esc(o)}"${o===sel?' selected':''}>${esc(o)}</option>`).join('');
+  const homeOrgOpts=_orgOpts(_playHomeOrg);
+  const awayOrgOpts=_orgOpts(_playAwayOrg);
+  // Team list per side (filtered by that side's ORG only).
+  const homeTeams=_playTeamsInOrg(_playHomeOrg);
+  const awayTeams=_playTeamsInOrg(_playAwayOrg);
+  // Default selections — snap to the first team of the side's ORG if the
+  // current team isn't in scope (happens on first render OR after an ORG
+  // change saved before this render).
+  if(!_playHome || !homeTeams.some(t=>t.id===_playHome)) _playHome=(homeTeams[0]&&homeTeams[0].id)||list[0].id;
+  if(!_playAway || !awayTeams.some(t=>t.id===_playAway)) _playAway=(awayTeams[0]&&awayTeams[0].id)||list[Math.min(1,list.length-1)].id;
   if(!_playData)_playData=_emptyPlayData();
-  const opt=(selId)=>orderedOrgs.map(o=>{
-    const teams=byOrg.get(o)||[];
-    if(!teams.length) return '';
-    const inner=teams.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
-    return `<optgroup label="${esc(o||'(no org)')}">${inner}</optgroup>`;
-  }).join('');
+  // Initialise stadium combobox value from home team's stadium on the very
+  // first render. Subsequent home swaps reuse `_playSetHome` which keeps
+  // this in sync (unless the user has typed something).
+  if(_playStadium==='' && !_playStadiumTouched){
+    _playStadium=_playHomeStadium();
+  }
+  const opt=(selId,teams)=>teams.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
   const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
   const hLogo=logoFor(_playHome,null),aLogo=logoFor(_playAway,null);
   const canPlay=_playHome&&_playAway&&_playHome!==_playAway;
@@ -4409,7 +4409,8 @@ function renderPlayView(){
         <div class="play-team-box">
           <div class="play-team-label">Home</div>
           <div class="play-team-badge" style="background:${hLogo?'#fff':safeColor(hTeam.color)}">${hLogo?`<img src="${hLogo}" alt="">`:esc(_playHome.slice(0,3).toUpperCase())}</div>
-          <select class="play-team-sel" onchange="_playSetHome(this.value)" ${locked?'disabled':''}>${opt(_playHome)}</select>
+          <select class="play-team-sel" onchange="_playSetHomeOrg(this.value)" ${locked?'disabled':''} title="Filter the Home team list by organisation / group">${homeOrgOpts}</select>
+          <select class="play-team-sel" onchange="_playSetHome(this.value)" ${locked?'disabled':''}>${opt(_playHome,homeTeams)}</select>
           <div class="play-team-name">${esc(hTeam.name||'')}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;">
@@ -4419,7 +4420,8 @@ function renderPlayView(){
         <div class="play-team-box">
           <div class="play-team-label">Away</div>
           <div class="play-team-badge" style="background:${aLogo?'#fff':safeColor(aTeam.color)}">${aLogo?`<img src="${aLogo}" alt="">`:esc(_playAway.slice(0,3).toUpperCase())}</div>
-          <select class="play-team-sel" onchange="_playSetAway(this.value)" ${locked?'disabled':''}>${opt(_playAway)}</select>
+          <select class="play-team-sel" onchange="_playSetAwayOrg(this.value)" ${locked?'disabled':''} title="Filter the Away team list by organisation / group">${awayOrgOpts}</select>
+          <select class="play-team-sel" onchange="_playSetAway(this.value)" ${locked?'disabled':''}>${opt(_playAway,awayTeams)}</select>
           <div class="play-team-name">${esc(aTeam.name||'')}</div>
         </div>
       </div>
@@ -4456,7 +4458,7 @@ function renderPlayView(){
         </div>
         ${_playRoundPickerHTML(locked)}
         ${_playLevelInputHTML(locked)}
-        ${_playNeutral?_playStadiumPickerHTML(locked):''}
+        ${_playStadiumPickerHTML(locked)}
       </div>
       ${_playMode==='manual'?_playManualHTML():''}
       <div class="play-btn-row">
@@ -4492,25 +4494,63 @@ function _playStageBarHTML(){
   return html;
 }
 
+// v18.4 — always-visible stadium combobox. Shows EVERY distinct stadium
+// from teams.csv with "Stadium name — Team name(s)" labels in the datalist.
+// User can pick from the list OR type freely. Only the stadium name (NOT
+// "— Team" suffix) is what gets stored. The current value is pre-filled
+// with the home team's stadium and refreshes on home-team change unless
+// the user has typed something themselves.
 function _playStadiumPickerHTML(locked){
-  const stadiums=_playUniqueStadiums();
-  if(!_playNeutralStadium&&stadiums.length)_playNeutralStadium=stadiums[0];
-  // Proper <select> dropdown populated from teams.csv. The chosen value is
-  // written into _playNeutralStadium and used as stadion_name on save.
-  const opts=stadiums.map(s=>`<option value="${esc(s)}" ${s===_playNeutralStadium?'selected':''}>${esc(s)}</option>`).join('');
+  // Build a map: stadium → [team_id, …]. Useful so the datalist option label
+  // can show which team owns each ground (or "Multiple teams" for shared).
+  const td=DB.teams;
+  const ii=td.h.findIndex(h=>h==='team_id'||h==='id');
+  const si=td.h.findIndex(h=>h==='stadium'||h==='stadion');
+  const stadiumOwners=new Map();
+  if(ii>=0 && si>=0){
+    td.r.forEach(r=>{
+      const s=String(r[si]||'').trim();
+      if(!s) return;
+      if(!stadiumOwners.has(s)) stadiumOwners.set(s,[]);
+      const id=String(r[ii]||'').trim();
+      if(id) stadiumOwners.get(s).push(id);
+    });
+  }
+  const stadiums=[...stadiumOwners.keys()].sort((a,b)=>a.localeCompare(b));
+  const opts=stadiums.map(s=>{
+    const owners=stadiumOwners.get(s)||[];
+    const ownerNames=owners.map(id=>{
+      const t=(typeof teamById==='function')?teamById(id):{name:id};
+      return t.name||id;
+    });
+    // Datalist option's `value` is what fills the input on selection.
+    // We want only the bare stadium name there, so the visible label goes
+    // in the option's text content (some browsers ignore that; that's why
+    // we also encode the owner into the value as a hint). To keep the
+    // "only stadium gets stored" rule firm, the input's onchange handler
+    // strips any " — Team" suffix that may have leaked into the input.
+    const label=owners.length===0
+      ? s
+      : owners.length<=2
+        ? `${s} — ${ownerNames.join(', ')}`
+        : `${s} — ${ownerNames.slice(0,2).join(', ')} +${ownerNames.length-2}`;
+    return `<option value="${esc(s)}">${esc(label)}</option>`;
+  }).join('');
+  const val=esc(_playStadium||'');
   return`<div class="play-stadium-row">
-    <label>Neutral stadium:</label>
-    <select class="play-stadium-sel"
-            onchange="_playSetNeutralStadium(this.value)"
-            ${locked?'disabled':''}>
-      ${stadiums.length?'':'<option value="">(no stadiums in teams.csv)</option>'}
-      ${opts}
-    </select>
+    <label>Stadium:</label>
+    <input list="play-stadium-list" class="play-stadium-sel" value="${val}"
+           oninput="_playSetStadium(this.value)"
+           ${locked?'disabled':''}
+           placeholder="Type or pick a stadium"
+           title="Stadium where this match is played. Pre-fills with the home team's ground; pick from the list or type any name. Only the stadium name is saved to matches.csv.">
+    <datalist id="play-stadium-list">${opts}</datalist>
   </div>`;
 }
-// Dropdown listing the round codes a user can attach this match to. Only
-// non-auto-generated rounds are offered (rounds starting with MB-, KK or NK
-// are filtered out by _playAvailableRounds). FRIENDLY is always first.
+// Dropdown listing the round codes a user can attach this match to. v18.4 —
+// auto-selects the round whose calendar date is current_date (or the
+// closest upcoming round) on first render, so the user doesn't have to
+// re-pick FRIENDLY each visit. FRIENDLY is still the first option.
 function _playRoundPickerHTML(locked){
   const rounds=typeof _playAvailableRounds==='function'?_playAvailableRounds():[];
   const codes=new Set();
@@ -4521,6 +4561,20 @@ function _playRoundPickerHTML(locked){
     codes.add(code);
     picks.push({code,date:r.date||'',competition:r.competition||'',season:r.season||''});
   });
+  // Auto-default: if _playRound is still its initial 'FRIENDLY' (i.e. user
+  // hasn't picked one yet this render-cycle), pre-select the round whose
+  // date matches current_date — falling back to the nearest future round.
+  // Side-effect on the global is intentional so the dropdown's selected
+  // attribute and the eventual save line up.
+  const cd=(typeof currentDate==='function')?currentDate():'';
+  if(_playRound==='FRIENDLY' && cd && picks.length){
+    let auto=picks.find(p=>p.date===cd);
+    if(!auto){
+      const future=picks.filter(p=>p.date>=cd).sort((a,b)=>a.date.localeCompare(b.date));
+      if(future.length) auto=future[0];
+    }
+    if(auto) _playRound=auto.code;
+  }
   if(!codes.has(_playRound)&&_playRound!=='FRIENDLY')_playRound='FRIENDLY';
   const friendlySel=(_playRound==='FRIENDLY')?' selected':'';
   const options=[`<option value="FRIENDLY"${friendlySel}>FRIENDLY — custom / off-calendar match</option>`];
@@ -4531,7 +4585,7 @@ function _playRoundPickerHTML(locked){
   });
   return`<div class="play-stadium-row">
     <label>Round:</label>
-    <select class="play-stadium-sel" onchange="_playSetRound(this.value)" ${locked?'disabled':''} title="Which round this match is written into (MB / KK / NK rounds are auto-generated and excluded here)">
+    <select class="play-stadium-sel" onchange="_playSetRound(this.value)" ${locked?'disabled':''} title="Which round this match is written into. Auto-selects today's round on first render.">
       ${options.join('')}
     </select>
   </div>`;
@@ -4597,9 +4651,67 @@ function _playResultHTML(){
   </div>`;
 }
 
-function _playSetHome(v){if(_playStage!=='ready')return;_playHome=v;_playReset();}
+function _playSetHome(v){
+  if(_playStage!=='ready')return;
+  _playHome=v;
+  // v18.4 — auto-refresh stadium from new home team unless the user has
+  // manually edited it since the last home swap.
+  if(!_playStadiumTouched) _playStadium=_playHomeStadium();
+  _playReset();
+}
 function _playSetAway(v){if(_playStage!=='ready')return;_playAway=v;_playReset();}
-function _playSwap(){if(_playStage!=='ready')return;const t=_playHome;_playHome=_playAway;_playAway=t;_playReset();}
+function _playSwap(){
+  if(_playStage!=='ready')return;
+  const t=_playHome;_playHome=_playAway;_playAway=t;
+  // After swap the new "home" team is what was away — refresh stadium too.
+  if(!_playStadiumTouched) _playStadium=_playHomeStadium();
+  _playReset();
+}
+// v18.4 — per-side ORG filter handlers. Resets the team in that side when
+// switching ORG so the displayed selection isn't from a now-hidden group.
+function _playSetHomeOrg(v){
+  if(_playStage!=='ready')return;
+  _playHomeOrg=String(v||'').trim();
+  // Snap _playHome to the first team in the new ORG if the current team is
+  // no longer in scope.
+  const list=_playTeamsInOrg(_playHomeOrg);
+  if(list.length && !list.some(t=>t.id===_playHome)){
+    _playHome=list[0].id;
+    if(!_playStadiumTouched) _playStadium=_playHomeStadium();
+  }
+  _playReset();
+}
+function _playSetAwayOrg(v){
+  if(_playStage!=='ready')return;
+  _playAwayOrg=String(v||'').trim();
+  const list=_playTeamsInOrg(_playAwayOrg);
+  if(list.length && !list.some(t=>t.id===_playAway)){
+    _playAway=list[0].id;
+  }
+  _playReset();
+}
+// v18.4 — stadium combobox setter. Marks _playStadiumTouched so subsequent
+// home-team changes don't clobber the user's input. Empty string clears the
+// touched flag so auto-refill resumes.
+function _playSetStadium(v){
+  if(_playStage!=='ready')return;
+  const s=String(v==null?'':v);
+  _playStadium=s;
+  _playStadiumTouched=(s.trim()!=='');
+}
+// Helper used by org-filter handlers + Play render: list teams whose `org`
+// matches the given ORG label. `(none)` matches teams whose org cell is
+// blank. Sorted by display name.
+function _playTeamsInOrg(org){
+  if(!_teamMap) rebuildTeamMap();
+  const all=[..._teamMap.values()];
+  const want=String(org||'').trim();
+  return all.filter(t=>{
+    const o=(t.org||'').trim();
+    if(want==='(none)') return !o;
+    return o===want;
+  }).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+}
 // Kind-based setter: 'league' | 'single' | 'leg1' | 'leg2'. Keeps
 // _playType in sync (taking _playNeutral into account for 'single').
 function _playSetKind(k){
@@ -4817,7 +4929,10 @@ async function _playSaveToMatches(){
   const d=_playData;if(!d)return;
   const homeTot=(d.h1||0)+(d.h2||0)+(d.het||0)+(d.hpen||0);
   const awayTot=(d.a1||0)+(d.a2||0)+(d.aet||0)+(d.apen||0);
-  const stadium=_playNeutral?_playNeutralStadium:_playHomeStadium();
+  // v18.4 — stadium is now an always-visible field that the user can edit
+  // freely. Save whatever they typed / picked. Falls back to the home
+  // team's stadium if the field is somehow empty (e.g. teams.csv has none).
+  const stadium=(_playStadium && _playStadium.trim()) || _playHomeStadium();
   const roundCode=_playRound||'FRIENDLY';
   // When the user picks a real calendar round (not FRIENDLY), the match
   // should be filed under that round's scheduled date — otherwise the
