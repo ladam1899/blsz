@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.17.1</title>
+<title>League Manager v2026.05.18.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -281,21 +281,31 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .im-section-hdr{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.06em;color:var(--text);margin:14px 0 8px;display:flex;align-items:baseline;gap:8px;}
 .im-section-hdr .sc{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;}
 .im-match-list{display:flex;flex-direction:column;gap:4px;}
-.im-match{display:grid;grid-template-columns:94px minmax(0,1fr) 64px minmax(0,1fr) 40px;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface2);font-size:12px;border-left:3px solid transparent;}
+.im-match{display:grid;grid-template-columns:78px minmax(0,1fr) 56px minmax(0,1fr) 56px;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:var(--surface2);font-size:12px;border-left:3px solid transparent;}
 .im-match.comp-mb{background:#dbeafe;border-left-color:#2563eb;}
 .im-match.comp-kk{background:#fef3c7;border-left-color:#d97706;}
 .im-match.comp-nk{background:#e5e7eb;border-left-color:#6b7280;}
-.im-match + .im-match{}
 .im-match .im-date{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;}
-.im-match .im-home,.im-match .im-away{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.im-match .im-home,.im-match .im-away{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .im-match .im-home{text-align:right;}
 .im-match .im-away{text-align:left;}
+.im-team-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:6px;color:#fff;font-weight:500;max-width:100%;}
+.im-match .im-home .im-team-chip{flex-direction:row-reverse;}
+.im-team-chip .im-team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.im-team-chip.winner .im-team-name{font-weight:800;}
+.im-team-chip.loser{opacity:.72;}
 .im-match .im-score{text-align:center;font-family:'Bebas Neue',sans-serif;font-size:16px;background:var(--surface);border-radius:4px;padding:2px 0;letter-spacing:.04em;}
-.im-match .im-score.pending{color:var(--dimmed);}
-.im-match .im-rnd{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;text-align:right;}
-.im-match.win-h .im-home{font-weight:700;color:var(--green);}
-.im-match.win-a .im-away{font-weight:700;color:var(--green);}
-.im-match.dr .im-home,.im-match.dr .im-away{color:var(--muted);}
+.im-match .im-rnd{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media (max-width:640px){
+  .im-match{grid-template-columns:62px minmax(0,1fr) 48px minmax(0,1fr);gap:4px;padding:5px 6px;font-size:11px;}
+  .im-match .im-rnd{display:none;}
+  .im-team-chip{padding:2px 5px;font-size:11px;}
+  .im-match .im-score{font-size:14px;}
+}
+/* Season dropdown row at the top of the team-profile modal. */
+.im-season-bar{display:flex;align-items:center;gap:8px;margin:6px 0 12px;font-size:12px;color:var(--muted);}
+.im-season-bar select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text);outline:none;cursor:pointer;}
+.im-season-bar select:focus{border-color:var(--green);}
 .im-h2h-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:6px 0 14px;}
 .im-stat{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;}
 .im-stat .im-stat-n{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.04em;}
@@ -746,7 +756,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.17.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1809,7 +1819,10 @@ function renderLeagueView(){
   let revealLabel='▶ Reveal First Half',revealAction='reveal',revealCls='db-now';
   if(!currentActual){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
   else if(_everythingTodayDone){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
-  else if(!_curHasMatches){revealLabel='⏭ Skip Round (empty)';revealAction='reveal';revealCls='db-now next';}
+  // Empty round → behave EXACTLY like Next Round: one click advances the
+  // date instead of just marking the round revealed and waiting for a
+  // second click. v17.2 — user asked for the skip to be a single action.
+  else if(!_curHasMatches){revealLabel='⏭ Skip Round (empty)';revealAction='next';revealCls='db-now next';}
   else if(stageNow>=2){revealLabel='⏭ Next Round';revealAction='next';revealCls='db-now next';}
   else if(stageNow===1){revealLabel='▶ Reveal Full Time';revealAction='reveal';}
   else{revealLabel='▶ Reveal First Half';revealAction='reveal';}
@@ -2342,6 +2355,9 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
   // here, so skip them for any round whose code starts with NKW- or NKL-.
   if(/^NK[WL]-/i.test(String(info.round||'')))return '';
   if(mode==='rounds'&&/^NK[WL]-/i.test(String(level||'')))return '';
+  // Friendly matches have no league context — no standings to build. v17.2.
+  if(/^FRIENDLY/i.test(String(info.round||'')))return '';
+  if(mode==='rounds'&&/^FRIENDLY/i.test(String(level||'')))return '';
   // MB-B group label (1M / 1N / 2A … 4D)? Used to enable the picture-style
   // colour tiers and destination-playoff column at the bottom of the table.
   const isMbB=/^([12][A-Z]+|[34][A-ZÉ]+)$/.test(String(level||'').trim()) ||
@@ -2846,22 +2862,37 @@ function _imMatchRowHTML(row,c,revealScore){
   const hs=c.hs>=0?parseInt(row[c.hs]):NaN;
   const aS=c.as>=0?parseInt(row[c.as]):NaN;
   // Show the score only when the match has actually been played in the
-  // app's timeline — not just "has a score in the CSV".
-  const played=_isMatchPlayedInApp(row,c)&&!isNaN(hs)&&!isNaN(aS);
+  // app's timeline — not just "has a score in the CSV". v17.2: callers may
+  // pre-filter to played-only, but we still respect `revealScore=false` if
+  // explicitly passed.
+  const played=(revealScore!==false)&&_isMatchPlayedInApp(row,c)&&!isNaN(hs)&&!isNaN(aS);
   const cls=played?_imMatchOutcomeCls(hs,aS):'';
   const scoreTxt=played?`${hs}-${aS}`:'— : —';
-  const scoreCls=played?'im-score':'im-score pending';
   // Competition tint by round-code prefix: MB-* → blue, KK* → yellow, NK* → grey.
   const upR=String(rnd||'').toUpperCase();
   let compCls='';
   if(upR.startsWith('MB-')) compCls='comp-mb';
   else if(upR.startsWith('KK')) compCls='comp-kk';
   else if(upR.startsWith('NK')) compCls='comp-nk';
+  // Build a coloured chip per side. Winner bold via .winner; loser dimmed
+  // via .loser. Draws and unplayed rows get neither modifier so both teams
+  // render at full weight + opacity.
+  const _chip=(team, side)=>{
+    let mod='';
+    if(played){
+      if(hs>aS) mod=(side==='home')?'winner':'loser';
+      else if(hs<aS) mod=(side==='away')?'winner':'loser';
+    }
+    const bg=safeColor(team.color||'#888');
+    return `<span class="im-team-chip ${mod}" style="background:${bg}" title="${esc(team.name||team.id||'')}">`
+         + `<span class="im-team-name">${esc(team.name||team.id||'')}</span>`
+         + `</span>`;
+  };
   return `<div class="im-match ${cls} ${compCls}">
     <div class="im-date">${esc(d||'')}</div>
-    <div class="im-home" title="${esc(home.name)}">${esc(home.name)}</div>
-    <div class="${scoreCls}">${esc(scoreTxt)}</div>
-    <div class="im-away" title="${esc(away.name)}">${esc(away.name)}</div>
+    <div class="im-home">${_chip(home,'home')}</div>
+    <div class="im-score">${esc(scoreTxt)}</div>
+    <div class="im-away">${_chip(away,'away')}</div>
     <div class="im-rnd" title="${esc(rnd)}">${esc(rnd)}</div>
   </div>`;
 }
@@ -2870,7 +2901,24 @@ function openTeamProfile(teamId,seasonHint){
   const t=teamById(teamId);
   const c=_lgMatchCols();
   // Use hinted season if given; otherwise fall back to current date's season.
+  // The dropdown lets the user switch between every season this team has any
+  // matches in (re-renders by calling openTeamProfile recursively).
   const season=seasonHint||(typeof seasonFor==='function'?seasonFor(currentDate()):'');
+  // Collect every season this team appears in for the dropdown options.
+  const teamSeasons=(()=>{
+    const set=new Set();
+    if(c.home<0&&c.away<0) return [];
+    DB.matches.r.forEach(r=>{
+      const h=c.home>=0?String(r[c.home]||''):'';
+      const a=c.away>=0?String(r[c.away]||''):'';
+      if(h!==teamId && a!==teamId) return;
+      const date=c.date>=0?normalizeDate(r[c.date]):'';
+      if(!date) return;
+      const s=seasonFor(date);
+      if(s) set.add(s);
+    });
+    return [...set].sort();
+  })();
   // Team details (from teams.csv)
   const d=DB.teams;
   const ii=_imTeamsCol('team_id')>=0?_imTeamsCol('team_id'):_imTeamsCol('id');
@@ -2903,15 +2951,19 @@ function openTeamProfile(teamId,seasonHint){
   const skLevel=_teamMBGroup(t.id,season);
   if(skLevel)meta.push(`<div class="im-row"><span class="im-k">Division</span><b>${esc(skLevel)}</b></div>`);
   meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)}</b></div>`);
-  // All season matches for this team
+  // All PLAYED season matches for this team. v17.2: filter out unplayed
+  // (no full-time score) and future (date > current_date) rows up-front
+  // so the list only ever shows finished games.
   const matches=DB.matches.r.filter(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
     const a=c.away>=0?String(r[c.away]||''):'';
     if(h!==teamId&&a!==teamId)return false;
-    if(!season)return true;
-    const date=c.date>=0?normalizeDate(r[c.date]):'';
-    if(!date)return false;
-    return seasonFor(date)===season;
+    if(season){
+      const date=c.date>=0?normalizeDate(r[c.date]):'';
+      if(!date) return false;
+      if(seasonFor(date)!==season) return false;
+    }
+    return _isMatchPlayedInApp(r,c);
   }).sort((a,b)=>{
     const da=c.date>=0?normalizeDate(a[c.date]):'';
     const db=c.date>=0?normalizeDate(b[c.date]):'';
@@ -2944,12 +2996,22 @@ function openTeamProfile(teamId,seasonHint){
   </div>`;
   const listHtml=matches.length
     ? `<div class="im-match-list">${matches.map(r=>_imMatchRowHTML(r,c,true)).join('')}</div>`
-    : `<div class="im-empty">No matches on record for this season.</div>`;
+    : `<div class="im-empty">No completed matches for this season.</div>`;
   const seasonTxt=season?seasonLabel(season):'All seasons';
+  // Season selector — only shown when the team has matches in 2+ seasons.
+  // Re-opens the modal for the chosen season via openTeamProfile(...) so the
+  // existing reveal path drives the re-render.
+  const _tidEsc=esc(teamId).replace(/'/g,"\\'");
+  const seasonBar=teamSeasons.length>=2
+    ? `<div class="im-season-bar"><label>Season:</label><select onchange="openTeamProfile('${_tidEsc}',this.value)">${
+        teamSeasons.map(s=>`<option value="${esc(s)}"${s===season?' selected':''}>${esc(seasonLabel(s))}</option>`).join('')
+      }</select></div>`
+    : '';
   document.getElementById('infoModalTitle').innerHTML=
     `<span>${esc(t.name)}</span><span class="im-sub">${esc(seasonTxt)} · season schedule</span>`;
   document.getElementById('infoModalBody').innerHTML=
     `<div class="im-team-hdr">${logoHtml}<div class="im-team-meta">${meta.join('')}</div></div>`+
+    seasonBar+
     `<div class="im-section-hdr">Season totals</div>`+
     summary+
     `<div class="im-section-hdr">All ${seasonTxt} matches <span class="sc">${matches.length} row${matches.length===1?'':'s'}</span></div>`+
@@ -4118,18 +4180,26 @@ let _playOrg='BLSZ';           // preferred ORG — default selection only, team
 // or by the corresponding auto-generators (KK / NK cups). The result is
 // sorted by calendar date so the user scans upcoming first.
 function _playAvailableRounds(){
+  // v17.3 — every round of the CURRENT season is offered (MB / KK / NK
+  // included), in chronological order. The previous version filtered out
+  // auto-generated competitions, but the user wants to be able to attach
+  // a Play match to any round in the current timeline.
   const all=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
-  const skip=(code)=>{
-    const s=String(code||'').toUpperCase();
-    return s.startsWith('MB-')||s.startsWith('KK')||s.startsWith('NK');
-  };
+  const wantSeason=(typeof seasonFor==='function'&&typeof currentDate==='function')
+    ? seasonFor(currentDate()) : '';
   const byRound=new Map();
   all.forEach(r=>{
     const code=String(r.round||'').trim();
-    if(!code||skip(code))return;
-    // Keep the earliest date for each distinct round code.
+    if(!code)return;
+    const date=String(r.date||'').trim();
+    if(wantSeason && date){
+      const rs=seasonFor(date);
+      if(rs && rs!==wantSeason) return;
+    }
+    // Keep the earliest date for each distinct round code (a code may appear
+    // multiple times in calendar.csv when split into legs etc.).
     const prev=byRound.get(code);
-    if(!prev||String(r.date||'')<String(prev.date||''))byRound.set(code,r);
+    if(!prev||date<String(prev.date||''))byRound.set(code,r);
   });
   return [...byRound.values()].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
 }
@@ -5190,8 +5260,9 @@ function _nkFindLeg1BySameTeamsReversed(leg1Rounds,leg2HomeId,leg2AwayId,season)
   return null;
 }
 // Aggregate winner/loser over a two-legged NK tie (leg1 + its paired leg2).
-// If aggregate is tied after 180', we fall back to the second leg's PEN
-// shootout if recorded, otherwise synthesise one on the fly from team skills.
+// v17.3 rule: aggregate first; if tied, away-goals decides; if away-goals
+// are also equal, penalties decide (using the leg-2 recorded PEN if present,
+// else synthesised once from team skills). NO ET in either case.
 // `want` is 'win' or 'lose'.
 function _nkAggregateTeam(leg1Rounds,matchNum,want,season){
   const pair=_nkFindLeg2For(leg1Rounds,matchNum,season);
@@ -5204,7 +5275,16 @@ function _nkAggregateTeam(leg1Rounds,matchNum,want,season){
   const aggAway=leg1.a_ft+leg2.h_ft;
   if(aggHome>aggAway)return want==='win'?leg1.home_id:leg1.away_id;
   if(aggHome<aggAway)return want==='win'?leg1.away_id:leg1.home_id;
-  // Tied aggregate: prefer a recorded leg-2 PEN, else simulate once from skills.
+  // Aggregate tied → away-goals rule. Leg-1 home team's away goals = their
+  // leg-2 score (when they're the away side in leg 2): that's `leg2.a_ft`.
+  // Leg-1 away team's away goals = leg1 home-side total: `leg1.a_ft`.
+  const homeAwayGoals=leg2.a_ft;
+  const awayAwayGoals=leg1.a_ft;
+  if(homeAwayGoals>awayAwayGoals)return want==='win'?leg1.home_id:leg1.away_id;
+  if(homeAwayGoals<awayAwayGoals)return want==='win'?leg1.away_id:leg1.home_id;
+  // Away-goals also tied → penalties. Prefer a recorded leg-2 PEN; otherwise
+  // simulate once from team skills (deterministic when called repeatedly only
+  // within the same simulation pass since the RNG is fresh each call).
   if(leg2.h_pen||leg2.a_pen){
     const winHome=leg2.h_pen>=leg2.a_pen;
     return winHome?(want==='win'?leg2.home_id:leg2.away_id)
@@ -5568,17 +5648,25 @@ function _buildSimulatedMatchRow(ctx){
     const mt=String(ctx.mt||'0');
     const ftH=h1+h2,ftA=a1+a2;
     const ftTied=ftH===ftA;
-    // Two-legged second leg: ET/PEN fire on AGGREGATE tie, not single-leg tie.
-    // Look up the matching leg-1 row by "same teams, reversed" so we can read
-    // its 90' score and compute the aggregate from THIS row's home view.
+    // Two-legged second leg: aggregate + away-goals tie-breaker, NO extra
+    // time. v17.3 — user spec: when both legs are summed, the team with
+    // more goals in 180 minutes wins; if aggregate is tied, the team with
+    // more AWAY goals across the two legs goes through; if away-goals are
+    // also equal, penalties decide. No ET in either case.
+    //
+    // From THIS leg-2 row's home/away perspective:
+    //   leg1 home = THIS away (perspectives are mirrored).
+    //   so aggregate-home goals = ftH (this leg's home) + leg1.a_ft (leg 1's
+    //   away-side total — which IS this row's home team because leg 1 had
+    //   them as away).
+    //   leg1AwayGoals = leg1.h_ft (leg 1 home team — i.e. this row's away).
+    //   leg2AwayGoals = a1+a2 = ftA (the team that was AWAY in leg 2).
     let leg1Pair=null, aggTied=false, aggH=ftH, aggA=ftA;
     if(mt==='2'){
       const leg1Rounds=(typeof _NK_LEG2_OF==='object'&&_NK_LEG2_OF)
         ? Object.keys(_NK_LEG2_OF).find(k=>_NK_LEG2_OF[k]===ctx.rounds)
         : null;
       if(leg1Rounds && ctx.homeId && ctx.awayId){
-        // Season-scope the leg-1 lookup: NKW-5-1/6-1 codes recur every
-        // year, so without this we'd pair against last season's leg-1.
         const _ctxSeason=ctx.season || (ctx.date && typeof seasonFor==='function' ? seasonFor(ctx.date) : '');
         leg1Pair=_nkFindLeg1BySameTeamsReversed(leg1Rounds,ctx.homeId,ctx.awayId,_ctxSeason);
         if(leg1Pair){
@@ -5587,36 +5675,42 @@ function _buildSimulatedMatchRow(ctx){
         }
       }
     }
-    // ET triggers on: single-knockout 1/11 with FT tied, OR leg-2 (mt=2) with
-    // AGGREGATE tied. Golden-goal rule: at most ONE goal scored in ET total.
-    // If both teams "score" in the simulated 30 min, the higher-attack side
-    // gets the golden goal and the other side's goal is dropped to 0; if the
-    // simulator returned 0-0 we leave ET 0-0 and roll on to penalties.
-    const needET=((mt==='1'||mt==='11')&&ftTied) || (mt==='2'&&aggTied);
+    // ET triggers ONLY on single-knockout (mt=1/11) with FT tied. Two-legged
+    // mt=2 ties go straight to away-goals → PEN (no ET).
+    const needET=((mt==='1'||mt==='11')&&ftTied);
     if(needET){
       p3=simPeriodDetailed(H,A,hSk.attack_et,hSk.defence_et,aSk.attack_et,aSk.defence_et);
       let _het=p3.homeG, _aet=p3.awayG;
       // Golden-goal collapse: keep at most one goal across both sides combined.
       if(_het>0 || _aet>0){
         if(_het>0 && _aet>0){
-          // Both sides scored — pick the side whose ET attack roll was higher.
           if(p3.hAttRnd>=p3.aAttRnd){ _het=1; _aet=0; }
           else { _het=0; _aet=1; }
         } else if(_het>0){ _het=1; _aet=0; }
         else { _het=0; _aet=1; }
       }
       het=_het; aet=_aet;
-      // Decide whether PEN are needed:
-      //   • single-knockout (mt=1/11) → tied if ftH+het == ftA+aet
-      //   • two-legged (mt=2)         → tied on AGGREGATE after ET, i.e.
-      //                                  aggH+het == aggA+aet
-      let etDecided;
-      if(mt==='2'&&leg1Pair) etDecided=(aggH+het)!==(aggA+aet);
-      else etDecided=(ftH+het)!==(ftA+aet);
+      // PEN needed if single-knockout still tied after ET.
+      const etDecided=(ftH+het)!==(ftA+aet);
       if(!etDecided){
         pp=simPenaltiesDetailed(hSk,aSk,neutral);
         hpen=pp.hpen;apen=pp.apen;
       }
+    } else if(mt==='2' && aggTied && leg1Pair){
+      // Aggregate tied in a two-legged tie. Apply away-goals first.
+      //   leg-2 home team's away goals = leg1.a_ft (they were away in leg 1).
+      //   leg-2 away team's away goals = ftA (they're away NOW in leg 2).
+      const homeAwayGoals=leg1Pair.a_ft;
+      const awayAwayGoals=ftA;
+      if(homeAwayGoals===awayAwayGoals){
+        // Still tied → penalties.
+        pp=simPenaltiesDetailed(hSk,aSk,neutral);
+        hpen=pp.hpen;apen=pp.apen;
+      }
+      // Otherwise away-goals settles it: we leave hpen/apen at 0 — the
+      // aggregate stands and the winner is determined later by the engine
+      // reading the AGG line (away-goals rule applied by readers of the
+      // matches.csv `notes` AGG field).
     }
     // `home_score_full_time` / `away_score_full_time` keep their historical
     // meaning: they sum everything (90' + ET + PEN) so the rest of the app
