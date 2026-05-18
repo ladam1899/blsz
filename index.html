@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.18.2</title>
+<title>League Manager v2026.05.18.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -756,7 +756,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4822,11 +4822,36 @@ async function _playSaveToMatches(){
   // When the user picks a real calendar round (not FRIENDLY), the match
   // should be filed under that round's scheduled date — otherwise the
   // standings / Matches view won't see the saved row as part of the round.
+  //
+  // v18.3 fix — recurring round codes (MB-B-1, KKQ-1, NKW-1-1, …) appear
+  // in calendar.csv once per season. The previous `.find(...)` returned the
+  // FIRST hit, which is always the earliest-season instance. Result: a
+  // 2001_02 Play save resolved to the 2000_01 date. The fix prefers the
+  // entry whose date is in the SAME season as `current_date`, then falls
+  // back to the nearest-in-the-future entry, then to the first hit.
   let scheduledDate=currentDate();
   if(roundCode&&roundCode!=='FRIENDLY'){
     try{
       const cal=typeof _lgCalendarRounds==='function'?_lgCalendarRounds():[];
-      const hit=cal.find(r=>String(r.round||'').trim()===roundCode);
+      const cd=currentDate();
+      const wantSeason=(typeof seasonFor==='function'&&cd)?seasonFor(cd):'';
+      const candidates=cal.filter(r=>String(r.round||'').trim()===roundCode && r.date);
+      let hit=null;
+      if(candidates.length){
+        // 1) same-season candidate
+        if(wantSeason && typeof seasonFor==='function'){
+          hit=candidates.find(r=>seasonFor(r.date)===wantSeason)||null;
+        }
+        // 2) nearest future date >= current_date
+        if(!hit && cd){
+          const future=candidates.filter(r=>r.date>=cd).sort((a,b)=>a.date.localeCompare(b.date));
+          if(future.length) hit=future[0];
+        }
+        // 3) first by date order
+        if(!hit){
+          hit=candidates.slice().sort((a,b)=>a.date.localeCompare(b.date))[0];
+        }
+      }
       if(hit&&hit.date)scheduledDate=hit.date;
     }catch(e){/* fall back to currentDate() */}
   }
