@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.6</title>
+<title>League Manager v2026.05.19.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -845,7 +845,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4811,7 +4811,40 @@ function renderPlayView(){
   if(_playStadium==='' && !_playStadiumTouched){
     _playStadium=_playHomeStadium();
   }
-  const opt=(selId,teams)=>teams.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
+  // v19.7 — when the side's ORG is 'BLSZ', group teams by MB-B division
+  // (MB1 / MB2 / MB3 / Rest) inside <optgroup> wrappers so the user can scan
+  // by tier; alphabetical inside each group. Lookup uses `_teamMBGroup` for
+  // the current season, mapping the MB-B level code to a tier:
+  //   1M, 1N                 → MB1
+  //   2A, 2B, 2C             → MB2
+  //   3NY, 3K, 3É, 3D        → MB3
+  //   everything else (MB4 / non-BLSZ-grouped / unknown) → Rest
+  // For any other ORG the dropdown stays a flat alphabetical list.
+  const _curSeasonForOpt=(typeof currentDate==='function'&&typeof seasonFor==='function')
+    ? seasonFor(currentDate()) : '';
+  const _divisionOf=(tid)=>{
+    const g=(typeof _teamMBGroup==='function')?_teamMBGroup(tid,_curSeasonForOpt):'';
+    if(g==='1M'||g==='1N') return 'MB1';
+    if(g==='2A'||g==='2B'||g==='2C') return 'MB2';
+    if(g==='3NY'||g==='3K'||g==='3É'||g==='3D') return 'MB3';
+    return 'Rest';
+  };
+  const opt=(selId,teams,org)=>{
+    if(String(org||'').trim()!=='BLSZ'){
+      return teams.map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`).join('');
+    }
+    const buckets={'MB1':[],'MB2':[],'MB3':[],'Rest':[]};
+    teams.forEach(t=>{ buckets[_divisionOf(t.id)].push(t); });
+    const order=['MB1','MB2','MB3','Rest'];
+    return order.filter(k=>buckets[k].length).map(k=>{
+      const inner=buckets[k]
+        .slice()
+        .sort((a,b)=>(a.name||a.id||'').localeCompare(b.name||b.id||''))
+        .map(t=>`<option value="${esc(t.id)}" ${t.id===selId?'selected':''}>${esc(t.name||t.id)}</option>`)
+        .join('');
+      return `<optgroup label="${esc(k)}">${inner}</optgroup>`;
+    }).join('');
+  };
   const hTeam=teamById(_playHome),aTeam=teamById(_playAway);
   const hLogo=logoFor(_playHome,null),aLogo=logoFor(_playAway,null);
   const canPlay=_playHome&&_playAway&&_playHome!==_playAway;
@@ -4829,7 +4862,7 @@ function renderPlayView(){
           <div class="play-team-label">Home</div>
           <div class="play-team-badge" style="background:${hLogo?'#fff':safeColor(hTeam.color)}">${hLogo?`<img src="${hLogo}" alt="">`:esc(_playHome.slice(0,3).toUpperCase())}</div>
           <select class="play-team-sel" onchange="_playSetHomeOrg(this.value)" ${locked?'disabled':''} title="Filter the Home team list by organisation / group">${homeOrgOpts}</select>
-          <select class="play-team-sel" onchange="_playSetHome(this.value)" ${locked?'disabled':''}>${opt(_playHome,homeTeams)}</select>
+          <select class="play-team-sel" onchange="_playSetHome(this.value)" ${locked?'disabled':''}>${opt(_playHome,homeTeams,_playHomeOrg)}</select>
           <div class="play-team-name">${esc(hTeam.name||'')}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;">
@@ -4840,7 +4873,7 @@ function renderPlayView(){
           <div class="play-team-label">Away</div>
           <div class="play-team-badge" style="background:${aLogo?'#fff':safeColor(aTeam.color)}">${aLogo?`<img src="${aLogo}" alt="">`:esc(_playAway.slice(0,3).toUpperCase())}</div>
           <select class="play-team-sel" onchange="_playSetAwayOrg(this.value)" ${locked?'disabled':''} title="Filter the Away team list by organisation / group">${awayOrgOpts}</select>
-          <select class="play-team-sel" onchange="_playSetAway(this.value)" ${locked?'disabled':''}>${opt(_playAway,awayTeams)}</select>
+          <select class="play-team-sel" onchange="_playSetAway(this.value)" ${locked?'disabled':''}>${opt(_playAway,awayTeams,_playAwayOrg)}</select>
           <div class="play-team-name">${esc(aTeam.name||'')}</div>
         </div>
       </div>
