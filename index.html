@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.4</title>
+<title>League Manager v2026.05.19.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -360,6 +360,34 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .teams-search-input{flex:1;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--r2);background:var(--surface);color:var(--text);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
 .teams-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,107,58,.18);}
 .teams-search-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
+/* v19.5 — "+" Add-team button beside the Teams search bar. Same green pill
+   as the round-card add button but slightly larger to align with the input. */
+.teams-add-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;font-size:20px;font-weight:700;line-height:1;color:#fff;background:var(--green);border:none;border-radius:50%;cursor:pointer;transition:background .15s,transform .15s;padding:0;flex-shrink:0;}
+.teams-add-btn:hover{background:var(--green-m);transform:scale(1.06);}
+.teams-add-btn:active{transform:scale(.94);}
+/* New-team form inside the info-modal. Two-column grid with labels stacked
+   above their inputs; section headers separate the four logical groups. */
+.nt-form{display:flex;flex-direction:column;gap:10px;font-size:13px;}
+.nt-section-hdr{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.06em;color:var(--text);margin:6px 0 0;padding-bottom:4px;border-bottom:1px solid var(--border);}
+.nt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;}
+.nt-grid-colors{grid-template-columns:repeat(3,minmax(0,1fr));}
+.nt-form label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+.nt-form input{padding:7px 10px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-transform:none;font-weight:400;letter-spacing:0;transition:border-color .15s,box-shadow .15s;}
+.nt-form input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(26,107,58,.18);}
+.nt-form input[type="color"]{height:36px;padding:2px;cursor:pointer;}
+.nt-req{color:#c0392b;}
+.nt-hint{color:var(--dimmed);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;}
+.nt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;}
+.nt-cancel,.nt-submit{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:background .15s;}
+.nt-cancel{background:var(--surface2);color:var(--text);}
+.nt-cancel:hover{background:var(--border);}
+.nt-submit{background:var(--green);color:#fff;}
+.nt-submit:hover{background:var(--green-m);}
+.nt-submit:disabled{opacity:.6;cursor:not-allowed;}
+.nt-error{color:#c0392b;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);border-radius:6px;padding:8px 12px;font-size:12px;}
+@media(max-width:520px){
+  .nt-grid,.nt-grid-colors{grid-template-columns:1fr;}
+}
 .teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;transition:border-color .15s,background .15s;position:relative;cursor:pointer;}
 .team-card:hover{border-color:var(--border2);background:var(--surface2);}
@@ -803,7 +831,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4243,22 +4271,248 @@ function _onTeamsSearch(v){
 function renderTeamsView(){
   const d=DB.teams;
   const app=document.getElementById('app');
-  if(!d.r.length){
-    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
-  }
+  // v19.5 — always render the search + Add bar so the user can populate an
+  // empty teams.csv via the popup form without having to drop into the
+  // Data Editor first.
+  const emptyMsg=!d.r.length
+    ? '<div class="empty" style="grid-column:1/-1">No teams yet. Click ➕ to add your first team.</div>'
+    : '';
   app.innerHTML=`<div class="teams-wrap">
     <div class="teams-search">
       <input type="text" id="teamsSearchInput" class="teams-search-input"
              placeholder="🔍 Search teams by name, id, stadium, location…"
              value="${esc(_teamsQuery)}" oninput="_onTeamsSearch(this.value)">
+      <button class="teams-add-btn" onclick="openNewTeamModal()" title="Add a new team — opens a form pre-filled with sensible defaults. Saves into teams.csv and creates a matching row in team_skills.csv for the current half-season.">+</button>
       <span class="teams-search-count" id="teamsSearchCount"></span>
     </div>
-    <div id="teamsGrid" class="teams-grid"></div>
+    <div id="teamsGrid" class="teams-grid">${emptyMsg}</div>
   </div>`;
-  _renderTeamsGrid();
+  if(d.r.length) _renderTeamsGrid();
   // Auto-focus so the user can start typing immediately; place cursor at end if there is an existing query.
   const inp=document.getElementById('teamsSearchInput');
   if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
+}
+
+// ── New-team popup (v19.5) ─────────────────────────────────────
+// Opens a form inside the shared info modal where the user can fill in every
+// column of teams.csv plus every skill column of team_skills.csv. On submit:
+//   1) Append a new row to DB.teams.r using `team_id` from the form.
+//   2) Append a new row to DB.team_skills.r keyed by (team_id, half_season),
+//      where half_season = halfSeasonFor(current_date).
+//   3) Save both sheets to Drive (sequential await so failures surface clearly).
+//   4) Close the modal, rebuild team caches, re-render the Teams view.
+function openNewTeamModal(){
+  const modal=document.getElementById('infoModal');
+  const title=document.getElementById('infoModalTitle');
+  const body=document.getElementById('infoModalBody');
+  if(!modal||!title||!body) return;
+  // Pre-compute datalist option sets from existing teams.csv so common
+  // values (stadiums, locations, orgs) can be picked instead of retyped.
+  const td=DB.teams;
+  const colIdx=(name)=>td.h.findIndex(h=>String(h||'').trim().toLowerCase()===name.toLowerCase());
+  const _uniq=(idx)=>{
+    if(idx<0) return [];
+    const set=new Set();
+    td.r.forEach(r=>{const v=String(r[idx]||'').trim(); if(v) set.add(v);});
+    return [...set].sort((a,b)=>a.localeCompare(b));
+  };
+  const stadiums=_uniq(td.h.findIndex(h=>h==='stadium'||h==='stadion'));
+  const locations=_uniq(colIdx('location'));
+  const orgs=_uniq(colIdx('org'));
+  const foundations=_uniq(colIdx('foundation'));
+  const _dlOpts=(arr)=>arr.map(v=>`<option value="${esc(v)}">`).join('');
+  // Default ORG: BLSZ if present, else first existing, else blank.
+  const defaultOrg=orgs.includes('BLSZ')?'BLSZ':(orgs[0]||'BLSZ');
+  // Current half_season — what we'll write the new team_skills row under.
+  const halfNow=(typeof halfSeasonFor==='function'&&typeof currentDate==='function')
+    ? halfSeasonFor(currentDate()) : '';
+  title.innerHTML=`<span>➕ Add new team</span><span class="im-sub">teams.csv + team_skills.csv (${esc(halfNow||'current half')})</span>`;
+  body.innerHTML=`
+    <form id="newTeamForm" class="nt-form" onsubmit="event.preventDefault();return false;">
+      <div class="nt-section-hdr">Team identity</div>
+      <div class="nt-grid">
+        <label>team_id <span class="nt-req">*</span>
+          <input type="text" name="team_id" required placeholder="e.g. FRA" pattern="[A-Za-z0-9_\\-]+" title="Letters, digits, dash, underscore only. Must be unique.">
+        </label>
+        <label>full_name
+          <input type="text" name="full_name" placeholder="Short, Long Official Name">
+        </label>
+        <label>long_name
+          <input type="text" name="long_name" placeholder="Longer display name (optional override)">
+        </label>
+        <label>org
+          <input type="text" name="org" list="nt-org-list" value="${esc(defaultOrg)}" placeholder="BLSZ">
+          <datalist id="nt-org-list">${_dlOpts(orgs)}</datalist>
+        </label>
+      </div>
+      <div class="nt-section-hdr">Venue &amp; location</div>
+      <div class="nt-grid">
+        <label>stadium
+          <input type="text" name="stadium" list="nt-stadium-list" placeholder="Home ground">
+          <datalist id="nt-stadium-list">${_dlOpts(stadiums)}</datalist>
+        </label>
+        <label>location
+          <input type="text" name="location" list="nt-loc-list" placeholder="City / district">
+          <datalist id="nt-loc-list">${_dlOpts(locations)}</datalist>
+        </label>
+        <label>latitude
+          <input type="number" name="latitude" step="any" placeholder="47.500000">
+        </label>
+        <label>longitude
+          <input type="number" name="longitude" step="any" placeholder="19.040000">
+        </label>
+        <label>foundation
+          <input type="text" name="foundation" list="nt-found-list" placeholder="1901">
+          <datalist id="nt-found-list">${_dlOpts(foundations)}</datalist>
+        </label>
+      </div>
+      <div class="nt-section-hdr">Colours</div>
+      <div class="nt-grid nt-grid-colors">
+        <label>color (primary)
+          <input type="color" name="color" value="#1a6b3a">
+        </label>
+        <label>color2 (secondary)
+          <input type="color" name="color2" value="#ffffff">
+        </label>
+        <label>color3 (tertiary)
+          <input type="color" name="color3" value="#000000">
+        </label>
+      </div>
+      <div class="nt-section-hdr">Skills (team_skills.csv · half_season=${esc(halfNow||'—')})</div>
+      <div class="nt-grid">
+        <label>skills <span class="nt-hint">(overall, 0-100)</span>
+          <input type="number" name="skills" value="50" min="0" max="100" step="1">
+        </label>
+        <label>home <span class="nt-hint">(home-advantage bonus)</span>
+          <input type="number" name="home" value="0" step="1">
+        </label>
+        <label>attack_1h
+          <input type="number" name="attack_1h" value="50" min="0" max="100" step="1">
+        </label>
+        <label>defence_1h
+          <input type="number" name="defence_1h" value="50" min="0" max="100" step="1">
+        </label>
+        <label>attack_2h
+          <input type="number" name="attack_2h" value="50" min="0" max="100" step="1">
+        </label>
+        <label>defence_2h
+          <input type="number" name="defence_2h" value="50" min="0" max="100" step="1">
+        </label>
+        <label>attack_et
+          <input type="number" name="attack_et" value="50" min="0" max="100" step="1">
+        </label>
+        <label>defence_et
+          <input type="number" name="defence_et" value="50" min="0" max="100" step="1">
+        </label>
+        <label>penelties <span class="nt-hint">(matches CSV spelling)</span>
+          <input type="number" name="penelties" value="50" min="0" max="100" step="1">
+        </label>
+      </div>
+      <div class="nt-actions">
+        <button type="button" class="nt-cancel" onclick="closeInfoModal()">Cancel</button>
+        <button type="button" class="nt-submit" id="ntSubmitBtn" onclick="_submitNewTeam(this)">✓ Generate team</button>
+      </div>
+      <div id="ntError" class="nt-error" style="display:none"></div>
+    </form>`;
+  modal.classList.add('open');
+  // Focus the team_id field so the user can type immediately.
+  setTimeout(()=>{const el=body.querySelector('input[name="team_id"]');if(el)el.focus();},30);
+}
+
+async function _submitNewTeam(btn){
+  const form=document.getElementById('newTeamForm');
+  const errEl=document.getElementById('ntError');
+  if(!form) return;
+  const _show=(msg)=>{if(errEl){errEl.textContent=msg;errEl.style.display='block';}};
+  const _hide=()=>{if(errEl){errEl.style.display='none';errEl.textContent='';}};
+  _hide();
+  const fd=new FormData(form);
+  const get=(k)=>String(fd.get(k)||'').trim();
+  const team_id=get('team_id');
+  if(!team_id){_show('team_id is required.');return;}
+  if(!/^[A-Za-z0-9_\-]+$/.test(team_id)){_show('team_id may only contain letters, digits, dash, underscore.');return;}
+  // Uniqueness check against existing teams.csv rows.
+  const td=DB.teams;
+  const tidIdx=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+  if(tidIdx>=0 && td.r.some(r=>String(r[tidIdx]||'').trim()===team_id)){
+    _show(`team_id "${team_id}" already exists in teams.csv.`);
+    return;
+  }
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try{
+    // Ensure DB.teams.h has every column from the canonical schema so the row
+    // we build below maps cleanly. (Idempotent — adds only missing cols.)
+    if(typeof ensureMatchCols!=='function' || true){
+      (ED_DEFAULTS.teams||[]).forEach(col=>{
+        if(!td.h.includes(col)){td.h.push(col);td.r.forEach(r=>r.push(''));}
+      });
+    }
+    // Build teams.csv row in the exact order of the current header.
+    const teamObj={
+      team_id,
+      full_name:get('full_name'),
+      long_name:get('long_name'),
+      stadium:get('stadium'),
+      color:get('color'),
+      color2:get('color2'),
+      color3:get('color3'),
+      location:get('location'),
+      latitude:get('latitude'),
+      longitude:get('longitude'),
+      foundation:get('foundation'),
+      org:get('org')
+    };
+    const newTeamRow=td.h.map(col=>teamObj[col]!==undefined?teamObj[col]:'');
+    td.r.push(newTeamRow);
+    // Ensure DB.team_skills.h has every canonical column.
+    const sd=DB.team_skills;
+    (ED_DEFAULTS.team_skills||[]).forEach(col=>{
+      if(!sd.h.includes(col)){sd.h.push(col);sd.r.forEach(r=>r.push(''));}
+    });
+    const halfNow=(typeof halfSeasonFor==='function'&&typeof currentDate==='function')
+      ? halfSeasonFor(currentDate()) : '';
+    const skillObj={
+      team_id,
+      skills:get('skills'),
+      home:get('home'),
+      attack_1h:get('attack_1h'),
+      defence_1h:get('defence_1h'),
+      attack_2h:get('attack_2h'),
+      defence_2h:get('defence_2h'),
+      attack_et:get('attack_et'),
+      defence_et:get('defence_et'),
+      penelties:get('penelties'),
+      half_season:halfNow
+    };
+    const newSkillRow=sd.h.map(col=>skillObj[col]!==undefined?skillObj[col]:'');
+    sd.r.push(newSkillRow);
+    // Rebuild the in-memory team_id → object cache so the new row is visible
+    // to teamById(), the Teams view, the Play view, etc.
+    if(typeof rebuildTeamMap==='function') rebuildTeamMap();
+    // Persist both sheets to Drive. Sequential so a teams.csv failure doesn't
+    // leave an orphan team_skills row pending.
+    await saveSheet('teams');
+    await saveSheet('team_skills');
+    if(typeof toast==='function') toast(`✅ Team "${team_id}" added to teams.csv + team_skills.csv (${halfNow||'no half'})`);
+    closeInfoModal();
+    // Re-render the Teams view so the new card appears immediately.
+    if(typeof currentView!=='undefined' && currentView==='teams') renderTeamsView();
+  }catch(e){
+    _show('Save failed: '+(e&&e.message||e));
+    if(btn){btn.disabled=false;btn.textContent='✓ Generate team';}
+    // Roll back the in-memory append so a retry doesn't double-insert.
+    if(td.r.length){
+      const last=td.r[td.r.length-1];
+      if(last&&tidIdx>=0&&String(last[tidIdx]||'').trim()===team_id) td.r.pop();
+    }
+    const sd=DB.team_skills;
+    if(sd.r.length){
+      const sti=sd.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+      const last=sd.r[sd.r.length-1];
+      if(last&&sti>=0&&String(last[sti]||'').trim()===team_id) sd.r.pop();
+    }
+    if(typeof rebuildTeamMap==='function') rebuildTeamMap();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
