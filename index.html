@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.18.4</title>
+<title>League Manager v2026.05.19.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -484,6 +484,33 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .pos-badge.mbb-mix{background:var(--red-l);color:var(--red);}
 
 /* RESULTS VIEW */
+/* TROPHIES VIEW */
+.trophies-wrap{max-width:1000px;margin:0 auto;padding:12px 16px 24px;}
+.trophies-flat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.trophies-flat table{width:100%;border-collapse:collapse;font-size:13px;}
+.trophies-flat thead th{position:sticky;top:0;background:var(--surface2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--border);text-align:center;white-space:nowrap;}
+.trophies-flat thead th.th-season{text-align:left;}
+.trophies-flat tbody td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:center;vertical-align:middle;}
+.trophies-flat tbody td.tr-season{text-align:left;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
+.trophies-flat tbody tr:hover td{background:var(--surface2);}
+.trophy-team{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:6px;color:#fff;font-weight:500;font-size:12px;max-width:240px;}
+.trophy-team .tt-badge{width:16px;height:16px;border-radius:3px;overflow:hidden;background:rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;flex-shrink:0;}
+.trophy-team .tt-badge img{width:100%;height:100%;object-fit:contain;}
+.trophy-team .tt-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.trophy-empty{color:var(--dimmed);font-style:italic;font-size:11px;}
+.trophy-agg{margin-top:18px;}
+.trophy-agg h3{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em;margin:0 0 10px;color:var(--text);}
+.trophy-agg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;}
+.trophy-agg-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:10px 12px;}
+.trophy-agg-card h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px;}
+.trophy-agg-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border);font-size:13px;}
+.trophy-agg-row:last-child{border-bottom:none;}
+.trophy-agg-row .count{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--text);min-width:24px;text-align:right;}
+@media(max-width:640px){
+  .trophies-flat{overflow-x:auto;}
+  .trophies-flat table{min-width:max-content;font-size:11px;}
+  .trophy-team{font-size:11px;max-width:160px;}
+}
 .results-wrap{max-width:900px;margin:0 auto;padding:12px 16px 24px;}
 .results-flat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
 .results-flat table{width:100%;border-collapse:collapse;}
@@ -756,7 +783,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.18.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -773,6 +800,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
   <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
   <div class="ntab" id="ntab-blsz" onclick="switchView('blsz')">🏆 BLSZ</div>
+  <div class="ntab" id="ntab-trophies" onclick="switchView('trophies')">🥇 Trophies</div>
   <div class="ntab" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
   <div class="nav-space"></div>
   <div class="nav-gear" onclick="openEditor()" title="Data editor">⚙</div>
@@ -823,6 +851,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     <div class="etab"        id="etab-results"     onclick="edSwitchTab('results')">Results</div>
     <div class="etab"        id="etab-team_skills" onclick="edSwitchTab('team_skills')">Team Skills</div>
     <div class="etab"        id="etab-draw"        onclick="edSwitchTab('draw')">Draw</div>
+    <div class="etab"        id="etab-trophies"    onclick="edSwitchTab('trophies')">Trophies</div>
     <div class="etab"        id="etab-state"       onclick="edSwitchTab('state')">State</div>
   </div>
   <div class="editor-toolbar">
@@ -883,7 +912,11 @@ const DB={
   results:    {h:[],r:[],fid:null},
   team_skills:{h:[],r:[],fid:null},
   draw:       {h:[],r:[],fid:null},
-  state:      {h:[],r:[],fid:null}
+  state:      {h:[],r:[],fid:null},
+  // v19.1 — historic trophies aggregate. One row per season holding the
+  // four primary trophy winners. Editable via the Data Editor and auto-
+  // appended at every season-end rollover.
+  trophies:   {h:[],r:[],fid:null}
 };
 const ED_DEFAULTS={
   teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation','org'],
@@ -892,7 +925,8 @@ const ED_DEFAULTS={
   results:    ['season','competition','place','team_id'],
   team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
   draw:       ['rounds','level','match_type','match_number','home_team','away_team','notes'],
-  state:      ['key','value']
+  state:      ['key','value'],
+  trophies:   ['season','MB','NK','KK','NSZK']
 };
 
 // ── EDITOR STATE ────────────────────────────────────────────
@@ -1442,6 +1476,7 @@ function renderView(){
   else if(currentView==='teams')renderTeamsView();
   else if(currentView==='results')renderResultsView();
   else if(currentView==='blsz')renderBlszView();
+  else if(currentView==='trophies')renderTrophiesView();
   else if(currentView==='play')renderPlayView();
 }
 
@@ -3176,6 +3211,22 @@ async function advanceToNextRound(){
     }catch(e){
       console.error('[advanceToNextRound] MB / BLSZ write failed:',e);
       toast('⚠ MB / BLSZ ranking write failed — new season may have blank rows.','warn');
+    }
+    // v19.1 — write the season's four primary trophies into DB.trophies so
+    // the Trophies view picks them up. Reads winners from results.csv (just
+    // populated above), upserts a single row keyed by season, saves to
+    // Drive. Quietly skips on failure so the main rollover still proceeds.
+    try{
+      if(typeof _finalizeSeasonTrophies==='function'){
+        const op=_finalizeSeasonTrophies(curSeason);
+        if(op!=='noop'){
+          await saveSheet('trophies');
+          toast(`🥇 Trophies ${op} for ${curSeason}`,'');
+          console.log(`[advanceToNextRound] trophies ${op} for ${curSeason}`);
+        }
+      }
+    }catch(e){
+      console.error('[advanceToNextRound] trophies write failed:',e);
     }
     // STEP 3 — popup describes `curSeason` (the just-finished season) and
     // writes skill rows under `nextSeason_A`. After Continue, we run the
@@ -7569,6 +7620,133 @@ function renderBlszView(){
 function selectBlszSeason(s){_blszSeason=s;renderBlszView();}
 
 // ══════════════════════════════════════════════════════════════
+//  TROPHIES VIEW  (🥇)
+// ══════════════════════════════════════════════════════════════
+// Historic trophy winners — one row per season — for the four primary BLSZ
+// competitions. Reads from DB.trophies (loaded from `trophies.csv` in
+// Drive). The user can attach / merge the CSV via the Data Editor's
+// "Trophies" tab; the season-end rollover (`_finalizeSeasonTrophies`)
+// also writes a row automatically when each season finishes.
+function renderTrophiesView(){
+  const app=document.getElementById('app');
+  const d=DB.trophies;
+  // Make sure the header is present even if no rows exist yet, so the
+  // table still draws the four columns.
+  if(!d.h.length) d.h=[...ED_DEFAULTS.trophies];
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name.toLowerCase());
+  const si=_hi('season'),mbI=_hi('MB'),nkI=_hi('NK'),kkI=_hi('KK'),nszkI=_hi('NSZK');
+  // Sort rows newest-first by season string. The user spec accepts either
+  // a single-year (`1909`) or two-part (`1992/93`) season format; sort
+  // works lexicographically on both since the year prefix dominates.
+  const rows=d.r.slice().sort((a,b)=>String(b[si]||'').localeCompare(String(a[si]||'')));
+  // Render a single team chip with logo (when available) + name + team color.
+  const _chip=(teamId)=>{
+    const id=String(teamId||'').trim();
+    if(!id) return `<span class="trophy-empty">—</span>`;
+    const t=(typeof teamById==='function')?teamById(id):{name:id,color:'#888'};
+    const logo=(typeof logoFor==='function')?logoFor(id,null):'';
+    const badge=logo
+      ? `<span class="tt-badge"><img src="${esc(logo)}" alt=""></span>`
+      : `<span class="tt-badge">${esc(id.slice(0,2).toUpperCase())}</span>`;
+    const bg=safeColor(t.color||'#888');
+    return `<span class="trophy-team" style="background:${bg}" title="${esc(t.name||id)} (${esc(id)})">${badge}<span class="tt-name">${esc(t.name||id)}</span></span>`;
+  };
+  // Aggregate trophy counts per team per competition (and total).
+  const counts={MB:new Map(),NK:new Map(),KK:new Map(),NSZK:new Map(),TOTAL:new Map()};
+  const _bump=(comp,tid)=>{
+    const id=String(tid||'').trim();
+    if(!id) return;
+    const m=counts[comp];
+    m.set(id,(m.get(id)||0)+1);
+    counts.TOTAL.set(id,(counts.TOTAL.get(id)||0)+1);
+  };
+  d.r.forEach(r=>{
+    if(mbI>=0)   _bump('MB',   r[mbI]);
+    if(nkI>=0)   _bump('NK',   r[nkI]);
+    if(kkI>=0)   _bump('KK',   r[kkI]);
+    if(nszkI>=0) _bump('NSZK', r[nszkI]);
+  });
+  // Build an aggregate-card per competition. Sorts teams by count desc,
+  // then by name asc; shows up to 12 rows per card (rest collapses).
+  const _aggCardHTML=(label,m)=>{
+    if(!m.size) return `<div class="trophy-agg-card"><h4>${esc(label)}</h4><div class="trophy-empty">No winners yet.</div></div>`;
+    const arr=[...m.entries()].map(([id,n])=>{
+      const t=(typeof teamById==='function')?teamById(id):{name:id};
+      return {id, n, name:String(t.long_name||t.name||id)};
+    }).sort((a,b)=>(b.n-a.n)||a.name.localeCompare(b.name));
+    const top=arr.slice(0,12);
+    const moreCount=arr.length-top.length;
+    const rowsHtml=top.map(t=>`<div class="trophy-agg-row">${_chip(t.id)}<span class="count">${t.n}</span></div>`).join('');
+    const more=moreCount>0?`<div class="trophy-agg-row"><span class="trophy-empty">+ ${moreCount} more team${moreCount===1?'':'s'} with 1 each</span></div>`:'';
+    return `<div class="trophy-agg-card"><h4>${esc(label)} <span class="trophy-empty">(${arr.length} winner${arr.length===1?'':'s'})</span></h4>${rowsHtml}${more}</div>`;
+  };
+  let html=`<div class="trophies-wrap">
+    <div class="results-comp-title" style="border:1px solid var(--border);border-radius:var(--r2) var(--r2) 0 0;background:var(--surface);border-bottom:0;padding:14px 18px 12px;display:flex;align-items:center;gap:10px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em;">🥇 Trophies <span class="sc" style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;">${rows.length} season${rows.length===1?'':'s'}</span></div>`;
+  if(!rows.length){
+    html+=`<div class="results-empty">No trophies recorded yet. Attach a CSV via ⚙ Data Editor → Trophies, or play through a season — the season-end rollover writes a row automatically.</div>`;
+  } else {
+    html+=`<div class="trophies-flat">
+      <table>
+        <thead><tr>
+          <th class="th-season">Season</th>
+          <th>MB</th><th>NK</th><th>KK</th><th>NSZK</th>
+        </tr></thead>
+        <tbody>${rows.map(r=>`<tr>
+          <td class="tr-season">${esc(si>=0?String(r[si]||''):'')}</td>
+          <td>${_chip(mbI>=0?r[mbI]:'')}</td>
+          <td>${_chip(nkI>=0?r[nkI]:'')}</td>
+          <td>${_chip(kkI>=0?r[kkI]:'')}</td>
+          <td>${_chip(nszkI>=0?r[nszkI]:'')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="trophy-agg">
+      <h3>Aggregate winners</h3>
+      <div class="trophy-agg-grid">
+        ${_aggCardHTML('MB',counts.MB)}
+        ${_aggCardHTML('NK',counts.NK)}
+        ${_aggCardHTML('KK',counts.KK)}
+        ${_aggCardHTML('NSZK',counts.NSZK)}
+        ${_aggCardHTML('Total (all four)',counts.TOTAL)}
+      </div>
+    </div>`;
+  }
+  html+=`</div>`;
+  app.innerHTML=html;
+}
+
+// Called from the season-end rollover (`advanceToNextRound` → June 15
+// branch). Reads the four trophy winners for `season` out of results.csv
+// and upserts a row into DB.trophies keyed by season. Returns 'inserted',
+// 'updated', or 'noop' depending on whether the row existed.
+function _finalizeSeasonTrophies(season){
+  if(!season) return 'noop';
+  const d=DB.trophies;
+  if(!d.h.length) d.h=[...ED_DEFAULTS.trophies];
+  const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name.toLowerCase());
+  const si=_hi('season'),mbI=_hi('MB'),nkI=_hi('NK'),kkI=_hi('KK'),nszkI=_hi('NSZK');
+  if(si<0) return 'noop';
+  // Look up each winner from results.csv via _resultByPlace.
+  const _seed=(comp,place)=>typeof _resultByPlace==='function'?_resultByPlace(season,comp,place):'';
+  const mb   = _seed('MB',1);                         // MB place 1 in results.csv
+  const nk   = _seed('NK',1);                         // NK place 1
+  const kk   = _seed('KKGOR-α (alfa)',1);             // KK winner = best α-group winner
+  const nszk = _seed('NSZK',1);                       // Super Cup
+  // Find an existing trophies.csv row for this season (case-insensitive).
+  const sStr=String(season);
+  const existing=d.r.findIndex(r=>String(r[si]||'').trim()===sStr);
+  const cur=existing>=0?d.r[existing]:new Array(d.h.length).fill('');
+  cur[si]=sStr;
+  if(mbI>=0)   cur[mbI]=String(mb||'');
+  if(nkI>=0)   cur[nkI]=String(nk||'');
+  if(kkI>=0)   cur[kkI]=String(kk||'');
+  if(nszkI>=0) cur[nszkI]=String(nszk||'');
+  if(existing>=0){ d.r[existing]=cur; return 'updated'; }
+  d.r.push(cur);
+  return 'inserted';
+}
+
+// ══════════════════════════════════════════════════════════════
 //  RESULTS VIEW
 // ══════════════════════════════════════════════════════════════
 let _resultsSeason=null;
@@ -8414,7 +8592,8 @@ const _EDIT_MERGE_KEYS={
   results:     ['season','competition','place'],
   team_skills: ['team_id','half_season'],
   draw:        ['rounds','level','match_number'],
-  state:       ['key']
+  state:       ['key'],
+  trophies:    ['season']
 };
 function edMergeCSV(e){
   const f=e.target.files[0];if(!f)return;
