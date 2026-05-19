@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.5</title>
+<title>League Manager v2026.05.19.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -375,6 +375,20 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .nt-form input{padding:7px 10px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-transform:none;font-weight:400;letter-spacing:0;transition:border-color .15s,box-shadow .15s;}
 .nt-form input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(26,107,58,.18);}
 .nt-form input[type="color"]{height:36px;padding:2px;cursor:pointer;}
+/* v19.6 — palette-style swatch picker (shares COLOR_PALETTE with the
+   Data Editor's edColorPick popup). One block per colour slot. */
+.nt-color-block{display:flex;flex-direction:column;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+.nt-color-row-hdr{display:flex;align-items:center;justify-content:space-between;}
+.nt-color-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);}
+.nt-color-preview{display:inline-block;width:22px;height:22px;border-radius:4px;border:1px solid rgba(0,0,0,.2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);}
+.nt-swatch-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;}
+.nt-swatch{width:20px;height:20px;border-radius:4px;border:1px solid rgba(0,0,0,.15);cursor:pointer;padding:0;transition:transform .08s,box-shadow .08s;}
+.nt-swatch:hover{transform:scale(1.18);box-shadow:0 2px 6px rgba(0,0,0,.25);}
+.nt-color-row-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.nt-custom-wrap{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:500;cursor:pointer;}
+.nt-custom-input{width:32px;height:24px;padding:0;border:1px solid var(--border2);border-radius:4px;cursor:pointer;}
+.nt-clear{font-size:11px;color:var(--muted);background:transparent;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;}
+.nt-clear:hover{background:var(--surface);}
 .nt-req{color:#c0392b;}
 .nt-hint{color:var(--dimmed);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;}
 .nt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;}
@@ -831,7 +845,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1773,6 +1787,20 @@ function renderLeagueView(){
   const app=document.getElementById('app');
   const curDate=currentDate();
   const allRounds=_lgCalendarRounds();
+  // v19.6 — seed the season filter BEFORE filtering. Previously this default
+  // was applied AFTER `visible` was computed, so the very first render after
+  // a hard refresh used an empty season filter and showed every round across
+  // every season (sorted by date, so the earliest 2000_01 rounds appeared at
+  // the top). Now the first paint already pins to the season covering
+  // `current_date`, matching what subsequent renders see.
+  if(!lgFilter.season && typeof seasonFor==='function'){
+    const _curSeason=seasonFor(curDate);
+    const _hasIt=_curSeason && allRounds.some(r=>{
+      if(r.season) return r.season===_curSeason;
+      return typeof seasonFor==='function' && seasonFor(r.date)===_curSeason;
+    });
+    if(_hasIt) lgFilter.season=_curSeason;
+  }
   const visible=_lgFilterRounds(allRounds);
   const current=_lgCurrentRound(visible.length?visible:allRounds,curDate);
 
@@ -1797,15 +1825,9 @@ function renderLeagueView(){
     return '';
   };
   const allSeasons=[...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
-  // Default the season filter to whatever covers `current_date` so the
-  // Matches view boots into the user's actual playing season instead of
-  // showing every round across every year. Only seed the default the
-  // first time (when no explicit filter has been chosen) AND only when
-  // that season actually exists in allSeasons; otherwise leave it blank.
-  if(!lgFilter.season && typeof seasonFor==='function'){
-    const _cs=seasonFor(curDate);
-    if(_cs && allSeasons.includes(_cs)) lgFilter.season=_cs;
-  }
+  // v19.6 — the season default is now seeded at the top of this function,
+  // BEFORE `visible` is computed, so the very first render already filters
+  // to the current season. The legacy seed-after-filter block was removed.
   const allYears=[...new Set(allRounds.map(r=>r.date.slice(0,4)))].filter(Boolean).sort();
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -4368,15 +4390,9 @@ function openNewTeamModal(){
       </div>
       <div class="nt-section-hdr">Colours</div>
       <div class="nt-grid nt-grid-colors">
-        <label>color (primary)
-          <input type="color" name="color" value="#1a6b3a">
-        </label>
-        <label>color2 (secondary)
-          <input type="color" name="color2" value="#ffffff">
-        </label>
-        <label>color3 (tertiary)
-          <input type="color" name="color3" value="#000000">
-        </label>
+        ${_ntColorPickerHTML('color','Primary','#1a6b3a')}
+        ${_ntColorPickerHTML('color2','Secondary','#ffffff')}
+        ${_ntColorPickerHTML('color3','Tertiary','#000000')}
       </div>
       <div class="nt-section-hdr">Skills (team_skills.csv · half_season=${esc(halfNow||'—')})</div>
       <div class="nt-grid">
@@ -4385,27 +4401,6 @@ function openNewTeamModal(){
         </label>
         <label>home <span class="nt-hint">(home-advantage bonus)</span>
           <input type="number" name="home" value="0" step="1">
-        </label>
-        <label>attack_1h
-          <input type="number" name="attack_1h" value="50" min="0" max="100" step="1">
-        </label>
-        <label>defence_1h
-          <input type="number" name="defence_1h" value="50" min="0" max="100" step="1">
-        </label>
-        <label>attack_2h
-          <input type="number" name="attack_2h" value="50" min="0" max="100" step="1">
-        </label>
-        <label>defence_2h
-          <input type="number" name="defence_2h" value="50" min="0" max="100" step="1">
-        </label>
-        <label>attack_et
-          <input type="number" name="attack_et" value="50" min="0" max="100" step="1">
-        </label>
-        <label>defence_et
-          <input type="number" name="defence_et" value="50" min="0" max="100" step="1">
-        </label>
-        <label>penelties <span class="nt-hint">(matches CSV spelling)</span>
-          <input type="number" name="penelties" value="50" min="0" max="100" step="1">
         </label>
       </div>
       <div class="nt-actions">
@@ -4417,6 +4412,40 @@ function openNewTeamModal(){
   modal.classList.add('open');
   // Focus the team_id field so the user can type immediately.
   setTimeout(()=>{const el=body.querySelector('input[name="team_id"]');if(el)el.focus();},30);
+}
+
+// v19.6 — palette-style swatch picker for the new-team form, sharing the
+// same COLOR_PALETTE used by the Data Editor (edColorPick). Renders a row of
+// labelled swatches + a "Custom" native color input, plus a small preview
+// chip showing the current pick. The picked hex is stored in a hidden
+// <input name="<slot>"> so FormData reads it like a normal field.
+function _ntColorPickerHTML(slot, label, defaultHex){
+  const swatches=(typeof COLOR_PALETTE!=='undefined'?COLOR_PALETTE:[]).map(p=>
+    `<button type="button" class="nt-swatch" style="background:${p.h}" title="${esc(p.n)} ${esc(p.h)}" data-hex="${esc(p.h)}" onclick="_ntPickColor('${slot}','${esc(p.h)}')"></button>`
+  ).join('');
+  return `
+    <div class="nt-color-block">
+      <div class="nt-color-row-hdr">
+        <span class="nt-color-label">${esc(label)}</span>
+        <span class="nt-color-preview" id="nt-prev-${esc(slot)}" style="background:${esc(defaultHex)}"></span>
+      </div>
+      <div class="nt-swatch-grid">${swatches}</div>
+      <div class="nt-color-row-foot">
+        <label class="nt-custom-wrap">
+          <input type="color" value="${esc(defaultHex)}" class="nt-custom-input" oninput="_ntPickColor('${slot}',this.value)">
+          <span>Custom…</span>
+        </label>
+        <button type="button" class="nt-clear" onclick="_ntPickColor('${slot}','')">Clear</button>
+      </div>
+      <input type="hidden" name="${esc(slot)}" id="nt-val-${esc(slot)}" value="${esc(defaultHex)}">
+    </div>`;
+}
+// Wire a swatch / custom-picker / clear click to the hidden input + preview.
+function _ntPickColor(slot, hex){
+  const v=document.getElementById('nt-val-'+slot);
+  const p=document.getElementById('nt-prev-'+slot);
+  if(v) v.value=hex||'';
+  if(p) p.style.background=hex||'transparent';
 }
 
 async function _submitNewTeam(btn){
@@ -4471,17 +4500,21 @@ async function _submitNewTeam(btn){
     });
     const halfNow=(typeof halfSeasonFor==='function'&&typeof currentDate==='function')
       ? halfSeasonFor(currentDate()) : '';
+    // v19.6 — only `skills`, `home`, and `half_season` are user-entered.
+    // The per-period att/def + penelties columns are derived/calculated by
+    // the downstream pipeline, so we leave them blank here. Mapping to ''
+    // (not undefined) keeps the CSV row well-formed.
     const skillObj={
       team_id,
       skills:get('skills'),
       home:get('home'),
-      attack_1h:get('attack_1h'),
-      defence_1h:get('defence_1h'),
-      attack_2h:get('attack_2h'),
-      defence_2h:get('defence_2h'),
-      attack_et:get('attack_et'),
-      defence_et:get('defence_et'),
-      penelties:get('penelties'),
+      attack_1h:'',
+      defence_1h:'',
+      attack_2h:'',
+      defence_2h:'',
+      attack_et:'',
+      defence_et:'',
+      penelties:'',
       half_season:halfNow
     };
     const newSkillRow=sd.h.map(col=>skillObj[col]!==undefined?skillObj[col]:'');
