@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.2</title>
+<title>League Manager v2026.05.19.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -315,6 +315,10 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .im-stat.win-b{background:rgba(37,99,199,.08);border-color:rgba(37,99,199,.3);}
 .im-stat.dr{background:var(--surface2);}
 .im-empty{padding:18px;text-align:center;font-size:12px;color:var(--muted);background:var(--surface2);border-radius:8px;}
+.im-results-list{display:flex;flex-direction:column;gap:4px;}
+.im-results-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:6px;font-size:13px;}
+.im-results-comp{font-weight:500;color:var(--text);}
+.im-results-place{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--green);}
 .st-row{cursor:pointer;}
 .m-link{cursor:pointer;}
 .m-link:hover{text-decoration:underline;text-decoration-color:var(--green);}
@@ -783,7 +787,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -798,7 +802,6 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   <div class="ntab active" id="ntab-league" onclick="switchView('league')">🏠 Matches</div>
   <div class="ntab" id="ntab-calendar" onclick="switchView('calendar')">📆 Calendar</div>
   <div class="ntab" id="ntab-teams" onclick="switchView('teams')">👥 Teams</div>
-  <div class="ntab" id="ntab-results" onclick="switchView('results')">🏅 Results</div>
   <div class="ntab" id="ntab-blsz" onclick="switchView('blsz')">🏆 BLSZ</div>
   <div class="ntab" id="ntab-trophies" onclick="switchView('trophies')">🥇 Trophies</div>
   <div class="ntab" id="ntab-play" onclick="switchView('play')">⚽ Play</div>
@@ -3032,6 +3035,40 @@ function openTeamProfile(teamId,seasonHint){
   const listHtml=matches.length
     ? `<div class="im-match-list">${matches.map(r=>_imMatchRowHTML(r,c,true)).join('')}</div>`
     : `<div class="im-empty">No completed matches for this season.</div>`;
+  // Results for this team in the selected season — pulled straight from
+  // results.csv (DB.results). Each matching row shows the competition and
+  // the place achieved. v19.3 moves the standalone Results view's content
+  // into this team-profile modal so the user can see a team's full results
+  // history without leaving the Teams view.
+  const _resultsRows=(()=>{
+    const rd=DB.results;
+    if(!rd||!rd.r||!rd.r.length) return [];
+    const _rhi=(n)=>rd.h.findIndex(h=>String(h||'').trim().toLowerCase()===n.toLowerCase());
+    const si=_rhi('season'),compi=_rhi('competition'),pli=_rhi('place'),tidi=_rhi('team_id');
+    if(tidi<0) return [];
+    const out=[];
+    rd.r.forEach(r=>{
+      const tid=String(r[tidi]||'').trim();
+      if(tid!==teamId) return;
+      const rs=si>=0?String(r[si]||'').trim():'';
+      if(season && rs && rs!==season) return;
+      out.push({
+        season:rs,
+        competition:compi>=0?String(r[compi]||'').trim():'',
+        place:pli>=0?(parseInt(r[pli])||0):0
+      });
+    });
+    // Stable sort: place asc (1 = best at top), competition asc as tiebreaker.
+    out.sort((a,b)=>(a.place-b.place)||a.competition.localeCompare(b.competition));
+    return out;
+  })();
+  const resultsHTML=_resultsRows.length
+    ? `<div class="im-results-list">${_resultsRows.map(r=>`
+        <div class="im-results-row">
+          <span class="im-results-comp">${esc(r.competition||'—')}</span>
+          <span class="im-results-place">#${esc(String(r.place||'—'))}</span>
+        </div>`).join('')}</div>`
+    : `<div class="im-empty">No results recorded for this season.</div>`;
   const seasonTxt=season?seasonLabel(season):'All seasons';
   // Season selector — only shown when the team has matches in 2+ seasons.
   // Re-opens the modal for the chosen season via openTeamProfile(...) so the
@@ -3049,6 +3086,8 @@ function openTeamProfile(teamId,seasonHint){
     seasonBar+
     `<div class="im-section-hdr">Season totals</div>`+
     summary+
+    `<div class="im-section-hdr">Results <span class="sc">${_resultsRows.length} row${_resultsRows.length===1?'':'s'}</span></div>`+
+    resultsHTML+
     `<div class="im-section-hdr">All ${seasonTxt} matches <span class="sc">${matches.length} row${matches.length===1?'':'s'}</span></div>`+
     listHtml;
   document.getElementById('infoModal').classList.add('open');
@@ -7398,6 +7437,9 @@ function _blszBuildLegend(){
 
 // State for the BLSZ view.
 let _blszSeason=null;
+// v19.3 — free-text team filter on the BLSZ view, applied case-insensitively
+// against team_id + team name + long name. Empty string = show everything.
+let _blszSearch='';
 // Sort state. column ∈ {'place','total','MB-B','MB-R','KK','NK'}. Direction
 // 'desc' for points-style columns, 'asc' for 'place' (lower place = better).
 let _blszSort={col:'place', dir:'asc'};
@@ -7555,6 +7597,10 @@ function renderBlszView(){
         <label>Season</label>
         <select class="results-sel" onchange="selectBlszSeason(this.value)">${seasonOpts}</select>
       </div>
+      <div class="results-bar-field">
+        <label>Search</label>
+        <input type="text" class="results-sel blsz-search" placeholder="Team name or id…" value="${esc(_blszSearch||'')}" oninput="selectBlszSearch(this.value)">
+      </div>
     </div>`;
   if(!teams.length){
     html+=`<div class="results-empty">No BLSZ data yet for this season.<br><small>Played matches feed the current standings; unplayed matches expand the min/max range.</small></div>`;
@@ -7572,7 +7618,21 @@ function renderBlszView(){
         <th class="${_sortCls('NSZK')}" onclick="selectBlszSort('NSZK')" title="Sort by Szuper Kupa (NSZK) points">NSZK${_sortArrow('NSZK')}</th>
         <th class="${_sortCls('total')}" onclick="selectBlszSort('total')" title="Sort by total points">Total pts${_sortArrow('total')}</th>
       </tr></thead><tbody>`;
-    teams.forEach((t,i)=>{
+    // v19.3 — apply the search filter AFTER ranks are computed so the BLSZ
+    // place stays canonical regardless of which teams are currently visible.
+    const _q=String(_blszSearch||'').trim().toLowerCase();
+    const _visTeams=_q
+      ? teams.filter(t=>{
+          const tt=teamById(t.tid);
+          const hay=[(t.tid||''),(t.name||''),(tt&&tt.name||''),(tt&&tt.long_name||''),(tt&&tt.full_name||'')]
+            .join(' ').toLowerCase();
+          return hay.indexOf(_q)>=0;
+        })
+      : teams;
+    if(!_visTeams.length){
+      html+=`<tr><td colspan="11" style="text-align:center;padding:18px;color:var(--muted)">No teams match "${esc(_blszSearch)}"</td></tr>`;
+    }
+    _visTeams.forEach((t,i)=>{
       // BLSZ place stays canonical even when the table is re-sorted.
       const curPlace=blszRankByTid.get(t.tid)||(i+1);
       const mn=minPlace.get(t.tid)||curPlace;
@@ -7618,6 +7678,13 @@ function renderBlszView(){
   app.innerHTML=html;
 }
 function selectBlszSeason(s){_blszSeason=s;renderBlszView();}
+function selectBlszSearch(q){
+  _blszSearch=String(q||'');
+  // Re-render and restore focus + caret position so the user can keep typing.
+  renderBlszView();
+  const el=document.querySelector('.blsz-search');
+  if(el){ el.focus(); try{ el.setSelectionRange(_blszSearch.length,_blszSearch.length); }catch(_){} }
+}
 
 // ══════════════════════════════════════════════════════════════
 //  TROPHIES VIEW  (🥇)
