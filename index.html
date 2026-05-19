@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.8</title>
+<title>League Manager v2026.05.19.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -382,6 +382,9 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .nt-form input{padding:7px 10px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-transform:none;font-weight:400;letter-spacing:0;transition:border-color .15s,box-shadow .15s;}
 .nt-form input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(26,107,58,.18);}
 .nt-form input[type="color"]{height:36px;padding:2px;cursor:pointer;}
+/* v19.9 — proper <select> styling so it matches the surrounding inputs. */
+.nt-select{padding:7px 10px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-transform:none;font-weight:400;letter-spacing:0;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.nt-select:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(26,107,58,.18);}
 /* v19.6 — palette-style swatch picker (shares COLOR_PALETTE with the
    Data Editor's edColorPick popup). One block per colour slot. */
 .nt-color-block{display:flex;flex-direction:column;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
@@ -465,6 +468,13 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .play-result-score{display:flex;align-items:center;justify-content:center;gap:16px;font-family:'Bebas Neue',sans-serif;font-size:40px;letter-spacing:.05em;}
 .play-result-periods{margin-top:14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.04em;}
 .play-result-winner{margin-top:14px;text-align:center;font-size:13px;color:var(--muted);}
+/* v19.9 — leg-2 aggregate panel. Renders the leg-1 row + the in-progress
+   leg-2 row + the combined aggregate underneath the main scoreline. */
+.play-result-agg{margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text);}
+.play-result-agg-row{display:flex;align-items:baseline;gap:8px;line-height:1.7;}
+.play-result-agg-row b{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.04em;min-width:70px;}
+.play-result-agg-row.play-agg-total{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);font-weight:600;}
+.play-agg-sub{font-size:11px;color:var(--muted);}
 .play-empty{color:var(--muted);text-align:center;padding:24px;font-size:13px;}
 .play-stadium-row{display:flex;align-items:center;justify-content:center;gap:8px;flex-basis:100%;margin-top:8px;font-size:12px;color:var(--muted);}
 .play-stadium-sel{padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:13px;outline:none;min-width:220px;}
@@ -852,7 +862,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4406,8 +4416,18 @@ function openNewTeamModal(){
           <input type="text" name="team_id" id="ntTeamIdInput" required placeholder="auto-generated from full_name" pattern="[A-Za-z0-9_\\-]+" title="Letters, digits, dash, underscore only. Must be unique." oninput="_ntOnTeamIdInput()">
         </label>
         <label>org
-          <input type="text" name="org" list="nt-org-list" value="${esc(defaultOrg)}" placeholder="BLSZ">
-          <datalist id="nt-org-list">${_dlOpts(orgs)}</datalist>
+          <select name="org" class="nt-select" onchange="_ntOnOrgChange(this)">
+            ${(()=>{
+              // v19.9 — proper <select> dropdown for org. The user wanted a
+              // real dropdown menu here; the previous input+datalist was
+              // flaky across browsers. We include every existing org from
+              // teams.csv plus an "(+) Add new org…" sentinel that prompts
+              // for a fresh value and inserts it as the current selection.
+              const opts=orgs.map(o=>`<option value="${esc(o)}"${o===defaultOrg?' selected':''}>${esc(o)}</option>`).join('');
+              const blszFallback=orgs.includes('BLSZ')?'':`<option value="BLSZ"${defaultOrg==='BLSZ'?' selected':''}>BLSZ</option>`;
+              return blszFallback+opts+'<option value="__new__">(+) Add new org…</option>';
+            })()}
+          </select>
         </label>
       </div>
       <div class="nt-section-hdr">Venue &amp; location</div>
@@ -4539,6 +4559,25 @@ function _ntPickColor(slot, hex){
   const p=document.getElementById('nt-prev-'+slot);
   if(v) v.value=hex||'';
   if(p) p.style.background=hex||'transparent';
+}
+// v19.9 — handler for the org <select> "(+) Add new org…" sentinel. Prompts
+// for a new label and inserts it as a fresh selected option so the user can
+// onboard a brand-new organisation without dropping into the Data Editor.
+function _ntOnOrgChange(sel){
+  if(!sel || sel.value!=='__new__') return;
+  const fresh=prompt('Enter the new organisation label (e.g. BLSZ, NSZK):','');
+  if(!fresh || !fresh.trim()){
+    // Cancel/empty → snap back to the previous option (first one that isn't
+    // the sentinel). We never want "__new__" to remain the selected value.
+    for(const opt of sel.options){ if(opt.value && opt.value!=='__new__'){sel.value=opt.value;break;} }
+    return;
+  }
+  const v=fresh.trim();
+  // Insert a new option right above the sentinel and select it.
+  const opt=document.createElement('option');
+  opt.value=v;opt.textContent=v;
+  sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+  sel.value=v;
 }
 
 async function _submitNewTeam(btn){
@@ -4922,9 +4961,18 @@ function renderPlayView(){
   const awayTeams=_playTeamsInOrg(_playAwayOrg);
   // Default selections — snap to the first team of the side's ORG if the
   // current team isn't in scope (happens on first render OR after an ORG
-  // change saved before this render).
-  if(!_playHome || !homeTeams.some(t=>t.id===_playHome)) _playHome=(homeTeams[0]&&homeTeams[0].id)||list[0].id;
-  if(!_playAway || !awayTeams.some(t=>t.id===_playAway)) _playAway=(awayTeams[0]&&awayTeams[0].id)||list[Math.min(1,list.length-1)].id;
+  // change saved before this render). v19.9: for BLSZ, prefer the first
+  // team in the highest-occupied MB division (MB1 → MB2 → MB3 → Rest)
+  // instead of the global alphabetical first so the dropdown opens on the
+  // top-tier team that the user expects.
+  if(!_playHome || !homeTeams.some(t=>t.id===_playHome)){
+    const first=_playFirstTeamByDivision(homeTeams,_playHomeOrg);
+    _playHome=(first&&first.id)||list[0].id;
+  }
+  if(!_playAway || !awayTeams.some(t=>t.id===_playAway)){
+    const first=_playFirstTeamByDivision(awayTeams,_playAwayOrg);
+    _playAway=(first&&first.id)||list[Math.min(1,list.length-1)].id;
+  }
   if(!_playData)_playData=_emptyPlayData();
   // Initialise stadium combobox value from home team's stadium on the very
   // first render. Subsequent home swaps reuse `_playSetHome` which keeps
@@ -5207,6 +5255,47 @@ function _playResultHTML(){
   if(d.het!==null)periods.push(`ET ${d.het}:${d.aet}`);
   if(d.hpen!==null)periods.push(`PEN ${d.hpen}:${d.apen}`);
   const winnerName=homeScore>awayScore?hTeam.name:(awayScore>homeScore?aTeam.name:null);
+  // v19.9 — when the user is playing the SECOND leg of a two-legged tie,
+  // surface the aggregate (this leg's 90' + leg-1's 90') so the popup is
+  // useful immediately, not only after Save. Looks up the matching leg-1
+  // row via `_playFindLeg1Row` (same-season, reversed home/away, match_type
+  // ∈ {0,''}). If no leg-1 exists yet (the user pressed leg-2 by mistake),
+  // the aggregate panel is suppressed.
+  let aggHtml='';
+  if(_playKind==='leg2' && d.h1!==null && d.h2!==null){
+    const leg1=(typeof _playFindLeg1Row==='function')?_playFindLeg1Row():null;
+    if(leg1){
+      // From the leg-2 home team's perspective: aggregate-home = leg2 home
+      // 90' goals + leg-1 away goals (leg-1's "away" is the leg-2 home
+      // team's first-leg score). Same swap for the away side.
+      const aggH=(d.h1||0)+(d.h2||0)+(leg1.a_ft||0);
+      const aggA=(d.a1||0)+(d.a2||0)+(leg1.h_ft||0);
+      // Away-goals tiebreaker for the rendered winner label (matches the
+      // canonical _nkAggregateTeam rule: aggregate first, then away-goals).
+      let aggWinner='';
+      if(aggH>aggA) aggWinner=hTeam.name||hTeam.id;
+      else if(aggH<aggA) aggWinner=aTeam.name||aTeam.id;
+      else {
+        // Tied aggregate → away-goals. Leg-1 home team's away goals = leg-2
+        // home team's leg-1 score, which is `leg1.a_ft`. Leg-2 home team's
+        // own away goals = leg-2 away side's 90'... wait, away goals means
+        // goals scored AT the opponent's ground. Leg-2 HOME side scored
+        // `leg1.a_ft` away in leg 1 (when they were away). Leg-2 AWAY side
+        // scored `d.a1 + d.a2` away in leg 2.
+        const homeAway=leg1.a_ft||0;
+        const awayAway=(d.a1||0)+(d.a2||0);
+        if(homeAway>awayAway) aggWinner=hTeam.name||hTeam.id;
+        else if(awayAway>homeAway) aggWinner=aTeam.name||aTeam.id;
+        // Still tied → falls through to PEN; leave label blank.
+      }
+      const label=aggWinner?`Aggregate winner: ${esc(aggWinner)}`:'Aggregate tied — away goals / PEN decide';
+      aggHtml=`<div class="play-result-agg">
+        <div class="play-result-agg-row"><b>Leg 1</b> ${esc(leg1.h_ft+'')} – ${esc(leg1.a_ft+'')} <span class="play-agg-sub">(reversed: ${esc(leg1.rounds||'')}${leg1.date?' · '+esc(leg1.date):''})</span></div>
+        <div class="play-result-agg-row"><b>Leg 2</b> ${(d.h1||0)+(d.h2||0)} – ${(d.a1||0)+(d.a2||0)} <span class="play-agg-sub">(this match, 90')</span></div>
+        <div class="play-result-agg-row play-agg-total"><b>Aggregate</b> ${aggH} – ${aggA} · ${esc(label)}</div>
+      </div>`;
+    }
+  }
   const calcHtml=d.calcLog.length?`
     <div class="play-calc">
       <div class="play-calc-title">How the scores were computed</div>
@@ -5220,6 +5309,7 @@ function _playResultHTML(){
     </div>
     ${periods.length?`<div class="play-result-periods">${periods.join('  ·  ')}</div>`:''}
     <div class="play-result-winner">${_playStage==='saved'?'✅ Saved to matches.csv':(winnerName?`🏆 ${esc(winnerName)} wins`:(_playIsFinalStage()?'Draw':'…in progress'))}</div>
+    ${aggHtml}
     ${calcHtml}
   </div>`;
 }
@@ -5235,7 +5325,13 @@ function _playSetHome(v){
 function _playSetAway(v){if(_playStage!=='ready')return;_playAway=v;_playReset();}
 function _playSwap(){
   if(_playStage!=='ready')return;
-  const t=_playHome;_playHome=_playAway;_playAway=t;
+  // v19.9 — swap BOTH the team ids AND the per-side ORG filters. The
+  // previous version swapped only the ids, so toggling ⇄ left the away
+  // dropdown trying to render the new "away" team out of the OLD away ORG
+  // (and vice-versa) — the snap-to-first-team fallback then immediately
+  // overrode the swap with a team from the wrong side.
+  const tT=_playHome;_playHome=_playAway;_playAway=tT;
+  const tO=_playHomeOrg;_playHomeOrg=_playAwayOrg;_playAwayOrg=tO;
   // After swap the new "home" team is what was away — refresh stadium too.
   if(!_playStadiumTouched) _playStadium=_playHomeStadium();
   _playReset();
@@ -5245,11 +5341,13 @@ function _playSwap(){
 function _playSetHomeOrg(v){
   if(_playStage!=='ready')return;
   _playHomeOrg=String(v||'').trim();
-  // Snap _playHome to the first team in the new ORG if the current team is
-  // no longer in scope.
+  // v19.9 — snap to the first-by-division team (MB1 → MB2 → MB3 → Rest for
+  // BLSZ; alphabetical first otherwise) when the current pick has fallen
+  // out of scope.
   const list=_playTeamsInOrg(_playHomeOrg);
   if(list.length && !list.some(t=>t.id===_playHome)){
-    _playHome=list[0].id;
+    const first=_playFirstTeamByDivision(list,_playHomeOrg);
+    _playHome=(first&&first.id)||list[0].id;
     if(!_playStadiumTouched) _playStadium=_playHomeStadium();
   }
   _playReset();
@@ -5259,7 +5357,8 @@ function _playSetAwayOrg(v){
   _playAwayOrg=String(v||'').trim();
   const list=_playTeamsInOrg(_playAwayOrg);
   if(list.length && !list.some(t=>t.id===_playAway)){
-    _playAway=list[0].id;
+    const first=_playFirstTeamByDivision(list,_playAwayOrg);
+    _playAway=(first&&first.id)||list[0].id;
   }
   _playReset();
 }
@@ -5284,6 +5383,40 @@ function _playTeamsInOrg(org){
     if(want==='(none)') return !o;
     return o===want;
   }).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+}
+// v19.9 — shared MB-B division classifier for the current season.
+//   1M, 1N                 → MB1
+//   2A, 2B, 2C             → MB2
+//   3NY, 3K, 3É, 3D        → MB3
+//   everything else        → Rest
+// Used both by renderPlayView()'s grouped <optgroup> render and by
+// `_playFirstTeamByDivision` below when picking sensible defaults.
+function _playDivisionFor(teamId){
+  if(!teamId || typeof _teamMBGroup!=='function') return 'Rest';
+  const season=(typeof currentDate==='function'&&typeof seasonFor==='function')
+    ? seasonFor(currentDate()) : '';
+  const g=_teamMBGroup(teamId,season);
+  if(g==='1M'||g==='1N') return 'MB1';
+  if(g==='2A'||g==='2B'||g==='2C') return 'MB2';
+  if(g==='3NY'||g==='3K'||g==='3É'||g==='3D') return 'MB3';
+  return 'Rest';
+}
+// Default-team picker for the BLSZ-grouped dropdown: walks the MB1 → MB2 →
+// MB3 → Rest tier list and returns the first alphabetical team in the
+// highest-occupied tier. Falls back to the first team of `teams` (already
+// alphabetical) for non-BLSZ orgs or when no division mapping resolves.
+function _playFirstTeamByDivision(teams, org){
+  if(!teams || !teams.length) return null;
+  if(String(org||'').trim()!=='BLSZ') return teams[0];
+  const order=['MB1','MB2','MB3','Rest'];
+  for(const tier of order){
+    const inTier=teams.filter(t=>_playDivisionFor(t.id)===tier);
+    if(inTier.length){
+      return inTier.slice()
+        .sort((a,b)=>(a.name||a.id||'').localeCompare(b.name||b.id||''))[0];
+    }
+  }
+  return teams[0];
 }
 // Kind-based setter: 'league' | 'single' | 'leg1' | 'leg2'. Keeps
 // _playType in sync (taking _playNeutral into account for 'single').
