@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.7</title>
+<title>League Manager v2026.05.19.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -256,6 +256,13 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .round-pill .pill-r{background:rgba(255,255,255,.25);border-radius:8px;padding:0 4px;font-size:9px;}
 .round-pill[draggable="true"]{cursor:grab;}
 .round-pill[draggable="true"]:active{cursor:grabbing;}
+/* v19.8 — cup logos. One PNG per competition family (MB / KK / NK / NSZK /
+   CHL / EURO / UEFA / WC) inside the Drive logos folder; cupLogoFor() in
+   the JS layer picks the right one. */
+.rc-cup-logo{width:28px;height:28px;object-fit:contain;flex-shrink:0;}
+.pill-cup{width:12px;height:12px;object-fit:contain;flex-shrink:0;margin-right:2px;background:rgba(255,255,255,.35);border-radius:3px;padding:1px;}
+.trophy-col-logo{width:18px;height:18px;object-fit:contain;vertical-align:middle;margin-right:6px;}
+.trophy-card-logo{width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px;}
 .cal-day.drop-target{background:var(--green-l);box-shadow:inset 0 0 0 2px var(--green);}
 .cal-tooltip{position:absolute;z-index:200;min-width:220px;max-width:340px;background:#111;color:#f5f5f5;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none;}
 .cal-tt-head{font-size:11px;color:#d1d5db;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.12);}
@@ -845,7 +852,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.7</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1265,6 +1272,33 @@ function logoFor(teamId,season){
   if(!e)return null;
   if(season&&e.byS[season])return e.byS[season];
   return e.current||Object.values(e.byS)[0]||null;
+}
+// v19.8 — competition-logo lookup. The user dropped MB.png / KK.png / NK.png /
+// NSZK.png / CHL.png / UEFA.png / WC.png / EURO.png into the Drive logos
+// folder; `loadLogos()` already keys them by filename-stem lowercased (so
+// `logoCache['mb']`, `logoCache['kk']`, …). This helper accepts either a
+// raw round code (`"MB-B-1"`, `"KKQ-1"`, `"NKW-3-1"`, `"NSZK-F"`, …) or a
+// family / competition label (`"MB-B"`, `"MB-R"`, `"MB"`, `"KK"`, `"NK"`,
+// `"NSZK"`, `"CHL"`, `"EURO"`, `"UEFA"`, `"WC"`) and resolves it to the
+// closest available cup logo URL — or null when nothing matches.
+function cupLogoFor(roundOrFamily){
+  const raw=String(roundOrFamily||'').trim();
+  if(!raw) return null;
+  // Already a logoCache key? (e.g. team-style 3-letter IDs that happen to
+  // collide with cup names — `logoFor` handles those already, but be permissive.)
+  const direct=logoCache[raw.toLowerCase()];
+  if(direct&&direct.current) return direct.current;
+  // Otherwise derive the family the same way the Matches view does, then
+  // collapse MB-B / MB-R into MB so the single MB.png covers both.
+  let fam=(typeof _lgRoundFamily==='function')?_lgRoundFamily(raw):raw;
+  if(/^MB(-|$)/i.test(fam)) fam='MB';
+  if(/^KK/i.test(fam))      fam='KK';
+  if(/^NK/i.test(fam))      fam='NK';
+  if(/^NSZK/i.test(fam))    fam='NSZK';
+  if(!fam) return null;
+  const e=logoCache[fam.toLowerCase()];
+  if(!e) return null;
+  return e.current||Object.values(e.byS||{})[0]||null;
 }
 
 // ── TEAM / SKILL HELPERS ──────────────────────────────────────
@@ -2273,10 +2307,14 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   // round's own code + date go into openPlayModalForRound so the saved
   // match lands on this exact round.
   const _addBtn=`<button class="rc-add" onclick="event.stopPropagation();openPlayModalForRound('${esc(info.round).replace(/'/g,'&#39;')}','${esc(info.date)}')" title="Add a match to this round — opens the Play form with this round pre-selected">+</button>`;
+  // v19.8 — cup logo (MB / KK / NK / NSZK / CHL / EURO / UEFA / WC) next to
+  // the round code when the user has uploaded the corresponding PNG.
+  const _cupLogo=(typeof cupLogoFor==='function')?cupLogoFor(info.round):null;
+  const _cupHtml=_cupLogo?`<img class="rc-cup-logo" src="${_cupLogo}" alt="" title="${esc(_lgRoundFamily(info.round)||'')}">`:'';
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
       <div>
-        <div class="rc-title"><span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(info.round)}</div>
+        <div class="rc-title">${_cupHtml}<span class="comp-dot" style="background:${safeColor(col)}"></span>${esc(info.round)}</div>
         <div class="rc-sub">${formatDate(info.date)}${info.game_day?' · Game day '+esc(info.game_day):''}${info.season?' · '+esc(seasonLabel(info.season)):''}</div>
       </div>
       <div class="rc-play">
@@ -4135,6 +4173,11 @@ function renderCalendarGrid(){
     const isSStart=dateStr===SEASON_START;
     const pills=rounds.map(r=>{
       const col=compColor(r.competition);
+      // v19.8 — cup-logo prefix on every pill when the competition has an
+      // uploaded PNG. cupLogoFor() falls back to family-derivation when the
+      // competition column itself isn't a logo key (e.g. "MB-B" → MB.png).
+      const _cup=(typeof cupLogoFor==='function')?(cupLogoFor(r.competition)||cupLogoFor(r.round)):null;
+      const _cupImg=_cup?`<img class="pill-cup" src="${_cup}" alt="">`:'';
       return`<button class="round-pill${r.played?' played':''}"
         style="background:${safeColor(col)}"
         draggable="true"
@@ -4143,7 +4186,7 @@ function renderCalendarGrid(){
         onmouseleave="_hideCalTooltip()"
         onclick="openRoundPanel(event,'${esc(r.competition)}','${esc(r.round)}','','${esc(dateStr)}')"
         title="${esc(r.competition)} — ${esc(r.round)}${r.played?' (played)':''} · drag to move">
-        <span class="pill-r">${esc(r.round)}</span>
+        ${_cupImg}<span class="pill-r">${esc(r.round)}</span>
       </button>`;
     }).join('');
     html+=`<div class="cal-day${isOther?' other-month':''}${isCur?' current':''}${isRealToday?' today':''}"
@@ -4353,14 +4396,14 @@ function openNewTeamModal(){
     <form id="newTeamForm" class="nt-form" onsubmit="event.preventDefault();return false;">
       <div class="nt-section-hdr">Team identity</div>
       <div class="nt-grid">
-        <label>team_id <span class="nt-req">*</span>
-          <input type="text" name="team_id" required placeholder="e.g. FRA" pattern="[A-Za-z0-9_\\-]+" title="Letters, digits, dash, underscore only. Must be unique.">
-        </label>
-        <label>full_name
-          <input type="text" name="full_name" placeholder="Short, Long Official Name">
+        <label>full_name <span class="nt-req">*</span>
+          <input type="text" name="full_name" placeholder="Full team name (e.g. Ferencvárosi Torna Club)" oninput="_ntOnFullNameInput(this.value)">
         </label>
         <label>long_name
-          <input type="text" name="long_name" placeholder="Longer display name (optional override)">
+          <input type="text" name="long_name" placeholder="Longer display name (optional)">
+        </label>
+        <label>team_id <span class="nt-req">*</span>
+          <input type="text" name="team_id" id="ntTeamIdInput" required placeholder="auto-generated from full_name" pattern="[A-Za-z0-9_\\-]+" title="Letters, digits, dash, underscore only. Must be unique." oninput="_ntOnTeamIdInput()">
         </label>
         <label>org
           <input type="text" name="org" list="nt-org-list" value="${esc(defaultOrg)}" placeholder="BLSZ">
@@ -4409,9 +4452,59 @@ function openNewTeamModal(){
       </div>
       <div id="ntError" class="nt-error" style="display:none"></div>
     </form>`;
+  // v19.8 — fresh form, so the auto-id flag resets: full_name typing will
+  // populate team_id until the user manually edits team_id.
+  _ntTeamIdManual=false;
   modal.classList.add('open');
-  // Focus the team_id field so the user can type immediately.
-  setTimeout(()=>{const el=body.querySelector('input[name="team_id"]');if(el)el.focus();},30);
+  // Focus the full_name field so typing it can drive the team_id auto-fill.
+  setTimeout(()=>{const el=body.querySelector('input[name="full_name"]');if(el)el.focus();},30);
+}
+
+// v19.8 — auto team_id generation from full_name. While the user has not
+// manually edited the team_id field, every keystroke in full_name
+// recomputes the id from the starting letters of each word, uppercases it,
+// and adds a numeric suffix if that base id is already used in teams.csv.
+let _ntTeamIdManual=false;
+function _ntOnTeamIdInput(){
+  // Mark as manual the moment the user touches the id field. Empty value
+  // re-enables auto-fill so they can wipe it and let full_name drive again.
+  const el=document.getElementById('ntTeamIdInput');
+  if(!el) return;
+  _ntTeamIdManual=el.value.trim().length>0;
+}
+function _ntOnFullNameInput(fullVal){
+  if(_ntTeamIdManual) return;
+  const el=document.getElementById('ntTeamIdInput');
+  if(!el) return;
+  el.value=_ntDeriveTeamId(fullVal);
+}
+function _ntDeriveTeamId(fullName){
+  // Take the part before the first "," (the short half of the user's
+  // existing "Short, Long" convention) when present so that "Ferencvárosi
+  // Torna Club, FTC" still derives "FTC" / "FTC" rather than "F". Then
+  // collapse to starting letters of each word, drop non-alnum, uppercase.
+  let src=String(fullName||'').trim();
+  const idx=src.indexOf(',');
+  if(idx>0) src=src.slice(0,idx).trim();
+  // Latin-ize: replace accented characters with their base letter so the
+  // generated id stays ASCII-friendly. Falls back to the raw char if
+  // normalize isn't supported.
+  let ascii=src;
+  try{ ascii=src.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }catch(_){}
+  const words=ascii.split(/\s+/).filter(Boolean);
+  let base=words.map(w=>w[0]||'').join('').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+  if(!base) return '';
+  // Uniqueness — if the base id is already used, append a numeric suffix.
+  const td=DB.teams;
+  const tidIdx=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='team_id');
+  const taken=new Set();
+  if(tidIdx>=0) td.r.forEach(r=>{const v=String(r[tidIdx]||'').trim();if(v) taken.add(v.toUpperCase());});
+  if(!taken.has(base.toUpperCase())) return base;
+  for(let n=2;n<999;n++){
+    const cand=base+n;
+    if(!taken.has(cand.toUpperCase())) return cand;
+  }
+  return base;
 }
 
 // v19.6 — palette-style swatch picker for the new-team form, sharing the
@@ -4458,6 +4551,7 @@ async function _submitNewTeam(btn){
   const fd=new FormData(form);
   const get=(k)=>String(fd.get(k)||'').trim();
   const team_id=get('team_id');
+  const full_name=get('full_name');
   if(!team_id){_show('team_id is required.');return;}
   if(!/^[A-Za-z0-9_\-]+$/.test(team_id)){_show('team_id may only contain letters, digits, dash, underscore.');return;}
   // Uniqueness check against existing teams.csv rows.
@@ -4467,20 +4561,42 @@ async function _submitNewTeam(btn){
     _show(`team_id "${team_id}" already exists in teams.csv.`);
     return;
   }
+  // v19.8 — popup warning if any non-id field is empty. The user wanted an
+  // explicit confirm rather than silent partial save. We list the missing
+  // fields, and `confirm()` lets them either go back to fix them or proceed.
+  const fieldsToCheck=['full_name','long_name','stadium','location','latitude','longitude','foundation','org','color','color2','color3','skills','home'];
+  const missing=fieldsToCheck.filter(k=>!get(k));
+  if(missing.length){
+    const ok=confirm(`⚠ The following fields are empty:\n\n• ${missing.join('\n• ')}\n\nClick OK to save the team anyway, or Cancel to fill them in first.`);
+    if(!ok) return;
+  }
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  // v19.8 — preserve current header set (no auto-append). We resolve the
+  // canonical team-name column the same way rebuildTeamMap() does, and only
+  // split into a separate `long_name` column when that column already
+  // exists. Otherwise we collapse `full, long` into the single name column
+  // (the user's existing "Short, Long" convention parsed by splitTeamNames).
+  const nameColIdx=td.h.findIndex(h=>{
+    const lc=String(h||'').trim().toLowerCase();
+    return lc==='name'||lc==='team_name'||lc==='team_names'||lc==='full_name';
+  });
+  const longColIdx=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='long_name');
+  const long_name=get('long_name');
+  let combinedName=full_name;
+  if(longColIdx<0 && long_name){
+    // No long_name column → fold long part into name col as "Short, Long".
+    combinedName=full_name?(full_name+(long_name?', '+long_name:'')):long_name;
+  }
   try{
-    // Ensure DB.teams.h has every column from the canonical schema so the row
-    // we build below maps cleanly. (Idempotent — adds only missing cols.)
-    if(typeof ensureMatchCols!=='function' || true){
-      (ED_DEFAULTS.teams||[]).forEach(col=>{
-        if(!td.h.includes(col)){td.h.push(col);td.r.forEach(r=>r.push(''));}
-      });
-    }
-    // Build teams.csv row in the exact order of the current header.
+    // Build teams.csv row using the EXISTING header order. Columns the user
+    // doesn't have stay absent — we never grow the header from this path.
     const teamObj={
       team_id,
-      full_name:get('full_name'),
-      long_name:get('long_name'),
+      full_name:combinedName,
+      name:combinedName,
+      team_name:combinedName,
+      team_names:combinedName,
+      long_name:long_name,
       stadium:get('stadium'),
       color:get('color'),
       color2:get('color2'),
@@ -4491,19 +4607,30 @@ async function _submitNewTeam(btn){
       foundation:get('foundation'),
       org:get('org')
     };
-    const newTeamRow=td.h.map(col=>teamObj[col]!==undefined?teamObj[col]:'');
+    // Map by header lowercase so column-name casing differences don't drop data.
+    const newTeamRow=td.h.map(col=>{
+      const lc=String(col||'').trim().toLowerCase();
+      // Only the resolved name column actually receives the combined name.
+      // Sibling lookup keys exist purely to handle whichever name spelling
+      // the user's CSV happens to use.
+      if(['name','team_name','team_names','full_name'].includes(lc)){
+        return (td.h.indexOf(col)===nameColIdx)?combinedName:'';
+      }
+      const direct=teamObj[lc];
+      return direct!==undefined?direct:'';
+    });
     td.r.push(newTeamRow);
-    // Ensure DB.team_skills.h has every canonical column.
+    // team_skills row — keep canonical schema for this sheet since the user
+    // didn't object to it. Only add missing columns to team_skills (not teams).
     const sd=DB.team_skills;
     (ED_DEFAULTS.team_skills||[]).forEach(col=>{
       if(!sd.h.includes(col)){sd.h.push(col);sd.r.forEach(r=>r.push(''));}
     });
     const halfNow=(typeof halfSeasonFor==='function'&&typeof currentDate==='function')
       ? halfSeasonFor(currentDate()) : '';
-    // v19.6 — only `skills`, `home`, and `half_season` are user-entered.
-    // The per-period att/def + penelties columns are derived/calculated by
-    // the downstream pipeline, so we leave them blank here. Mapping to ''
-    // (not undefined) keeps the CSV row well-formed.
+    // Only `skills`, `home`, and `half_season` are user-entered; per-period
+    // att/def + penelties are derived/calculated downstream so they stay
+    // blank here.
     const skillObj={
       team_id,
       skills:get('skills'),
@@ -4519,21 +4646,15 @@ async function _submitNewTeam(btn){
     };
     const newSkillRow=sd.h.map(col=>skillObj[col]!==undefined?skillObj[col]:'');
     sd.r.push(newSkillRow);
-    // Rebuild the in-memory team_id → object cache so the new row is visible
-    // to teamById(), the Teams view, the Play view, etc.
     if(typeof rebuildTeamMap==='function') rebuildTeamMap();
-    // Persist both sheets to Drive. Sequential so a teams.csv failure doesn't
-    // leave an orphan team_skills row pending.
     await saveSheet('teams');
     await saveSheet('team_skills');
     if(typeof toast==='function') toast(`✅ Team "${team_id}" added to teams.csv + team_skills.csv (${halfNow||'no half'})`);
     closeInfoModal();
-    // Re-render the Teams view so the new card appears immediately.
     if(typeof currentView!=='undefined' && currentView==='teams') renderTeamsView();
   }catch(e){
     _show('Save failed: '+(e&&e.message||e));
     if(btn){btn.disabled=false;btn.textContent='✓ Generate team';}
-    // Roll back the in-memory append so a retry doesn't double-insert.
     if(td.r.length){
       const last=td.r[td.r.length-1];
       if(last&&tidIdx>=0&&String(last[tidIdx]||'').trim()===team_id) td.r.pop();
@@ -8184,7 +8305,13 @@ function renderTrophiesView(){
   // Build an aggregate-card per competition. Sorts teams by count desc,
   // then by name asc; shows up to 12 rows per card (rest collapses).
   const _aggCardHTML=(label,m)=>{
-    if(!m.size) return `<div class="trophy-agg-card"><h4>${esc(label)}</h4><div class="trophy-empty">No winners yet.</div></div>`;
+    // v19.8 — cup logo prefix on the card heading when available (MB / NK /
+    // KK / NSZK). "Total (all four)" has no single competition logo so it
+    // gets nothing; cupLogoFor() returns null for that and the prefix is
+    // simply omitted.
+    const _cup=(typeof cupLogoFor==='function')?cupLogoFor(label):null;
+    const _cupImg=_cup?`<img class="trophy-card-logo" src="${_cup}" alt="">`:'';
+    if(!m.size) return `<div class="trophy-agg-card"><h4>${_cupImg}${esc(label)}</h4><div class="trophy-empty">No winners yet.</div></div>`;
     const arr=[...m.entries()].map(([id,n])=>{
       const t=(typeof teamById==='function')?teamById(id):{name:id};
       return {id, n, name:String(t.long_name||t.name||id)};
@@ -8193,7 +8320,7 @@ function renderTrophiesView(){
     const moreCount=arr.length-top.length;
     const rowsHtml=top.map(t=>`<div class="trophy-agg-row">${_chip(t.id)}<span class="count">${t.n}</span></div>`).join('');
     const more=moreCount>0?`<div class="trophy-agg-row"><span class="trophy-empty">+ ${moreCount} more team${moreCount===1?'':'s'} with 1 each</span></div>`:'';
-    return `<div class="trophy-agg-card"><h4>${esc(label)} <span class="trophy-empty">(${arr.length} winner${arr.length===1?'':'s'})</span></h4>${rowsHtml}${more}</div>`;
+    return `<div class="trophy-agg-card"><h4>${_cupImg}${esc(label)} <span class="trophy-empty">(${arr.length} winner${arr.length===1?'':'s'})</span></h4>${rowsHtml}${more}</div>`;
   };
   let html=`<div class="trophies-wrap">
     <div class="results-comp-title" style="border:1px solid var(--border);border-radius:var(--r2) var(--r2) 0 0;background:var(--surface);border-bottom:0;padding:14px 18px 12px;display:flex;align-items:center;gap:10px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em;">🥇 Trophies <span class="sc" style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-weight:400;">${rows.length} season${rows.length===1?'':'s'}</span></div>`;
@@ -8216,7 +8343,10 @@ function renderTrophiesView(){
       <table>
         <thead><tr>
           <th class="th-season">Season</th>
-          <th>MB</th><th>NK</th><th>KK</th><th>NSZK</th>
+          <th>${(()=>{const u=cupLogoFor('MB');return u?`<img class="trophy-col-logo" src="${u}" alt="">`:''})()}MB</th>
+          <th>${(()=>{const u=cupLogoFor('NK');return u?`<img class="trophy-col-logo" src="${u}" alt="">`:''})()}NK</th>
+          <th>${(()=>{const u=cupLogoFor('KK');return u?`<img class="trophy-col-logo" src="${u}" alt="">`:''})()}KK</th>
+          <th>${(()=>{const u=cupLogoFor('NSZK');return u?`<img class="trophy-col-logo" src="${u}" alt="">`:''})()}NSZK</th>
         </tr></thead>
         <tbody>${rows.map(r=>`<tr>
           <td class="tr-season">${esc(si>=0?String(r[si]||''):'')}</td>
