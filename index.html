@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.1</title>
+<title>League Manager v2026.05.19.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -783,7 +783,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -7633,8 +7633,26 @@ function renderTrophiesView(){
   // Make sure the header is present even if no rows exist yet, so the
   // table still draws the four columns.
   if(!d.h.length) d.h=[...ED_DEFAULTS.trophies];
+  // v19.2 — tolerate CSVs with blank or non-matching header rows. Look up
+  // each known column by name first; if NONE of the four trophy columns
+  // resolves, fall back to positional schema [0]=season, [1]=MB, [2]=NK,
+  // [3]=KK, [4]=NSZK. Any extra columns are ignored. We also rewrite
+  // `d.h` in place so the next save persists the corrected headers to
+  // Drive, fixing the source file without re-uploading.
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name.toLowerCase());
-  const si=_hi('season'),mbI=_hi('MB'),nkI=_hi('NK'),kkI=_hi('KK'),nszkI=_hi('NSZK');
+  let si=_hi('season'),mbI=_hi('MB'),nkI=_hi('NK'),kkI=_hi('KK'),nszkI=_hi('NSZK');
+  if(si<0 && mbI<0 && nkI<0 && kkI<0 && nszkI<0){
+    // Headers are unusable. Assume positional schema.
+    console.warn('[trophies] all headers missing — applying positional schema',d.h);
+    si=0; mbI=1; nkI=2; kkI=3; nszkI=4;
+    // Repair the header row in place so the next saveSheet('trophies')
+    // writes correct column names to Drive.
+    const fixed=[...ED_DEFAULTS.trophies];
+    // Preserve any extra trailing columns the user might have.
+    while(fixed.length<d.h.length) fixed.push('');
+    d.h=fixed;
+    if(typeof toast==='function') toast('Trophies: blank headers detected — using positional schema. Save now to repair file.','warn');
+  }
   // Sort rows newest-first by season string. The user spec accepts either
   // a single-year (`1909`) or two-part (`1992/93`) season format; sort
   // works lexicographically on both since the year prefix dominates.
@@ -7685,7 +7703,19 @@ function renderTrophiesView(){
   if(!rows.length){
     html+=`<div class="results-empty">No trophies recorded yet. Attach a CSV via ⚙ Data Editor → Trophies, or play through a season — the season-end rollover writes a row automatically.</div>`;
   } else {
-    html+=`<div class="trophies-flat">
+    // v19.2 — aggregate cards now sit ABOVE the per-season table per user
+    // request. Per-season table sorts newest-first (already done above).
+    html+=`<div class="trophy-agg">
+      <h3>Aggregate winners</h3>
+      <div class="trophy-agg-grid">
+        ${_aggCardHTML('MB',counts.MB)}
+        ${_aggCardHTML('NK',counts.NK)}
+        ${_aggCardHTML('KK',counts.KK)}
+        ${_aggCardHTML('NSZK',counts.NSZK)}
+        ${_aggCardHTML('Total (all four)',counts.TOTAL)}
+      </div>
+    </div>
+    <div class="trophies-flat" style="margin-top:18px;">
       <table>
         <thead><tr>
           <th class="th-season">Season</th>
@@ -7699,16 +7729,6 @@ function renderTrophiesView(){
           <td>${_chip(nszkI>=0?r[nszkI]:'')}</td>
         </tr>`).join('')}</tbody>
       </table>
-    </div>
-    <div class="trophy-agg">
-      <h3>Aggregate winners</h3>
-      <div class="trophy-agg-grid">
-        ${_aggCardHTML('MB',counts.MB)}
-        ${_aggCardHTML('NK',counts.NK)}
-        ${_aggCardHTML('KK',counts.KK)}
-        ${_aggCardHTML('NSZK',counts.NSZK)}
-        ${_aggCardHTML('Total (all four)',counts.TOTAL)}
-      </div>
     </div>`;
   }
   html+=`</div>`;
