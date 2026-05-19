@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.3</title>
+<title>League Manager v2026.05.19.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -113,6 +113,16 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .rc-play-btn.next{background:var(--blue);}
 .rc-play-btn.next:hover{background:#2563c7;}
 .rc-stage{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:3px 8px;background:var(--surface2);border-radius:999px;}
+/* v19.4 — "+ " add-match button on each round-card header. Opens the Play
+   modal pre-filled with this round's code + date. */
+.rc-add{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;font-size:18px;font-weight:700;line-height:1;color:#fff;background:var(--green);border:none;border-radius:50%;cursor:pointer;transition:background .15s,transform .15s;padding:0;}
+.rc-add:hover{background:var(--green-m);transform:scale(1.08);}
+.rc-add:active{transform:scale(.95);}
+/* When the Play UI is rendered inside the info modal, its own outer wrap
+   needs to behave a bit differently from the standalone view: shrink the
+   gigantic top padding and let the columns wrap on narrow modals. */
+.play-wrap.play-in-modal{padding:6px 2px 14px;max-width:none;}
+.play-wrap.play-in-modal .play-teams{gap:10px;}
 .m-score.hidden{color:var(--dimmed);background:var(--surface2);font-size:16px;}
 .m-score.half{background:#fef3c7;color:#92400e;}
 .lg-side-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;}
@@ -451,6 +461,12 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .blsz-cell .b-pts{font-weight:700;font-size:13px;}
 .blsz-cell .b-plc{font-size:10px;color:var(--muted);}
 .blsz-cell .b-rng{font-size:9px;color:var(--dimmed);}
+/* v19.4 — ongoing series indicator: subtle warm background + dashed left
+   edge so the cell stands out without screaming. Tag uses an hourglass
+   glyph that the user can hover for the tooltip showing the raw value. */
+.blsz-flat tbody td.b-ongoing{background:linear-gradient(0deg,rgba(250,180,40,.10),rgba(250,180,40,.10)),var(--surface);box-shadow:inset 2px 0 0 rgba(220,150,20,.55);}
+.blsz-flat tbody td.b-ongoing.b-total{background:linear-gradient(0deg,rgba(250,180,40,.14),rgba(250,180,40,.14)),var(--surface);}
+.b-ongoing-tag{display:inline-block;margin-left:3px;font-size:10px;color:#b87b08;cursor:help;vertical-align:baseline;}
 .blsz-flat tbody td.b-team .res-team-badge{display:inline-flex;vertical-align:middle;margin-right:8px;}
 .blsz-legend{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
 .blsz-legend>summary{cursor:pointer;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--surface2);list-style:none;user-select:none;}
@@ -787,7 +803,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2202,6 +2218,11 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
     stageLabel=['Kick-off','Half-time','Full Time'][stage];
   }
 
+  // v19.4 — "+" button on the right of every round-card header. Opens the
+  // Play UI inside the shared info modal with the round pre-selected. The
+  // round's own code + date go into openPlayModalForRound so the saved
+  // match lands on this exact round.
+  const _addBtn=`<button class="rc-add" onclick="event.stopPropagation();openPlayModalForRound('${esc(info.round).replace(/'/g,'&#39;')}','${esc(info.date)}')" title="Add a match to this round — opens the Play form with this round pre-selected">+</button>`;
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
       <div>
@@ -2210,6 +2231,7 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
       </div>
       <div class="rc-play">
         <span class="rc-stage">${esc(stageLabel)}</span>
+        ${_addBtn}
       </div>
     </div>
     <div class="rc-body">${body}</div>
@@ -2842,6 +2864,16 @@ function _lgBuildPeriodLine(row,c){
 function closeInfoModal(){
   const m=document.getElementById('infoModal');
   if(m){m.classList.remove('open');}
+  // v19.4 — clear the Play-in-modal flag so the next regular ⚽ Play view
+  // render writes into #app again. We also reset the Play state machine so
+  // a cancelled half-finished simulation doesn't leak into the standalone
+  // Play view next time the user opens it.
+  if(_playInModal){
+    _playInModal=false;
+    _playStage='ready';
+    _playData=_emptyPlayData();
+    _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
+  }
 }
 function _imTeamsCol(name){
   const h=DB.teams.h;
@@ -4275,6 +4307,12 @@ let _playAwayOrg='BLSZ';
 // match-type or neutral flag.
 let _playStadium='';
 let _playStadiumTouched=false; // true once the user edits the stadium manually
+// v19.4 — when true, renderPlayView() writes its HTML into the shared
+// infoModal body (id='infoModalBody') instead of #app. Used by the round-card
+// "+" button so the user can add a match from the Matches view without
+// navigating away. Reset back to false by closeInfoModal() and by a
+// successful save flow.
+let _playInModal=false;
 // Return the set of round codes the user may pick from in the Play view's
 // Round dropdown. Rounds whose code starts with "MB-", "KK" or "NK" are
 // EXCLUDED because those are produced by the Generate Season action (MB)
@@ -4447,11 +4485,15 @@ function _playNextLabel(){
 
 // ── Main render ───────────────────────────────────────────────
 function renderPlayView(){
-  const app=document.getElementById('app');
+  // v19.4 — render target switches when the Play UI is shown in a modal
+  // (triggered from a Matches round-card "+" button). Falls back to #app
+  // if the modal body isn't in the DOM for some reason.
+  const target=_playInModal?(document.getElementById('infoModalBody')||document.getElementById('app'))
+                            :document.getElementById('app');
   if(!_teamMap)rebuildTeamMap();
   const list=[..._teamMap.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   if(!list.length){
-    app.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
+    target.innerHTML='<div class="empty">No teams yet. Add them via ⚙ Data Editor → Teams tab.</div>';return;
   }
   // v18.4 — per-side ORG filter dropdowns. Each team picker has its own ORG
   // filter above it; selecting BLSZ in the Home org dropdown restricts the
@@ -4491,9 +4533,9 @@ function renderPlayView(){
   // mid-match change can't produce an internally inconsistent row.
   const locked=_playStage!=='ready';
 
-  app.innerHTML=`
-    <div class="play-wrap">
-      <div class="play-title">⚽ Play a Match</div>
+  target.innerHTML=`
+    <div class="play-wrap${_playInModal?' play-in-modal':''}">
+      ${_playInModal?'':'<div class="play-title">⚽ Play a Match</div>'}
       ${_playStageBarHTML()}
       <div class="play-teams">
         <div class="play-team-box">
@@ -4832,6 +4874,37 @@ function _playSetNeutral(n){if(_playStage!=='ready')return;_playNeutral=!!n;_pla
 function _playSetNeutralStadium(s){if(_playStage!=='ready')return;_playNeutralStadium=s;renderPlayView();}
 function _playReset(){_playStage='ready';_playData=_emptyPlayData();_playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};renderPlayView();}
 
+// v19.4 — open the Play UI inside the shared info modal, pre-selecting the
+// given round code (and the round's date if provided). The standalone ⚽ Play
+// view stays available from the nav tab; this entry point is wired to the
+// "+" button on each Matches round-card so the user can add a match without
+// leaving the Matches view. After save (or close) the modal teardown is
+// handled by closeInfoModal() / _playSaveToMatches().
+function openPlayModalForRound(roundCode, dateHint){
+  _playInModal=true;
+  // Reset the state machine so the modal starts fresh.
+  _playStage='ready';
+  _playData=_emptyPlayData();
+  _playManual={h1:'',a1:'',h2:'',a2:'',het:'',aet:'',hpen:'',apen:''};
+  // Pre-fill the round; if the picker filtered it out (e.g. round belongs to
+  // another season) we fall through to its FRIENDLY default rather than
+  // overriding selection logic.
+  if(roundCode) _playRound=String(roundCode);
+  // Refresh the stadium from the home team so it reflects current selection
+  // when the modal opens (user can still type their own).
+  if(!_playStadiumTouched) _playStadium=_playHomeStadium();
+  const modal=document.getElementById('infoModal');
+  const title=document.getElementById('infoModalTitle');
+  if(title){
+    const dateTxt=dateHint?` · ${formatDate(dateHint)}`:'';
+    title.innerHTML=`<span>⚽ Add match</span><span class="im-sub">${esc(roundCode||'FRIENDLY')}${esc(dateTxt)}</span>`;
+  }
+  // Render Play UI into the modal body, THEN reveal the modal so the user
+  // sees content already laid out (no blank-flash).
+  renderPlayView();
+  if(modal) modal.classList.add('open');
+}
+
 // Zero-pads an unset manual input so the result is always a valid integer.
 function _playManualInt(k){const v=parseInt(_playManual[k]);return isNaN(v)||v<0?0:v;}
 
@@ -5119,7 +5192,19 @@ async function _playSaveToMatches(){
   }
   _playStage='saved';
   _playData.calcLog.push(`<b>${rowIdx>=0?'Updated':'Saved'} row #${rowObj.match_number}</b> (rounds=${esc(rowObj.rounds)}, date=${esc(scheduledDate)}, stadium=${esc(stadium||'—')})`);
-  renderPlayView();
+  // v19.4 — modal flow: close the popup and re-render the Matches view so
+  // the freshly-saved row appears inside the round-card the + button was
+  // clicked from. Keep the standalone Play view behaviour unchanged.
+  const wasInModal=_playInModal;
+  if(wasInModal){
+    _playInModal=false;
+    closeInfoModal();
+    if(typeof currentView!=='undefined' && currentView==='league'){
+      try{ renderLeagueView(); }catch(_){}
+    }
+  } else {
+    renderPlayView();
+  }
   try{
     await saveSheet('matches');
     if(typeof toast==='function')toast('✅ Match saved to matches.csv');
@@ -7209,9 +7294,19 @@ function _blszBuildProjection(season, dateCutoff){
       const maxPlace=candidates.length?Math.max(...candidates):0;
       const minPts=_blszPtsFor(info.bucket, maxPlace);
       const maxPts=_blszPtsFor(info.bucket, minPlace);
-      const curPts=_blszPtsFor(info.bucket, curPlace);
-      if(!out[tid]||curPts>out[tid].curPts){
-        out[tid]={comp,curPlace,curPts,minPlace,maxPlace,minPts,maxPts};
+      const rawCurPts=_blszPtsFor(info.bucket, curPlace);
+      // v19.4 — when this competition still has unplayed matches for this
+      // team (minPts !== maxPts), treat the team's "current" points as the
+      // best-case projection (maxPts) so the BLSZ table reflects the highest
+      // possible total. The original played-only value stays available via
+      // `rawCurPts` / `rawCurPlace` for the prev-round Δ snapshot logic.
+      const ongoing=(minPts!==maxPts);
+      const effCurPts=ongoing?maxPts:rawCurPts;
+      const effCurPlace=ongoing?minPlace:curPlace;
+      if(!out[tid]||effCurPts>out[tid].curPts){
+        out[tid]={comp,curPlace:effCurPlace,curPts:effCurPts,
+                  minPlace,maxPlace,minPts,maxPts,
+                  rawCurPts,rawCurPlace:curPlace,ongoing};
       }
     });
   });
@@ -7640,15 +7735,30 @@ function renderBlszView(){
       const cell=(bucket,cls)=>{
         const info=t.cells[bucket];
         if(!info) return `<td class="${cls}"><span class="b-rng">—</span></td>`;
-        const ptsRange=(info.minPts===info.maxPts)?`${info.curPts}`:`${info.minPts}–${info.maxPts}`;
+        // v19.4 — ongoing series: show the best-case projected value as the
+        // primary points figure (already overridden in _blszBuildProjection
+        // so info.curPts === maxPts when ongoing) and tag the cell with the
+        // `b-ongoing` indicator. Played-so-far value stays available as the
+        // small range underneath.
+        const isOngoing=!!info.ongoing;
+        const ptsMain=isOngoing
+          ? `${info.curPts}<span class="b-ongoing-tag" title="Series in progress — counted as best-case (max possible). Played so far: ${esc(String(info.rawCurPts||0))} pts at #${esc(String(info.rawCurPlace||0))}.">⏳</span>`
+          : `${info.curPts}`;
+        const ptsRange=(info.minPts===info.maxPts)?'':`${info.minPts}–${info.maxPts}`;
         const plRange=(info.minPlace===info.maxPlace)?`#${info.curPlace}`:`#${info.minPlace}–${info.maxPlace}`;
-        return `<td class="${cls}"><div class="blsz-cell">
-          <span class="b-pts">${esc(ptsRange)}</span>
+        return `<td class="${cls}${isOngoing?' b-ongoing':''}"><div class="blsz-cell">
+          <span class="b-pts">${ptsMain}</span>
           <span class="b-plc">${esc(plRange)}</span>
-          <span class="b-rng">${esc(info.comp||'')}</span>
+          <span class="b-rng">${esc((isOngoing&&ptsRange?ptsRange+' · ':'')+(info.comp||''))}</span>
         </div></td>`;
       };
+      // v19.4 — totalRange reflects the same "best-case for ongoing" logic
+      // since t.sumCur sums the per-bucket curPts which are now already
+      // overridden to maxPts for ongoing buckets. Add an ⏳ marker if ANY
+      // bucket is still ongoing so the user knows the total is projected.
+      const totalOngoing=Object.values(t.cells).some(c=>c&&c.ongoing);
       const totalRange=(t.sumMin===t.sumMax)?`${t.sumCur}`:`${t.sumMin}–${t.sumMax}`;
+      const totalTag=totalOngoing?'<span class="b-ongoing-tag" title="Total includes best-case projections from ongoing series">⏳</span>':'';
       const placeRange=(mn===mx)?`${curPlace}`:`${mn}–${mx}`;
       const logo=logoFor(t.tid,_blszSeason);
       const prevPlace=prevRankByTid.get(t.tid)||0;
@@ -7668,7 +7778,7 @@ function renderBlszView(){
         ${cell('KK','comp-kk')}
         ${cell('NK','comp-nk')}
         ${cell('NSZK','comp-nk')}
-        <td class="b-total"><div class="blsz-cell"><span class="b-pts">${esc(totalRange)}</span><span class="b-plc">cur ${esc(String(t.sumCur))}</span></div></td>
+        <td class="b-total${totalOngoing?' b-ongoing':''}"><div class="blsz-cell"><span class="b-pts">${esc(String(t.sumCur))}${totalTag}</span><span class="b-plc">${esc(totalRange)}</span></div></td>
       </tr>`;
     });
     html+=`</tbody></table></div>`;
