@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.3</title>
+<title>League Manager v2026.05.20.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -209,7 +209,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 /* v20.3 — form-guide chips. 12×12 squares (newest left), W=green, D=amber,
    L=red. The matching `.form-row-full` is a wider flex strip used by the
    season-schedule popup and the per-competition expanded popup. */
-.form-chip{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 1px;font-size:0;line-height:12px;vertical-align:middle;cursor:help;}
+.form-chip{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 1px;font-size:0;line-height:12px;vertical-align:middle;cursor:pointer;}
 .form-chip.fc-w{background:#16a34a;}
 .form-chip.fc-d{background:#f59e0b;}
 .form-chip.fc-l{background:#dc2626;}
@@ -881,7 +881,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2363,8 +2363,11 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
       return same.length?same[same.length-1]:null;
     }catch(_){return null;}
   })();
+  // v20.4 — clicking opens a popup with the previous round's match results
+  // inside the shared infoModal instead of navigating the page. The key
+  // round-card on screen stays where it is.
   const _prevHtml=_prevSame
-    ? `<button class="rc-prev" onclick="event.stopPropagation();lgPickRound('${esc(_prevSame.key).replace(/'/g,'&#39;')}')" title="Previous ${esc(_lgRoundFamily(info.round)||'')} round: ${esc(_prevSame.round)} · ${esc(_prevSame.date)} (${esc(formatDate(_prevSame.date))})">⟲</button>`
+    ? `<button class="rc-prev" onclick="event.stopPropagation();openPrevRoundPopup('${esc(_prevSame.key).replace(/'/g,'&#39;')}')" title="Previous ${esc(_lgRoundFamily(info.round)||'')} round: ${esc(_prevSame.round)} · ${esc(_prevSame.date)} (${esc(formatDate(_prevSame.date))})">⟲</button>`
     : '';
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
@@ -3090,17 +3093,27 @@ function _isMatchPlayedInApp(row,c){
   const rnd=c.rounds>=0?String(row[c.rounds]||'').trim():'';
   const cur=(typeof currentDate==='function')?currentDate():'';
   if(!cur)return false;
-  // Prefer the calendar-scheduled date of the match's round code as the
-  // "effective" date — the stored row date can drift (manual edits, Play
-  // re-saves, season generator), whereas the calendar is authoritative.
-  // Fall back to the row's own date when the round code has no calendar
-  // entry (friendlies / off-calendar rows).
+  // v20.4 — scope the calendar lookup by season. Round codes (MB-B-15,
+  // KKARA-2, NKW-3-1, …) recur every season, so `find(r=>r.round===rnd)`
+  // used to return the FIRST calendar entry seen, which is always the
+  // earliest season's date. That mis-classified future-season rows as
+  // "past" → score visible. Now we filter calendar candidates to the
+  // row's own season (derived from its date) before picking the date.
   let effDate=d;
   if(rnd){
     try{
+      const rowSeason=(d && typeof seasonFor==='function')?seasonFor(d):'';
       const all=_lgCalendarRounds();
-      const hit=all.find(r=>r.round===rnd);
-      if(hit&&hit.date)effDate=hit.date;
+      const sameRound=all.filter(r=>r.round===rnd);
+      let hit=null;
+      if(rowSeason){
+        hit=sameRound.find(r=>{
+          const rs=r.season||(typeof seasonFor==='function'?seasonFor(r.date):'');
+          return rs===rowSeason;
+        });
+      }
+      if(!hit) hit=sameRound[0]||null;
+      if(hit&&hit.date) effDate=hit.date;
     }catch(e){/* ignore — keep row date */}
   }
   if(!effDate)return false;
@@ -3390,6 +3403,59 @@ function _matchLeagueBucket(roundsCell){
   if(fam==='NK') return 'NK';
   return 'Other';
 }
+// v20.4 — popup that lists every match in a specific calendar round. Used
+// by the round-card's "⟲ previous round" chip so the user can see how the
+// prior round went without leaving the current view. Looks up the round
+// from `_lgCalendarRounds()` by key, then renders every matches.csv row
+// whose `rounds` matches AND whose date sits in the same season.
+function openPrevRoundPopup(roundKey){
+  if(!roundKey) return;
+  const all=(typeof _lgCalendarRounds==='function')?_lgCalendarRounds():[];
+  const r=all.find(x=>x.key===roundKey);
+  if(!r){ if(typeof toast==='function') toast('Previous round not found','warn'); return; }
+  const c=_lgMatchCols();
+  const season=r.season||(typeof seasonFor==='function'?seasonFor(r.date):'');
+  const rows=DB.matches.r.filter(row=>{
+    if(c.rounds<0) return false;
+    if(String(row[c.rounds]||'').trim()!==r.round) return false;
+    const d=c.date>=0?String(row[c.date]||'').trim():'';
+    if(d && typeof seasonFor==='function' && season){
+      if(seasonFor(d)!==season) return false;
+    }
+    return true;
+  });
+  const listHtml=rows.length
+    ? `<div class="im-match-list">${rows.map(row=>_imMatchRowHTML(row,c,true)).join('')}</div>`
+    : `<div class="im-empty">No matches found for ${esc(r.round)}.</div>`;
+  // Quick W/D/L tally so the popup is informative at a glance.
+  let homeW=0,awayW=0,drw=0,played=0;
+  rows.forEach(row=>{
+    if(!_isMatchPlayedInApp(row,c)) return;
+    const hs=c.hs>=0?parseInt(row[c.hs]):NaN;
+    const aS=c.as>=0?parseInt(row[c.as]):NaN;
+    if(isNaN(hs)||isNaN(aS)) return;
+    played++;
+    if(hs>aS) homeW++;
+    else if(hs<aS) awayW++;
+    else drw++;
+  });
+  const fam=(typeof _lgRoundFamily==='function')?_lgRoundFamily(r.round):'';
+  const _cup=(typeof cupLogoFor==='function')?cupLogoFor(r.round):null;
+  const _cupImg=_cup?`<img class="rc-cup-logo" src="${_cup}" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;">`:'';
+  document.getElementById('infoModalTitle').innerHTML=
+    `<span>${_cupImg}${esc(r.round)}</span><span class="im-sub">${esc(formatDate(r.date))} · ${esc(seasonLabel(season)||'')}${fam?` · ${esc(fam)}`:''}</span>`;
+  document.getElementById('infoModalBody').innerHTML=
+    `<div class="im-h2h-stats">
+      <div class="im-stat"><div class="im-stat-n">${played}</div><div class="im-stat-lbl">Played</div></div>
+      <div class="im-stat win-a"><div class="im-stat-n">${homeW}</div><div class="im-stat-lbl">Home wins</div></div>
+      <div class="im-stat dr"><div class="im-stat-n">${drw}</div><div class="im-stat-lbl">Draws</div></div>
+      <div class="im-stat win-b"><div class="im-stat-n">${awayW}</div><div class="im-stat-lbl">Away wins</div></div>
+    </div>`+
+    `<div class="im-section-hdr">All matches in ${esc(r.round)} <span class="sc">${rows.length} row${rows.length===1?'':'s'}</span></div>`+
+    listHtml;
+  document.getElementById('infoModal').classList.add('open');
+}
+
 // v20.3 — competition-scoped form popup. Renders every PLAYED match for
 // `teamId` in `season` within the given competition (identified by either
 // `groupPrefix` like `MB-B` or `KKARA` plus optional `level` like `1M` /
@@ -7226,6 +7292,76 @@ function _writeBlszOverallRanking(season){
   });
   return n;
 }
+// v20.4 — MB-3 geographic group assignment. Given a list of 32 BLSZ team_ids
+// (the slice currently ranked 41..72 in the BLSZ aggregate), split them into
+// the four MB-3 regional groups using `teams.csv` `latitude` / `longitude`:
+//   1. Sort by LONGITUDE descending — first 8 = 3K (Kelet / East, most easterly)
+//   2. From remaining 24, sort by LONGITUDE ascending — first 8 = 3NY (Nyugat / West)
+//   3. From remaining 16, sort by LATITUDE ascending — first 8 = 3D (Dél / South)
+//   4. Final 8 = 3É (Észak / North, most northerly)
+// Teams missing latitude/longitude sort to the bottom of every pass so they
+// preferentially land in the last-resort 3É group. Returns `{3K, 3NY, 3D, 3É}`
+// with 8 team_ids each. Caller is responsible for upserting these into
+// results.csv via _upsertResultsRow(season, '3K'|'3NY'|'3D'|'3É', 1..8, tid).
+function _splitMB3GeographicAssignment(teamIds){
+  const td=DB.teams;
+  const ii=td.h.findIndex(h=>{const n=String(h||'').trim().toLowerCase();return n==='team_id'||n==='id';});
+  const lai=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='latitude');
+  const loi=td.h.findIndex(h=>String(h||'').trim().toLowerCase()==='longitude');
+  const _parseLatLon=(v)=>{
+    const s=String(v==null?'':v).trim().replace(/^[^\d\-+.]+/,'');
+    const n=parseFloat(s);
+    return isNaN(n)?null:n;
+  };
+  const _coords=new Map();
+  if(ii>=0 && (lai>=0||loi>=0)){
+    td.r.forEach(r=>{
+      const id=String(r[ii]||'').trim();
+      if(!id) return;
+      _coords.set(id, {
+        lat:lai>=0?_parseLatLon(r[lai]):null,
+        lon:loi>=0?_parseLatLon(r[loi]):null
+      });
+    });
+  }
+  const list=teamIds.slice();
+  // PASS 1 — easternmost 8 (longitude desc; missing lon → bottom).
+  list.sort((a,b)=>{
+    const ca=_coords.get(a)||{}, cb=_coords.get(b)||{};
+    const la=ca.lon, lb=cb.lon;
+    if(la==null && lb==null) return String(a).localeCompare(String(b));
+    if(la==null) return 1;
+    if(lb==null) return -1;
+    return lb-la;
+  });
+  const k=list.slice(0,8);
+  let rest=list.slice(8);
+  // PASS 2 — westernmost 8 (longitude asc; missing lon → bottom).
+  rest.sort((a,b)=>{
+    const ca=_coords.get(a)||{}, cb=_coords.get(b)||{};
+    const la=ca.lon, lb=cb.lon;
+    if(la==null && lb==null) return String(a).localeCompare(String(b));
+    if(la==null) return 1;
+    if(lb==null) return -1;
+    return la-lb;
+  });
+  const ny=rest.slice(0,8);
+  rest=rest.slice(8);
+  // PASS 3 — southernmost 8 (latitude asc; missing lat → bottom).
+  rest.sort((a,b)=>{
+    const ca=_coords.get(a)||{}, cb=_coords.get(b)||{};
+    const la=ca.lat, lb=cb.lat;
+    if(la==null && lb==null) return String(a).localeCompare(String(b));
+    if(la==null) return 1;
+    if(lb==null) return -1;
+    return la-lb;
+  });
+  const d=rest.slice(0,8);
+  // PASS 4 — everything left is north.
+  const e=rest.slice(8);
+  return {'3K':k,'3NY':ny,'3D':d,'3É':e};
+}
+
 function _upsertResultsRow(season, competition, place, teamId){
   const d=DB.results;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
