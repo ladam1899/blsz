@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.5</title>
+<title>League Manager v2026.05.20.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -682,6 +682,11 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .ed-table tbody tr:hover td{background:var(--blue-l) !important;}
 .ed-table tbody tr.sel td{background:#dbeafe !important;}
 .ed-table tbody tr.sel td.rn{background:#bfdbfe !important;}
+/* v20.6 — Audit tab */
+.audit-table tbody td{padding:8px 10px;font-size:12px;border-bottom:1px solid var(--border);}
+.audit-table tbody tr.audit-row:hover td{background:rgba(192,57,43,.08) !important;}
+.audit-rn{font-family:'JetBrains Mono',monospace;color:var(--muted);}
+.audit-fail-pill{display:inline-block;background:rgba(192,57,43,.10);color:#b91c1c;font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 7px;border-radius:4px;margin:2px 4px 2px 0;border:1px solid rgba(192,57,43,.25);}
 .ed-table tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle;}
 .ed-table tbody td.rn{padding:4px 6px;}
 .ecell{padding:6px 10px;min-height:30px;min-width:60px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:3px;transition:border-color .1s;display:flex;align-items:center;gap:6px;}
@@ -881,7 +886,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -950,6 +955,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
     <div class="etab"        id="etab-draw"        onclick="edSwitchTab('draw')">Draw</div>
     <div class="etab"        id="etab-trophies"    onclick="edSwitchTab('trophies')">Trophies</div>
     <div class="etab"        id="etab-state"       onclick="edSwitchTab('state')">State</div>
+    <div class="etab"        id="etab-audit"       onclick="edSwitchTab('audit')">🔎 Audit</div>
   </div>
   <div class="editor-toolbar">
     <button class="tbtn primary" onclick="edAddRow()">➕ Add Row</button>
@@ -1493,6 +1499,259 @@ function defaultSkills(skills,home){
     attack_et:s,defence_et:s,
     penelties:s
   };
+}
+
+// ──────────────────────────────────────────────────────────────
+//  v20.6 — MATCH ROW AUDITOR
+// ──────────────────────────────────────────────────────────────
+// Shared validator used by:
+//   • _playSaveToMatches (Play view save path) — blocks the save when fail
+//   • the Data Editor → Audit tab — bulk-scans every matches.csv row
+//
+// Rules:
+//   • Skip rows whose rand-roll columns are empty (manually-added rows).
+//   • Skip rows with no full-time score (fixtures not yet played).
+//   • Schema sanity: home_id / away_id resolve to real teams; date / rounds
+//     non-empty; home_id != away_id.
+//   • Calendar agreement: row's date matches calendar.csv for the round
+//     in the row's season.
+//   • Formula recompute: with stored rand values + team skills, the 1H +
+//     2H score must equal what's stored. Strict equality (no tolerance).
+//   • Cup ET/PEN consistency: if mt ∈ {1,11} and 1H+2H tied, ET must run;
+//     if ET tied, PEN must run; FT must reflect 1H + 2H + ET + PEN.
+//   • Two-legged leg-2 (mt=2): aggregate over 180' decides; if aggregate
+//     tied, away-goals decides; if both tied, PEN decides. No ET.
+//
+// `_auditMatchRow(row)` returns `{ok, skipped, skipReason, failures:[{rule,msg}]}`.
+function _auditMatchRow(row){
+  const c=_lgMatchCols();
+  const mh=DB.matches.h;
+  const _idx=(name)=>mh.findIndex(h=>String(h||'').trim().toLowerCase()===name);
+  const _v=(i)=>i>=0?String(row[i]==null?'':row[i]).trim():'';
+  const _num=(i)=>{const s=_v(i);return s===''?NaN:parseInt(s,10);};
+  const failures=[];
+  const skip=(reason)=>({ok:true,skipped:true,skipReason:reason,failures:[]});
+
+  // Read core fields.
+  const homeId=_v(c.home), awayId=_v(c.away), date=_v(c.date), rounds=_v(c.rounds), mt=_v(c.mtype);
+  const hsN=_num(c.hs), aSN=_num(c.as), h1N=_num(c.h1), a1N=_num(c.a1);
+
+  // 1. Rand-roll completeness — skip if missing (manual entry).
+  const rndNames=['first_home_att','first_home_def','second_home_att','second_home_def','first_away_att','first_away_def'];
+  const rndIdx={};
+  rndNames.forEach(n=>{rndIdx[n]=_idx(n);});
+  const rndMissing=rndNames.some(n=>rndIdx[n]<0||_v(rndIdx[n])==='');
+  // No FT score → not played, nothing to audit (still surface schema gaps).
+  if(isNaN(hsN)||isNaN(aSN)){
+    // Only flag if there's clearly an error — e.g. 1H stored but no FT.
+    if(!isNaN(h1N)||!isNaN(a1N)) failures.push({rule:'score',msg:'1H score recorded but full-time blank'});
+    if(failures.length) return {ok:false,skipped:false,failures};
+    return skip('full-time score blank — fixture not played yet');
+  }
+
+  // 2. Schema sanity.
+  if(!homeId) failures.push({rule:'schema',msg:'home_id missing'});
+  if(!awayId) failures.push({rule:'schema',msg:'away_id missing'});
+  if(homeId&&awayId&&homeId===awayId) failures.push({rule:'schema',msg:'home_id === away_id'});
+  if(!date) failures.push({rule:'schema',msg:'date missing'});
+  if(!rounds) failures.push({rule:'schema',msg:'rounds missing'});
+  if(!_teamMap) rebuildTeamMap();
+  if(homeId&&!_teamMap.has(homeId)) failures.push({rule:'schema',msg:`home_id "${homeId}" not in teams.csv`});
+  if(awayId&&!_teamMap.has(awayId)) failures.push({rule:'schema',msg:`away_id "${awayId}" not in teams.csv`});
+
+  // 3. 1H / FT score ordering.
+  if(!isNaN(h1N)&&h1N>hsN) failures.push({rule:'score',msg:`home 1H (${h1N}) > FT (${hsN})`});
+  if(!isNaN(a1N)&&a1N>aSN) failures.push({rule:'score',msg:`away 1H (${a1N}) > FT (${aSN})`});
+
+  // 4. Calendar agreement (only if we have date + rounds + season match).
+  if(date&&rounds&&typeof seasonFor==='function'){
+    try{
+      const cal=_lgCalendarRounds();
+      const rowSeason=seasonFor(date);
+      const seasonHit=cal.find(r=>{
+        if(r.round!==rounds) return false;
+        const rs=r.season||(typeof seasonFor==='function'?seasonFor(r.date):'');
+        return rs===rowSeason;
+      });
+      if(seasonHit&&seasonHit.date!==date){
+        failures.push({rule:'calendar',msg:`date "${date}" ≠ calendar.csv "${seasonHit.date}" for ${rounds}`});
+      }
+    }catch(_){/* ignore */}
+  }
+
+  // If basic schema is broken, no point running the formula.
+  if(failures.some(f=>f.rule==='schema')) return {ok:false,skipped:false,failures};
+
+  // 5. Manual-entry guard — skip formula if any rand col missing.
+  if(rndMissing) return failures.length?{ok:false,skipped:false,failures}:skip('rand-roll columns blank — assumed manual entry');
+
+  // 6. Formula recompute.
+  const half=(typeof halfSeasonFor==='function'&&date)?halfSeasonFor(date):'';
+  const hSk=teamSkillsFor(homeId,half);
+  const aSk=teamSkillsFor(awayId,half);
+  const neutral=(mt==='11');
+  const H=hSk.skills+(neutral?0:hSk.home);
+  const A=aSk.skills;
+  // Rand draws (we already verified they exist).
+  const fha=parseInt(_v(rndIdx.first_home_att)), fhd=parseInt(_v(rndIdx.first_home_def));
+  const sha=parseInt(_v(rndIdx.second_home_att)), shd=parseInt(_v(rndIdx.second_home_def));
+  const faa=parseInt(_v(rndIdx.first_away_att)), fad=parseInt(_v(rndIdx.first_away_def));
+  // Second-away rand draws (need them too — they're consumed for the 2H away calc).
+  const saaI=_idx('second_away_att'), sadI=_idx('second_away_def');
+  const saa=saaI>=0?parseInt(_v(saaI)):NaN;
+  const sad=sadI>=0?parseInt(_v(sadI)):NaN;
+  if(isNaN(saa)||isNaN(sad)){
+    // Mixed manual — skip the formula but keep other failures.
+    return failures.length?{ok:false,skipped:false,failures}:skip('second_away rand columns blank');
+  }
+
+  // 1H and 2H expected goals.
+  const expH1=Math.max(0,Math.floor((H+hSk.attack_1h+fha-A-aSk.defence_1h-fad)/20));
+  const expA1=Math.max(0,Math.floor((A+aSk.attack_1h+faa-H-hSk.defence_1h-fhd)/20));
+  const expH2=Math.max(0,Math.floor((H+hSk.attack_2h+sha-A-aSk.defence_2h-sad)/20));
+  const expA2=Math.max(0,Math.floor((A+aSk.attack_2h+saa-H-hSk.defence_2h-shd)/20));
+  const ftH=expH1+expH2, ftA=expA1+expA2;
+  const ftTied=ftH===ftA;
+
+  // Strict 1H equality if stored.
+  if(!isNaN(h1N)&&h1N!==expH1) failures.push({rule:'formula',msg:`home 1H expected ${expH1}, stored ${h1N}`});
+  if(!isNaN(a1N)&&a1N!==expA1) failures.push({rule:'formula',msg:`away 1H expected ${expA1}, stored ${a1N}`});
+
+  // Compute ET / PEN expectations for cup matches.
+  // mt=1/11 (single cup) — ET on tie, PEN on still-tied; FT includes everything.
+  // mt=2 (leg 2) — no ET; aggregate → away-goals → PEN; FT includes PEN only.
+  // mt=0 (league/leg1) — no ET/PEN; FT = 1H + 2H.
+  let expHFT=ftH, expAFT=ftA;
+  if(mt==='1'||mt==='11'){
+    // ET requires extra rand columns.
+    if(ftTied){
+      const eha=_idx('extra_home_att'),ehd=_idx('extra_home_def');
+      const eaa=_idx('extra_away_att'),ead=_idx('extra_away_def');
+      const ehaV=eha>=0?parseInt(_v(eha)):NaN;
+      const ehdV=ehd>=0?parseInt(_v(ehd)):NaN;
+      const eaaV=eaa>=0?parseInt(_v(eaa)):NaN;
+      const eadV=ead>=0?parseInt(_v(ead)):NaN;
+      if(isNaN(ehaV)||isNaN(ehdV)||isNaN(eaaV)||isNaN(eadV)){
+        failures.push({rule:'cup',msg:`single-knockout tied at FT but ET rand columns are blank`});
+      } else {
+        let _het=Math.max(0,Math.floor((H+hSk.attack_et+ehaV-A-aSk.defence_et-eadV)/20));
+        let _aet=Math.max(0,Math.floor((A+aSk.attack_et+eaaV-H-hSk.defence_et-ehdV)/20));
+        // Golden-goal collapse (matches simulator).
+        if(_het>0||_aet>0){
+          if(_het>0&&_aet>0){
+            if(ehaV>=eaaV){_het=1;_aet=0;} else {_het=0;_aet=1;}
+          } else if(_het>0){_het=1;_aet=0;}
+          else {_het=0;_aet=1;}
+        }
+        expHFT+=_het; expAFT+=_aet;
+        // PEN if ET still tied.
+        const etTied=expHFT===expAFT;
+        if(etTied){
+          const pHI=_idx('pen_home'),pAI=_idx('pen_away');
+          const pH=pHI>=0?parseInt(_v(pHI)):NaN;
+          const pA=pAI>=0?parseInt(_v(pAI)):NaN;
+          if(isNaN(pH)||isNaN(pA)){
+            failures.push({rule:'cup',msg:'cup tied after ET but pen_home / pen_away blank'});
+          } else {
+            const hp=hSk.skills+(neutral?0:hSk.home)+hSk.penelties+pH;
+            const ap=aSk.skills+aSk.penelties+pA;
+            if(hp>=ap){expHFT+=1;} else {expAFT+=1;}
+          }
+        }
+      }
+    }
+    if(hsN!==expHFT) failures.push({rule:'formula',msg:`home FT expected ${expHFT}, stored ${hsN}`});
+    if(aSN!==expAFT) failures.push({rule:'formula',msg:`away FT expected ${expAFT}, stored ${aSN}`});
+  } else if(mt==='2'){
+    // Leg 2 — FT = 1H + 2H + PEN; no ET.
+    // We can't compute aggregate without leg-1 row data, so just verify
+    // FT = ftH (+ PEN) for the leg-2 row itself.
+    const pHI=_idx('pen_home'),pAI=_idx('pen_away');
+    const pH=pHI>=0?parseInt(_v(pHI)):NaN;
+    const pA=pAI>=0?parseInt(_v(pAI)):NaN;
+    if(!isNaN(pH)&&!isNaN(pA)){
+      const hp=hSk.skills+(neutral?0:hSk.home)+hSk.penelties+pH;
+      const ap=aSk.skills+aSk.penelties+pA;
+      if(hp>=ap) expHFT+=1; else expAFT+=1;
+    }
+    if(hsN!==expHFT) failures.push({rule:'formula',msg:`leg-2 home FT expected ${expHFT}, stored ${hsN}`});
+    if(aSN!==expAFT) failures.push({rule:'formula',msg:`leg-2 away FT expected ${expAFT}, stored ${aSN}`});
+  } else {
+    // League / leg-1 — FT = 1H + 2H exactly.
+    if(hsN!==expHFT) failures.push({rule:'formula',msg:`home FT expected ${expHFT} (1H ${expH1} + 2H ${expH2}), stored ${hsN}`});
+    if(aSN!==expAFT) failures.push({rule:'formula',msg:`away FT expected ${expAFT} (1H ${expA1} + 2H ${expA2}), stored ${aSN}`});
+  }
+
+  return failures.length?{ok:false,skipped:false,failures}:{ok:true,skipped:false,failures:[]};
+}
+
+// Open a popup describing audit failures for ONE row, with a "Copy details
+// for AI" button so the user can paste the dump into a chat to debug.
+// `audit` = the object returned by `_auditMatchRow`. `row` = the failing
+// matches.csv row. `opts.onCancel` runs when the user clicks Cancel (only
+// shown on the per-save path; for bulk audits we open without a Cancel CTA).
+function _openAuditFailurePopup(audit,row,opts){
+  const c=_lgMatchCols();
+  const mh=DB.matches.h;
+  const _v=(i)=>i>=0?String(row[i]==null?'':row[i]).trim():'';
+  const homeId=_v(c.home), awayId=_v(c.away), date=_v(c.date), rounds=_v(c.rounds);
+  const hT=(typeof teamById==='function')?teamById(homeId):{name:homeId};
+  const aT=(typeof teamById==='function')?teamById(awayId):{name:awayId};
+  // Build a dump of every column the auditor inspects (so the user can paste
+  // it back to AI). Only the fields actually used in the formula or schema
+  // checks — keep the dump short.
+  const wantedCols=['date','rounds','level','match_type','match_number','home_id','away_id',
+    'home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half',
+    'first_home_att','first_home_def','second_home_att','second_home_def',
+    'extra_home_att','extra_home_def','pen_home',
+    'first_away_att','first_away_def','second_away_att','second_away_def',
+    'extra_away_att','extra_away_def','pen_away','notes'];
+  const dump=wantedCols.map(col=>{
+    const i=mh.findIndex(h=>String(h||'').trim().toLowerCase()===col);
+    return `${col}: ${i>=0?String(row[i]==null?'':row[i]):'(no column)'}`;
+  }).join('\n');
+  const half=(typeof halfSeasonFor==='function'&&date)?halfSeasonFor(date):'';
+  const hSk=(typeof teamSkillsFor==='function')?teamSkillsFor(homeId,half):null;
+  const aSk=(typeof teamSkillsFor==='function')?teamSkillsFor(awayId,half):null;
+  const skillsTxt=hSk&&aSk
+    ? `home (${homeId}): skills=${hSk.skills} home=${hSk.home}\naway (${awayId}): skills=${aSk.skills}`
+    : 'team skills not resolvable';
+  const failHtml=audit.failures.map(f=>`<li><b>[${esc(f.rule)}]</b> ${esc(f.msg)}</li>`).join('');
+  const ov=document.createElement('div');
+  ov.className='panel-overlay open'; ov.style.zIndex='600';
+  const md=document.createElement('div');
+  md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;width:min(94vw,700px);max-height:90vh;overflow:auto;z-index:601;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+  md.innerHTML=
+    `<h3 style="margin:0 0 8px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;color:#c0392b;">⚠ Audit failed</h3>`+
+    `<p style="margin:0 0 10px;color:var(--text);font-size:13px;line-height:1.5;">`+
+      `<b>${esc(hT.name||homeId)}</b> vs <b>${esc(aT.name||awayId)}</b> · ${esc(date)} · ${esc(rounds)}`+
+    `</p>`+
+    `<ul style="margin:8px 0 12px;padding-left:22px;color:var(--text);font-size:13px;line-height:1.6;">${failHtml}</ul>`+
+    `<details style="margin:8px 0;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">`+
+      `<summary style="cursor:pointer;font-weight:600;">Details (copy for AI debugging)</summary>`+
+      `<pre id="auditDump" style="margin:8px 0 0;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap;line-height:1.5;color:var(--text);">${esc(dump+'\n\n--- team_skills (half ' + half + ') ---\n' + skillsTxt)}</pre>`+
+    `</details>`+
+    `<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">`+
+      `<button type="button" id="auditCopyBtn" class="tbtn">📋 Copy details</button>`+
+      (opts&&opts.onCancel?`<button type="button" id="auditCancelBtn" class="tbtn">Cancel save</button>`:'')+
+      `<button type="button" id="auditCloseBtn" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Got it</button>`+
+    `</div>`;
+  document.body.appendChild(ov);
+  document.body.appendChild(md);
+  const teardown=()=>{ov.remove();md.remove();};
+  md.querySelector('#auditCopyBtn').addEventListener('click',()=>{
+    try{
+      const text=md.querySelector('#auditDump').textContent;
+      navigator.clipboard.writeText(text).then(
+        ()=>{if(typeof toast==='function')toast('Copied audit dump','');},
+        ()=>{if(typeof toast==='function')toast('Copy failed — select manually','warn');}
+      );
+    }catch(_){/* clipboard blocked */}
+  });
+  md.querySelector('#auditCloseBtn').addEventListener('click',teardown);
+  if(opts&&opts.onCancel){
+    md.querySelector('#auditCancelBtn').addEventListener('click',()=>{teardown();opts.onCancel();});
+  }
 }
 
 // ── SIMULATION ────────────────────────────────────────────────
@@ -6261,15 +6520,27 @@ async function _playSaveToMatches(){
       String(r[cH.away]||'').trim()===String(_playAway).trim()
     );
   }
+  // v20.6 — audit the candidate row BEFORE committing. If anything fails,
+  // open the audit popup, leave the in-memory matches.csv untouched, and
+  // bail out of this save so the user can either fix the inputs and retry
+  // or copy the dump for AI debugging.
   if(rowIdx>=0){
     // Merge: keep the match_number from the existing row (don't renumber).
     const existingMN=cH.mn>=0?String(DB.matches.r[rowIdx][cH.mn]||'').trim():'';
     if(existingMN)rowObj.match_number=existingMN;
-    DB.matches.r[rowIdx]=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
+  }
+  const candidateRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
+  try{
+    const audit=(typeof _auditMatchRow==='function')?_auditMatchRow(candidateRow):{ok:true};
+    if(audit && !audit.ok && audit.failures && audit.failures.length){
+      _openAuditFailurePopup(audit,candidateRow,{});
+      return;
+    }
+  }catch(e){ console.warn('[audit] pre-save audit threw:',e); }
+  if(rowIdx>=0){
+    DB.matches.r[rowIdx]=candidateRow;
   } else {
-    // Build the row array in the order of DB.matches.h — unknown cols default to ''.
-    const newRow=DB.matches.h.map(col=>rowObj[col]!==undefined?rowObj[col]:'');
-    DB.matches.r.push(newRow);
+    DB.matches.r.push(candidateRow);
   }
   _playStage='saved';
   _playData.calcLog.push(`<b>${rowIdx>=0?'Updated':'Saved'} row #${rowObj.match_number}</b> (rounds=${esc(rowObj.rounds)}, date=${esc(scheduledDate)}, stadium=${esc(stadium||'—')})`);
@@ -9561,15 +9832,28 @@ function edSwitchTab(tab){
   document.querySelectorAll('.etab').forEach(t=>t.classList.remove('active'));
   document.getElementById('etab-'+tab)?.classList.add('active');
   _edSyncGenBtn();
+  _edSyncToolbar();
   edRender();
 }
 function _edSyncGenBtn(){
   const btn=document.getElementById('edGenBtn');
   if(btn) btn.style.display=(edTab==='matches')?'':'none';
 }
+// v20.6 — hide the regular CSV-editor toolbar on the Audit tab (the audit
+// page renders its own controls inside the table area).
+function _edSyncToolbar(){
+  const bar=document.querySelector('.editor-toolbar');
+  if(!bar) return;
+  bar.style.display=(edTab==='audit')?'none':'';
+}
 function isColorColumn(name){return/^color\d*$|^colour\d*$/i.test(name);}
 
 function edRender(){
+  // v20.6 — Audit tab has no CSV behind it — it scans matches.csv on demand.
+  if(edTab==='audit'){
+    _edRenderAuditTab();
+    return;
+  }
   const d=DB[edTab];
   const wrap=document.getElementById('edTableWrap');
   const q=(document.getElementById('edSearch')?.value||'').toLowerCase();
@@ -9616,6 +9900,86 @@ function edRender(){
   wrap.querySelectorAll('.ecell').forEach(c=>c.addEventListener('click',e=>{if(!e.target.classList.contains('ecell-swatch'))edStartEdit(c);}));
   wrap.querySelectorAll('td.rn[data-ri]').forEach(td=>td.addEventListener('click',e=>edToggleSel(parseInt(td.dataset.ri),e)));
   edUpdateSB();
+}
+
+// v20.6 — Data Editor → Audit tab. Scans every matches.csv row through the
+// shared `_auditMatchRow` validator and renders a table of failures only.
+// Skipped rows (manual entry / unplayed) are counted but not listed. Click
+// a failing row to open the full audit popup (with copy-for-AI button).
+let _edAuditState=null; // {scanned, skipped, failed, fails:[{i,row,audit}]}
+function _edRenderAuditTab(){
+  const wrap=document.getElementById('edTableWrap');
+  if(!wrap) return;
+  const s=_edAuditState;
+  let resultHtml='';
+  if(s){
+    if(!s.failed){
+      resultHtml=`<div style="margin-top:12px;padding:14px 16px;background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.4);border-radius:8px;color:#16803d;font-size:13px;">`+
+        `✅ All ${s.scanned} matches.csv row${s.scanned===1?'':'s'} passed the audit. (${s.skipped} skipped — manual entries / unplayed fixtures.)`+
+        `</div>`;
+    } else {
+      const rowHtml=s.fails.map((f,n)=>{
+        const c=_lgMatchCols();
+        const _v=(i)=>i>=0?String(f.row[i]==null?'':f.row[i]).trim():'';
+        const home=_v(c.home), away=_v(c.away), date=_v(c.date), rounds=_v(c.rounds);
+        const hT=teamById(home), aT=teamById(away);
+        const failMsg=f.audit.failures.map(x=>`<span class="audit-fail-pill">[${esc(x.rule)}] ${esc(x.msg)}</span>`).join('');
+        return `<tr class="audit-row" data-fi="${n}" style="cursor:pointer">`+
+          `<td class="audit-rn">#${f.i+1}</td>`+
+          `<td>${esc(date)}</td>`+
+          `<td>${esc(rounds)}</td>`+
+          `<td>${esc(hT.name||home)} vs ${esc(aT.name||away)}</td>`+
+          `<td>${failMsg}</td>`+
+          `</tr>`;
+      }).join('');
+      resultHtml=`<div style="margin-top:12px;padding:14px 16px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.4);border-radius:8px;color:#b91c1c;font-size:13px;">`+
+        `⚠ Found <b>${s.failed}</b> bad row${s.failed===1?'':'s'} (of ${s.scanned} scanned, ${s.skipped} skipped). Click a row for the full dump.`+
+        `</div>`+
+        `<table class="ed-table audit-table" style="margin-top:12px;">`+
+        `<thead><tr><th>Row</th><th>Date</th><th>Round</th><th>Match</th><th>Failures</th></tr></thead>`+
+        `<tbody>${rowHtml}</tbody></table>`;
+    }
+  }
+  wrap.innerHTML=
+    `<div style="padding:18px 20px;">`+
+      `<h3 style="margin:0 0 6px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;">🔎 Match Auditor</h3>`+
+      `<p style="margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.6;max-width:780px;">`+
+        `Scans every row in <code>matches.csv</code> against the simulator's exact formula and the cup/leg-2 tie-break rules. `+
+        `Rows without rand-roll columns (manual entries) and rows without a full-time score (unplayed) are skipped automatically. Strict equality — no tolerance.`+
+      `</p>`+
+      `<button type="button" class="tbtn primary" onclick="_edRunAudit()" style="font-size:14px;padding:10px 22px;">▶ Run audit</button>`+
+      resultHtml+
+    `</div>`;
+  // Wire up row-click → popup.
+  wrap.querySelectorAll('.audit-row').forEach(tr=>{
+    tr.addEventListener('click',()=>{
+      const fi=parseInt(tr.dataset.fi);
+      const f=_edAuditState&&_edAuditState.fails[fi];
+      if(f) _openAuditFailurePopup(f.audit,f.row,{});
+    });
+  });
+  edUpdateSB();
+}
+function _edRunAudit(){
+  const m=DB.matches; if(!m||!m.r){if(typeof toast==='function')toast('matches.csv not loaded','warn');return;}
+  const fails=[];
+  let scanned=0,skipped=0;
+  m.r.forEach((row,i)=>{
+    scanned++;
+    let a;
+    try{ a=_auditMatchRow(row); }
+    catch(e){ a={ok:false,skipped:false,failures:[{rule:'exception',msg:String(e&&e.message||e)}]}; }
+    if(a.skipped){ skipped++; return; }
+    if(!a.ok) fails.push({i,row:row.slice(),audit:a});
+  });
+  _edAuditState={scanned,skipped,failed:fails.length,fails};
+  if(typeof toast==='function'){
+    toast(fails.length
+      ?`Audit done — ${fails.length} bad row${fails.length===1?'':'s'} of ${scanned} (${skipped} skipped)`
+      :`Audit clean — ${scanned} rows checked, ${skipped} skipped`,
+      fails.length?'warn':'');
+  }
+  _edRenderAuditTab();
 }
 
 // Curated palette for the dropdown (name + hex). "Custom…" and "Clear" live in a footer row.
