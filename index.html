@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.6</title>
+<title>League Manager v2026.05.20.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -394,6 +394,20 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 /* New-team form inside the info-modal. Two-column grid with labels stacked
    above their inputs; section headers separate the four logical groups. */
 .nt-form{display:flex;flex-direction:column;gap:10px;font-size:13px;}
+/* v20.9 — missing team_skills popup. */
+.ms-form{display:flex;flex-direction:column;gap:10px;font-size:13px;}
+.ms-intro{margin:0 0 4px;font-size:12px;color:var(--text);line-height:1.5;}
+.ms-row{display:grid;grid-template-columns:40px 1fr 100px 100px;gap:10px;align-items:center;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;}
+.ms-team-logo{width:40px;height:40px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;overflow:hidden;}
+.ms-team-logo img{width:100%;height:100%;object-fit:contain;}
+.ms-team-meta{display:flex;flex-direction:column;gap:2px;}
+.ms-team-name{font-weight:600;color:var(--text);font-size:13px;}
+.ms-team-id{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);}
+.ms-field{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+.ms-field input{padding:6px 8px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-transform:none;font-weight:400;letter-spacing:0;text-align:center;transition:border-color .15s,box-shadow .15s;}
+.ms-field input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(26,107,58,.18);}
+.ms-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;}
+@media(max-width:520px){.ms-row{grid-template-columns:40px 1fr;}.ms-field{grid-column:span 2;flex-direction:row;align-items:center;gap:8px;}.ms-field input{flex:1;}}
 .nt-section-hdr{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.06em;color:var(--text);margin:6px 0 0;padding-bottom:4px;border-bottom:1px solid var(--border);}
 .nt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;}
 .nt-grid-colors{grid-template-columns:repeat(3,minmax(0,1fr));}
@@ -886,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1202,6 +1216,13 @@ function serCSV(h,r){
 }
 
 // ── LOAD / SAVE ───────────────────────────────────────────────
+// v20.7 — per-season matches.csv split. To keep `matches.csv` small as
+// seasons accumulate, archived seasons are stored in their own files
+// (`matches_2000_01.csv`, …) on Drive while the in-memory `DB.matches.r`
+// stays unified so every view / standings / audit codepath works
+// unchanged. `_matchesSeasonFids` maps season → Drive file id so
+// subsequent saves don't create duplicate files.
+const _matchesSeasonFids={}; // season → file id for matches_<season>.csv
 async function loadAll(){
   setSS('busy');
   try{
@@ -1214,6 +1235,45 @@ async function loadAll(){
       } else {
         DB[name].h=[...ED_DEFAULTS[name]];DB[name].r=[];DB[name].fid=null;
       }
+    }
+    // v20.7 — discover & merge every `matches_<season>.csv` file in the
+    // Drive folder. Their rows are appended to DB.matches.r so the rest of
+    // the app sees one unified row list. Each archive's file id is cached
+    // in _matchesSeasonFids so re-saves update in place.
+    Object.keys(_matchesSeasonFids).forEach(k=>delete _matchesSeasonFids[k]);
+    try{
+      const all=await listFolder(FOLDER_ID,"mimeType='text/csv' or mimeType='application/vnd.google-apps.spreadsheet'").catch(()=>[]);
+      const archiveRe=/^matches_(\d{4}_\d{2})\.csv$/i;
+      const archives=all.filter(f=>archiveRe.test(f.name));
+      for(const f of archives){
+        const m=f.name.match(archiveRe);
+        const season=m?m[1]:'';
+        if(!season) continue;
+        try{
+          const{h,r}=parseCSV(await readFile(f.id,f.mimeType));
+          // First archive seen sets the canonical matches.h if it's empty
+          // (e.g. fresh install). Subsequent rows are remapped to that
+          // schema so columns line up.
+          if(!DB.matches.h.length && h.length){
+            DB.matches.h=h.slice();
+          }
+          const mh=DB.matches.h;
+          r.forEach(row=>{
+            // Remap incoming row to the canonical header order.
+            const remapped=mh.map((col,ci)=>{
+              const sourceI=h.indexOf(col);
+              return sourceI>=0?(row[sourceI]==null?'':row[sourceI]):'';
+            });
+            DB.matches.r.push(remapped);
+          });
+          _matchesSeasonFids[season]=f.id;
+          console.log(`[loadAll] merged ${r.length} rows from matches_${season}.csv`);
+        }catch(e){
+          console.warn(`[loadAll] failed to read matches_${season}.csv:`,e);
+        }
+      }
+    }catch(e){
+      console.warn('[loadAll] archive discovery failed:',e);
     }
     if(!DB.state.r.length||!getState('current_date'))setState('current_date',SEASON_START,true);
     rebuildTeamMap();
@@ -1235,10 +1295,59 @@ async function refreshAll(){
 async function saveSheet(name){
   const d=DB[name];
   if(!d.h.length)d.h=[...ED_DEFAULTS[name]];
+  // v20.7 — partition matches.csv by season on save. Current-season rows
+  // (covered by state.csv current_date) stay in matches.csv; every other
+  // season's rows go to matches_<season>.csv. Rows with no parseable date
+  // stay in matches.csv as a safe default. In-memory DB.matches.r is NOT
+  // mutated by the save — the partitioning only affects what's written.
+  if(name==='matches'){
+    await _saveMatchesPartitioned(d);
+    return;
+  }
   const csv=serCSV(d.h,d.r);
   const newId=await writeToDrive(`${name}.csv`,csv,d.fid);
   if(newId)d.fid=newId;
   if(name==='teams')rebuildTeamMap();
+}
+
+// v20.7 — write matches.csv as one file per season. The "current" season
+// (covering state.csv `current_date`) stays in `matches.csv`; every other
+// season goes to `matches_<season>.csv`. The in-memory DB.matches.r stays
+// unified for the views. _matchesSeasonFids maps season → file id so we
+// PATCH existing archive files instead of creating duplicates.
+async function _saveMatchesPartitioned(d){
+  const cur=(typeof currentDate==='function')?currentDate():'';
+  const curSeason=(cur && typeof seasonFor==='function')?seasonFor(cur):'';
+  const di=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
+  // Bucket rows by season. Undated rows + current-season rows → matches.csv.
+  const buckets={}; // season → row[]
+  const currentBucket=[];
+  d.r.forEach(row=>{
+    const dateStr=di>=0?String(row[di]||'').trim():'';
+    if(!dateStr){ currentBucket.push(row); return; }
+    let s='';
+    try{ s=seasonFor(dateStr)||''; }catch(_){}
+    if(!s || s===curSeason){ currentBucket.push(row); return; }
+    (buckets[s]=buckets[s]||[]).push(row);
+  });
+  // Write matches.csv (current season + undated).
+  const curCsv=serCSV(d.h,currentBucket);
+  const curId=await writeToDrive('matches.csv',curCsv,d.fid);
+  if(curId) d.fid=curId;
+  console.log(`[saveMatches] matches.csv: ${currentBucket.length} rows (current season ${curSeason||'(none)'})`);
+  // Write every archive bucket.
+  for(const season of Object.keys(buckets)){
+    const csv=serCSV(d.h,buckets[season]);
+    const existingId=_matchesSeasonFids[season]||null;
+    try{
+      const newId=await writeToDrive(`matches_${season}.csv`,csv,existingId);
+      if(newId) _matchesSeasonFids[season]=newId;
+      console.log(`[saveMatches] matches_${season}.csv: ${buckets[season].length} rows`);
+    }catch(e){
+      console.warn(`[saveMatches] failed to write matches_${season}.csv:`,e);
+      throw e;
+    }
+  }
 }
 function detectSeason(){
   const res=DB.results;
@@ -1524,6 +1633,13 @@ function defaultSkills(skills,home){
 //
 // `_auditMatchRow(row)` returns `{ok, skipped, skipReason, failures:[{rule,msg}]}`.
 function _auditMatchRow(row){
+  // v20.8 — STRUCTURAL audit only. The previous version re-ran the
+  // simulator formula against the current team_skills snapshot; that
+  // false-positives whenever a team_skills row has been edited since
+  // the match was generated (skill drift is normal and not a bug).
+  // The audit now verifies INTERNAL CONSISTENCY of the stored row
+  // and the rules around cup ET/PEN — real problems that simulation
+  // bugs would produce — without depending on current skills.
   const c=_lgMatchCols();
   const mh=DB.matches.h;
   const _idx=(name)=>mh.findIndex(h=>String(h||'').trim().toLowerCase()===name);
@@ -1536,14 +1652,19 @@ function _auditMatchRow(row){
   const homeId=_v(c.home), awayId=_v(c.away), date=_v(c.date), rounds=_v(c.rounds), mt=_v(c.mtype);
   const hsN=_num(c.hs), aSN=_num(c.as), h1N=_num(c.h1), a1N=_num(c.a1);
 
-  // 1. Rand-roll completeness — skip if missing (manual entry).
-  const rndNames=['first_home_att','first_home_def','second_home_att','second_home_def','first_away_att','first_away_def'];
+  // 1. Rand-roll completeness — skip the rand-range checks if missing
+  //    (manual entry), but keep structural checks.
+  const rndNames=['first_home_att','first_home_def','second_home_att','second_home_def',
+                  'first_away_att','first_away_def','second_away_att','second_away_def',
+                  'extra_home_att','extra_home_def','extra_away_att','extra_away_def',
+                  'pen_home','pen_away'];
   const rndIdx={};
   rndNames.forEach(n=>{rndIdx[n]=_idx(n);});
-  const rndMissing=rndNames.some(n=>rndIdx[n]<0||_v(rndIdx[n])==='');
+  const halfRndMissing=['first_home_att','first_home_def','second_home_att','second_home_def',
+                        'first_away_att','first_away_def','second_away_att','second_away_def']
+                       .some(n=>rndIdx[n]<0||_v(rndIdx[n])==='');
   // No FT score → not played, nothing to audit (still surface schema gaps).
   if(isNaN(hsN)||isNaN(aSN)){
-    // Only flag if there's clearly an error — e.g. 1H stored but no FT.
     if(!isNaN(h1N)||!isNaN(a1N)) failures.push({rule:'score',msg:'1H score recorded but full-time blank'});
     if(failures.length) return {ok:false,skipped:false,failures};
     return skip('full-time score blank — fixture not played yet');
@@ -1559,11 +1680,27 @@ function _auditMatchRow(row){
   if(homeId&&!_teamMap.has(homeId)) failures.push({rule:'schema',msg:`home_id "${homeId}" not in teams.csv`});
   if(awayId&&!_teamMap.has(awayId)) failures.push({rule:'schema',msg:`away_id "${awayId}" not in teams.csv`});
 
-  // 3. 1H / FT score ordering.
+  // 3. Score consistency. FT and 1H must be non-negative; 1H ≤ FT.
+  if(hsN<0) failures.push({rule:'score',msg:`home FT (${hsN}) is negative`});
+  if(aSN<0) failures.push({rule:'score',msg:`away FT (${aSN}) is negative`});
+  if(!isNaN(h1N)&&h1N<0) failures.push({rule:'score',msg:`home 1H (${h1N}) is negative`});
+  if(!isNaN(a1N)&&a1N<0) failures.push({rule:'score',msg:`away 1H (${a1N}) is negative`});
   if(!isNaN(h1N)&&h1N>hsN) failures.push({rule:'score',msg:`home 1H (${h1N}) > FT (${hsN})`});
   if(!isNaN(a1N)&&a1N>aSN) failures.push({rule:'score',msg:`away 1H (${a1N}) > FT (${aSN})`});
 
-  // 4. Calendar agreement (only if we have date + rounds + season match).
+  // 4. Rand-draw range (0..100). Only check the columns that are populated.
+  rndNames.forEach(n=>{
+    const i=rndIdx[n];
+    if(i<0) return;
+    const s=_v(i);
+    if(s==='') return;
+    const v=parseInt(s,10);
+    if(isNaN(v)||v<0||v>100){
+      failures.push({rule:'rand',msg:`${n} = ${s} is outside [0,100]`});
+    }
+  });
+
+  // 5. Calendar agreement (only if we have date + rounds + season match).
   if(date&&rounds&&typeof seasonFor==='function'){
     try{
       const cal=_lgCalendarRounds();
@@ -1579,107 +1716,31 @@ function _auditMatchRow(row){
     }catch(_){/* ignore */}
   }
 
-  // If basic schema is broken, no point running the formula.
+  // If basic schema is broken, no point checking cup logic.
   if(failures.some(f=>f.rule==='schema')) return {ok:false,skipped:false,failures};
 
-  // 5. Manual-entry guard — skip formula if any rand col missing.
-  if(rndMissing) return failures.length?{ok:false,skipped:false,failures}:skip('rand-roll columns blank — assumed manual entry');
-
-  // 6. Formula recompute.
-  const half=(typeof halfSeasonFor==='function'&&date)?halfSeasonFor(date):'';
-  const hSk=teamSkillsFor(homeId,half);
-  const aSk=teamSkillsFor(awayId,half);
-  const neutral=(mt==='11');
-  const H=hSk.skills+(neutral?0:hSk.home);
-  const A=aSk.skills;
-  // Rand draws (we already verified they exist).
-  const fha=parseInt(_v(rndIdx.first_home_att)), fhd=parseInt(_v(rndIdx.first_home_def));
-  const sha=parseInt(_v(rndIdx.second_home_att)), shd=parseInt(_v(rndIdx.second_home_def));
-  const faa=parseInt(_v(rndIdx.first_away_att)), fad=parseInt(_v(rndIdx.first_away_def));
-  // Second-away rand draws (need them too — they're consumed for the 2H away calc).
-  const saaI=_idx('second_away_att'), sadI=_idx('second_away_def');
-  const saa=saaI>=0?parseInt(_v(saaI)):NaN;
-  const sad=sadI>=0?parseInt(_v(sadI)):NaN;
-  if(isNaN(saa)||isNaN(sad)){
-    // Mixed manual — skip the formula but keep other failures.
-    return failures.length?{ok:false,skipped:false,failures}:skip('second_away rand columns blank');
-  }
-
-  // 1H and 2H expected goals.
-  const expH1=Math.max(0,Math.floor((H+hSk.attack_1h+fha-A-aSk.defence_1h-fad)/20));
-  const expA1=Math.max(0,Math.floor((A+aSk.attack_1h+faa-H-hSk.defence_1h-fhd)/20));
-  const expH2=Math.max(0,Math.floor((H+hSk.attack_2h+sha-A-aSk.defence_2h-sad)/20));
-  const expA2=Math.max(0,Math.floor((A+aSk.attack_2h+saa-H-hSk.defence_2h-shd)/20));
-  const ftH=expH1+expH2, ftA=expA1+expA2;
-  const ftTied=ftH===ftA;
-
-  // Strict 1H equality if stored.
-  if(!isNaN(h1N)&&h1N!==expH1) failures.push({rule:'formula',msg:`home 1H expected ${expH1}, stored ${h1N}`});
-  if(!isNaN(a1N)&&a1N!==expA1) failures.push({rule:'formula',msg:`away 1H expected ${expA1}, stored ${a1N}`});
-
-  // Compute ET / PEN expectations for cup matches.
-  // mt=1/11 (single cup) — ET on tie, PEN on still-tied; FT includes everything.
-  // mt=2 (leg 2) — no ET; aggregate → away-goals → PEN; FT includes PEN only.
-  // mt=0 (league/leg1) — no ET/PEN; FT = 1H + 2H.
-  let expHFT=ftH, expAFT=ftA;
-  if(mt==='1'||mt==='11'){
-    // ET requires extra rand columns.
-    if(ftTied){
-      const eha=_idx('extra_home_att'),ehd=_idx('extra_home_def');
-      const eaa=_idx('extra_away_att'),ead=_idx('extra_away_def');
-      const ehaV=eha>=0?parseInt(_v(eha)):NaN;
-      const ehdV=ehd>=0?parseInt(_v(ehd)):NaN;
-      const eaaV=eaa>=0?parseInt(_v(eaa)):NaN;
-      const eadV=ead>=0?parseInt(_v(ead)):NaN;
-      if(isNaN(ehaV)||isNaN(ehdV)||isNaN(eaaV)||isNaN(eadV)){
-        failures.push({rule:'cup',msg:`single-knockout tied at FT but ET rand columns are blank`});
-      } else {
-        let _het=Math.max(0,Math.floor((H+hSk.attack_et+ehaV-A-aSk.defence_et-eadV)/20));
-        let _aet=Math.max(0,Math.floor((A+aSk.attack_et+eaaV-H-hSk.defence_et-ehdV)/20));
-        // Golden-goal collapse (matches simulator).
-        if(_het>0||_aet>0){
-          if(_het>0&&_aet>0){
-            if(ehaV>=eaaV){_het=1;_aet=0;} else {_het=0;_aet=1;}
-          } else if(_het>0){_het=1;_aet=0;}
-          else {_het=0;_aet=1;}
-        }
-        expHFT+=_het; expAFT+=_aet;
-        // PEN if ET still tied.
-        const etTied=expHFT===expAFT;
-        if(etTied){
-          const pHI=_idx('pen_home'),pAI=_idx('pen_away');
-          const pH=pHI>=0?parseInt(_v(pHI)):NaN;
-          const pA=pAI>=0?parseInt(_v(pAI)):NaN;
-          if(isNaN(pH)||isNaN(pA)){
-            failures.push({rule:'cup',msg:'cup tied after ET but pen_home / pen_away blank'});
-          } else {
-            const hp=hSk.skills+(neutral?0:hSk.home)+hSk.penelties+pH;
-            const ap=aSk.skills+aSk.penelties+pA;
-            if(hp>=ap){expHFT+=1;} else {expAFT+=1;}
-          }
-        }
-      }
+  // 6. Cup ET/PEN structural rules. Auto-generated rows skip this if their
+  //    rand columns are blank (manual edits).
+  const ehaV=rndIdx.extra_home_att>=0?_v(rndIdx.extra_home_att):'';
+  const ehdV=rndIdx.extra_home_def>=0?_v(rndIdx.extra_home_def):'';
+  const eaaV=rndIdx.extra_away_att>=0?_v(rndIdx.extra_away_att):'';
+  const eadV=rndIdx.extra_away_def>=0?_v(rndIdx.extra_away_def):'';
+  const phV =rndIdx.pen_home    >=0?_v(rndIdx.pen_home)     :'';
+  const paV =rndIdx.pen_away    >=0?_v(rndIdx.pen_away)     :'';
+  const hasET =!!(ehaV||ehdV||eaaV||eadV);
+  const hasPEN=!!(phV||paV);
+  if(mt==='0'){
+    // League / leg-1: NO ET, NO PEN. Cup columns must be blank.
+    if(hasET)  failures.push({rule:'cup',msg:'match_type=0 (league/leg-1) should not have ET rand columns set'});
+    if(hasPEN) failures.push({rule:'cup',msg:'match_type=0 (league/leg-1) should not have PEN columns set'});
+  } else if(mt==='1'||mt==='11'){
+    // Single-knockout: must produce a winner. FT (which includes ET+PEN) must NOT be tied.
+    if(hsN===aSN){
+      failures.push({rule:'cup',msg:`single-knockout (mt=${mt}) FT must produce a winner but is ${hsN}-${aSN}`});
     }
-    if(hsN!==expHFT) failures.push({rule:'formula',msg:`home FT expected ${expHFT}, stored ${hsN}`});
-    if(aSN!==expAFT) failures.push({rule:'formula',msg:`away FT expected ${expAFT}, stored ${aSN}`});
   } else if(mt==='2'){
-    // Leg 2 — FT = 1H + 2H + PEN; no ET.
-    // We can't compute aggregate without leg-1 row data, so just verify
-    // FT = ftH (+ PEN) for the leg-2 row itself.
-    const pHI=_idx('pen_home'),pAI=_idx('pen_away');
-    const pH=pHI>=0?parseInt(_v(pHI)):NaN;
-    const pA=pAI>=0?parseInt(_v(pAI)):NaN;
-    if(!isNaN(pH)&&!isNaN(pA)){
-      const hp=hSk.skills+(neutral?0:hSk.home)+hSk.penelties+pH;
-      const ap=aSk.skills+aSk.penelties+pA;
-      if(hp>=ap) expHFT+=1; else expAFT+=1;
-    }
-    if(hsN!==expHFT) failures.push({rule:'formula',msg:`leg-2 home FT expected ${expHFT}, stored ${hsN}`});
-    if(aSN!==expAFT) failures.push({rule:'formula',msg:`leg-2 away FT expected ${expAFT}, stored ${aSN}`});
-  } else {
-    // League / leg-1 — FT = 1H + 2H exactly.
-    if(hsN!==expHFT) failures.push({rule:'formula',msg:`home FT expected ${expHFT} (1H ${expH1} + 2H ${expH2}), stored ${hsN}`});
-    if(aSN!==expAFT) failures.push({rule:'formula',msg:`away FT expected ${expAFT} (1H ${expA1} + 2H ${expA2}), stored ${aSN}`});
+    // Leg 2 — no ET allowed.
+    if(hasET) failures.push({rule:'cup',msg:'leg-2 (mt=2) ties should be resolved by aggregate/away-goals/PEN — no ET rand columns'});
   }
 
   return failures.length?{ok:false,skipped:false,failures}:{ok:true,skipped:false,failures:[]};
@@ -4112,6 +4173,135 @@ function _hbReadSkill(teamId, halfTag, col){
 }
 // Upsert a single _S team_skills row. Existing row updated in place; new
 // row appended. Returns 'updated' | 'inserted' | 'noop'.
+// v20.9 — does team_skills.csv have a row that resolves for (team, half)?
+// Mirrors teamSkillsFor's lookup chain: exact half → spring→autumn fallback
+// → any row for the team. Returns true only when there's a real row with a
+// usable `skills` value (so a row that lost its skills cell still triggers
+// the popup).
+function _hasTeamSkillsRow(teamId, halfSeason){
+  const d=DB.team_skills;
+  if(!d||!d.h||!d.h.length||!d.r||!d.r.length) return false;
+  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season'), si=d.h.indexOf('skills');
+  if(ti<0) return false;
+  const _good=(row)=>{
+    if(si<0) return true;
+    const v=row[si];
+    if(v==null||String(v).trim()==='') return false;
+    return !isNaN(parseFloat(v));
+  };
+  // 1) exact half-season match
+  if(hi>=0&&halfSeason){
+    const r=d.r.find(r=>r[ti]===teamId&&r[hi]===halfSeason);
+    if(r) return _good(r);
+  }
+  // 2) spring → autumn fallback
+  if(hi>=0&&halfSeason&&/_S$/.test(halfSeason)){
+    const autumn=halfSeason.replace(/_S$/,'_A');
+    const r=d.r.find(r=>r[ti]===teamId&&r[hi]===autumn);
+    if(r) return _good(r);
+  }
+  // 3) any row for this team
+  const r=d.r.find(r=>r[ti]===teamId);
+  return r?_good(r):false;
+}
+
+// v20.9 — popup that lets the user enter `skills` + `home` for one or more
+// teams in the given half_season. On submit, inserts/updates a row per team
+// in team_skills.csv via _hbUpsertSpringSkill, saves to Drive, and calls
+// `onComplete()` so the caller (Play view) can resume what it was doing.
+function openMissingSkillsPopup(teamIds, halfSeason, onComplete){
+  const modal=document.getElementById('infoModal');
+  const title=document.getElementById('infoModalTitle');
+  const body=document.getElementById('infoModalBody');
+  if(!modal||!title||!body) return;
+  const rowsHtml=teamIds.map(tid=>{
+    const t=(typeof teamById==='function')?teamById(tid):{name:tid,color:'#888'};
+    const logo=(typeof logoFor==='function')?logoFor(tid,null):null;
+    const logoHtml=logo
+      ?`<div class="ms-team-logo" style="background:#fff"><img src="${logo}" alt=""></div>`
+      :`<div class="ms-team-logo" style="background:${safeColor(t.color||'#888')}">${esc((tid||'').slice(0,3).toUpperCase())}</div>`;
+    return `
+      <div class="ms-row" data-tid="${esc(tid)}">
+        ${logoHtml}
+        <div class="ms-team-meta">
+          <div class="ms-team-name">${esc(t.name||tid)}</div>
+          <div class="ms-team-id">${esc(tid)}</div>
+        </div>
+        <label class="ms-field">
+          <span>skills</span>
+          <input type="number" name="skills" value="50" min="0" step="1" required>
+        </label>
+        <label class="ms-field">
+          <span>home</span>
+          <input type="number" name="home" value="0" step="1">
+        </label>
+      </div>`;
+  }).join('');
+  title.innerHTML=`<span>⚠ Missing team_skills</span><span class="im-sub">half_season ${esc(halfSeason||'(current)')}</span>`;
+  body.innerHTML=`
+    <form id="missingSkillsForm" class="ms-form" onsubmit="event.preventDefault();return false;">
+      <p class="ms-intro">
+        The team${teamIds.length===1?'':'s'} below ${teamIds.length===1?'has':'have'} no
+        <code>team_skills.csv</code> row for <b>${esc(halfSeason||'(current half)')}</b>.
+        Enter values so the match can be simulated.
+      </p>
+      ${rowsHtml}
+      <div class="ms-actions">
+        <button type="button" class="nt-cancel" onclick="closeInfoModal()">Cancel</button>
+        <button type="button" class="nt-submit" id="msSubmitBtn" onclick="_submitMissingSkills(this)">✓ Save &amp; continue</button>
+      </div>
+      <div id="msError" class="nt-error" style="display:none"></div>
+    </form>`;
+  // Stash the onComplete callback on the form so the submit handler can find it.
+  body.querySelector('#missingSkillsForm')._onComplete=onComplete;
+  body.querySelector('#missingSkillsForm')._halfSeason=halfSeason;
+  modal.classList.add('open');
+  setTimeout(()=>{const el=body.querySelector('input[name="skills"]');if(el)el.focus();},30);
+}
+
+async function _submitMissingSkills(btn){
+  const form=document.getElementById('missingSkillsForm');
+  const errEl=document.getElementById('msError');
+  if(!form) return;
+  const _show=(msg)=>{if(errEl){errEl.textContent=msg;errEl.style.display='block';}};
+  const _hide=()=>{if(errEl){errEl.style.display='none';errEl.textContent='';}};
+  _hide();
+  const halfSeason=form._halfSeason||'';
+  const onComplete=form._onComplete;
+  // Build the list of (team_id, skills, home) before any write — validate
+  // first so we don't half-insert.
+  const entries=[];
+  const msRows=form.querySelectorAll('.ms-row');
+  for(const row of msRows){
+    const tid=row.dataset.tid;
+    const sInput=row.querySelector('input[name="skills"]');
+    const hInput=row.querySelector('input[name="home"]');
+    const sVal=parseInt(sInput.value,10);
+    const hVal=parseInt(hInput.value,10);
+    if(isNaN(sVal)){_show(`skills required for ${tid}`); sInput.focus(); return;}
+    entries.push({tid, skills:sVal, home:isNaN(hVal)?0:hVal});
+  }
+  if(!entries.length){_show('No teams to save'); return;}
+  // Ensure team_skills.csv has the canonical columns before writing.
+  const sd=DB.team_skills;
+  (ED_DEFAULTS.team_skills||[]).forEach(col=>{
+    if(!sd.h.includes(col)){sd.h.push(col); sd.r.forEach(r=>r.push(''));}
+  });
+  if(btn){btn.disabled=true; btn.textContent='Saving…';}
+  try{
+    entries.forEach(e=>{
+      _hbUpsertSpringSkill(e.tid, halfSeason, {skills:e.skills, home:e.home});
+    });
+    await saveSheet('team_skills');
+    if(typeof toast==='function') toast(`✅ Saved skills for ${entries.length} team${entries.length===1?'':'s'}`);
+    closeInfoModal();
+    if(typeof onComplete==='function'){ try{ onComplete(); }catch(_){} }
+  }catch(e){
+    _show('Save failed: '+(e&&e.message||e));
+    if(btn){btn.disabled=false; btn.textContent='✓ Save & continue';}
+  }
+}
+
 function _hbUpsertSpringSkill(teamId, halfTag, values){
   const d=DB.team_skills; if(!d||!d.h||!d.h.length)return 'noop';
   const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season');
@@ -6252,6 +6442,21 @@ function _playManualInt(k){const v=parseInt(_playManual[k]);return isNaN(v)||v<0
 function _playNextStep(){
   if(!_playHome||!_playAway||_playHome===_playAway)return;
   if(_playStage==='saved')return;
+
+  // v20.9 — if either team has no team_skills row for the current
+  // half_season (and no autumn fallback), open the missing-skills popup
+  // so the user can fill in skills + home before any sim runs. Once the
+  // popup saves, it calls _playNextStep() again to resume.
+  if(_playStage==='ready'){
+    const halfNow=halfSeasonFor(currentDate());
+    const missing=[];
+    if(!_hasTeamSkillsRow(_playHome,halfNow)) missing.push(_playHome);
+    if(_playHome!==_playAway && !_hasTeamSkillsRow(_playAway,halfNow)) missing.push(_playAway);
+    if(missing.length){
+      openMissingSkillsPopup(missing,halfNow,()=>{ _playNextStep(); });
+      return;
+    }
+  }
 
   // MANUAL MODE — collect all inputs at once then jump straight to the save step.
   if(_playMode==='manual'){
