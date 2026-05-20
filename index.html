@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.12.1</title>
+<title>League Manager v2026.05.20.12.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1603,6 +1603,39 @@ function halfSeasonFor(dateStr){
 function seasonFor(dateStr){
   const hs=halfSeasonFor(dateStr);
   return hs?hs.slice(0,7):''; // "YYYY_YY"
+}
+// v2026.05.20.12.2 — half-season boundary markers in calendar.csv.
+// A "boundary row" is a calendar.csv row where every non-system cell
+// (i.e. every cell that isn't game_day / date / season) equals '--'.
+// Crossing such a row's date triggers the half-season generation in
+// advanceToNextRound (replaces the hardcoded Jan 1 / Jun 15 split).
+// Returns sorted ascending ISO dates. Empty array when no markers exist.
+function _calendarHalfBoundaryDates(){
+  const out=[];
+  const d=DB.calendar;
+  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return out;
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), gdi=_hi('game_day'), si=_hi('season');
+  if(di<0) return out;
+  const systemCols=new Set([di]);
+  if(gdi>=0) systemCols.add(gdi);
+  if(si>=0) systemCols.add(si);
+  d.r.forEach(r=>{
+    const rawDate=r[di];
+    const iso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
+    if(!iso) return;
+    let allDash=true, hasAny=false;
+    for(let c=0;c<d.h.length;c++){
+      if(systemCols.has(c)) continue;
+      const cell=String(r[c]==null?'':r[c]).trim();
+      if(!cell) continue;
+      hasAny=true;
+      if(cell!=='--'){ allDash=false; break; }
+    }
+    if(allDash && hasAny) out.push(iso);
+  });
+  out.sort();
+  return out;
 }
 function seasonLabel(s){
   if(!s)return'';
@@ -4099,22 +4132,26 @@ async function advanceToNextRound(){
   // We compute both crossings up-front from the NEXT round's date so a long
   // jump (e.g. Dec → July) doesn't lose either step.
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
-  // January split (Jan 1 of the spring half of `nextSeason`).
-  const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-  const janSplit=isNaN(sy)?'':(sy+'-01-01');
-  const isJanCrossing=!!(janSplit && (!cur || cur<janSplit) && next.date>=janSplit);
-  // June rollover: midnight of mid-June of `nextSeason`'s spring year. After
-  // this point the date belongs to a NEW season (the one starting that autumn).
-  // halfSeasonFor() considers June 15 the cutover, so we use the same.
   const curSeason=cur?(typeof seasonFor==='function'?seasonFor(cur):''):'';
-  const junSplitForCur=(()=>{
-    const m=String(curSeason||'').match(/^(\d{4})_/);
-    if(!m) return '';
-    return (parseInt(m[1])+1)+'-06-15';
-  })();
-  const isJunCrossing=!!(curSeason && nextSeason && curSeason!==nextSeason
-                         && junSplitForCur && (!cur || cur<junSplitForCur)
-                         && next.date>=junSplitForCur);
+  // v2026.05.20.12.2 — calendar-marker-based half-boundary detection.
+  // A '--' marker row in calendar.csv (every non-system cell == '--')
+  // defines a half-season boundary. We pick the first marker strictly
+  // after `cur` and on/before `next.date`. The marker's season decides
+  // the crossing type:
+  //   markerSeason === curSeason  → A->S within-season (Jan-style)
+  //   markerSeason !== curSeason  → S->newA cross-season (Jun-style)
+  // No markers ⇒ no half-boundary fires (hardcoded Jan 1 / Jun 15
+  // detection has been removed per user request).
+  const _allMarkers=(typeof _calendarHalfBoundaryDates==='function')?_calendarHalfBoundaryDates():[];
+  const _crossedMarkers=_allMarkers.filter(d=>(!cur || d>cur) && d<=next.date);
+  let janSplit='', junSplitForCur='';
+  for(const md of _crossedMarkers){
+    const ms=(typeof seasonFor==='function')?seasonFor(md):'';
+    if(ms && ms===curSeason && !junSplitForCur){ junSplitForCur=md; }
+    else if(ms && ms===nextSeason && !janSplit){ janSplit=md; }
+  }
+  const isJanCrossing=!!(janSplit);
+  const isJunCrossing=!!(curSeason && nextSeason && curSeason!==nextSeason && junSplitForCur);
   console.log(`[advanceToNextRound] cur=${cur} next=${next.date} curSeason=${curSeason} nextSeason=${nextSeason} janSplit=${janSplit} junSplit=${junSplitForCur} janX=${isJanCrossing} junX=${isJunCrossing}`);
 
   // After a successful rollover (Jan 1 spring or Jun 15 autumn) we override
