@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.9</title>
+<title>League Manager v2026.05.20.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1039,7 +1039,7 @@ const ED_DEFAULTS={
   teams:      ['team_id','full_name','long_name','stadium','color','color2','color3','location','latitude','longitude','foundation','org'],
   matches:    ['date','rounds','level','match_type','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
-  results:    ['season','competition','place','team_id'],
+  results:    ['season','competition','place','team_id','source'],
   team_skills:['team_id','skills','home','half_season'],
   draw:       ['rounds','level','match_type','match_number','home_team','away_team','notes'],
   state:      ['key','value'],
@@ -7849,8 +7849,14 @@ function _splitMB3GeographicAssignment(teamIds){
 function _upsertResultsRow(season, competition, place, teamId){
   const d=DB.results;
   const _hi=(name)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===name);
-  if(!d.h.length) d.h=['season','competition','place','team_id'];
-  const si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id');
+  if(!d.h.length) d.h=[...ED_DEFAULTS.results];
+  // v21.0 — ensure the `source` column exists so auto-writes can be told
+  // apart from manually-attached rows.
+  if(_hi('source')<0){
+    d.h.push('source');
+    d.r.forEach(r=>r.push(''));
+  }
+  const si=_hi('season'),ci=_hi('competition'),pi=_hi('place'),ti=_hi('team_id'),sourceI=_hi('source');
   if(si<0||ci<0||pi<0||ti<0){
     const row=new Array(d.h.length).fill('');
     d.r.push(row); return 'inserted';
@@ -7861,8 +7867,16 @@ function _upsertResultsRow(season, competition, place, teamId){
     String(r[si]||'').trim()===sStr &&
     String(r[ci]||'').trim()===cStr &&
     String(r[pi]||'').trim()===pStr);
+  // v21.0 — manual rows are protected from auto-overwrite. A row is
+  // "manual" when its `source` cell equals 'manual' (case-insensitive).
+  if(idx>=0 && sourceI>=0){
+    const existingSource=String(d.r[idx][sourceI]||'').trim().toLowerCase();
+    if(existingSource==='manual') return 'skipped-manual';
+  }
   const row=idx>=0?d.r[idx]:new Array(d.h.length).fill('');
   row[si]=sStr; row[ci]=cStr; row[pi]=pStr; row[ti]=tStr;
+  // Stamp the auto provenance so future audits / diffs can tell the source.
+  if(sourceI>=0) row[sourceI]='auto';
   if(idx<0){ d.r.push(row); return 'inserted'; }
   return 'updated';
 }
@@ -7949,8 +7963,16 @@ function _clearAutoResultsForSeason(targetSeason){
   const d=DB.results; if(!d||!d.r||!d.h)return 0;
   const si=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='season');
   if(si<0)return 0;
+  // v21.0 — manual rows survive the wipe. A row counts as manual when its
+  // `source` cell equals 'manual' (case-insensitive). Imported rows tagged
+  // by edImportCSV / edMergeCSV carry this marker.
+  const sourceI=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='source');
   const before=d.r.length;
-  d.r=d.r.filter(r=>String(r[si]||'').trim()!==String(targetSeason).trim());
+  d.r=d.r.filter(r=>{
+    if(String(r[si]||'').trim()!==String(targetSeason).trim()) return true;
+    if(sourceI>=0 && String(r[sourceI]||'').trim().toLowerCase()==='manual') return true;
+    return false;
+  });
   return before-d.r.length;
 }
 
@@ -10503,10 +10525,33 @@ function edImportCSV(e){
     const{h,r}=parseCSV(ev.target.result);
     if(!h.length){toast('Empty or invalid CSV','err');return;}
     edPushH();DB[edTab].h=h;DB[edTab].r=r.map(row=>[...row]);
+    // v21.0 — when importing results.csv via Attach CSV, mark every row as
+    // manual so the auto-regenerators (`_writeBlszOverallRanking`,
+    // `_writeMbConsolidatedRanking`, …) never overwrite the user's data.
+    // Ensures the `source` column exists, then sets it to 'manual' for every
+    // row that doesn't already have an explicit value.
+    if(edTab==='results') _edStampManualSource();
     edSelected.clear();edModified++;edSchedSave();edRender();
     toast(`Loaded ${r.length} rows from ${f.name}`,'');
   };
   r.readAsText(f);e.target.value='';
+}
+// v21.0 — flag every row of the current edit sheet as user-provided so the
+// auto-pipelines respect it. Idempotent: a row that already says 'auto' or
+// 'manual' is left alone; only blank source cells get stamped to 'manual'.
+function _edStampManualSource(){
+  const d=DB[edTab];
+  if(!d||!d.h) return;
+  let sourceI=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='source');
+  if(sourceI<0){
+    d.h.push('source'); sourceI=d.h.length-1;
+    d.r.forEach(r=>r.push('manual'));
+    return;
+  }
+  d.r.forEach(r=>{
+    while(r.length<d.h.length) r.push('');
+    if(!String(r[sourceI]||'').trim()) r[sourceI]='manual';
+  });
 }
 // Natural keys for Merge CSV. Existing rows that share these key columns
 // with an incoming row are OVERWRITTEN (so re-importing the same file is
@@ -10562,6 +10607,10 @@ function edMergeCSV(e){
       else if(k){ d.r.push(proj); idx.set(k,d.r.length-1); inserted++; }
       else { d.r.push(proj); inserted++; }
     });
+    // v21.0 — mark imported results rows as manual so they're never
+    // overwritten by the auto-regenerators. Has to run AFTER the merge
+    // because the source column may have been auto-added above.
+    if(edTab==='results') _edStampManualSource();
     edSelected.clear();edModified++;edSchedSave();edRender();
     const keyDesc=keys.length?` keyed by (${(_EDIT_MERGE_KEYS[edTab]||[]).join(', ')})`:'';
     toast(`Merged ${inserted} new + ${updated} updated rows from ${f.name}${keyDesc}${added.length?` · added cols: ${added.join(', ')}`:''}`,'');
