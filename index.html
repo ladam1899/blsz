@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.10</title>
+<title>League Manager v2026.05.20.11</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.11</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1216,13 +1216,25 @@ function serCSV(h,r){
 }
 
 // ── LOAD / SAVE ───────────────────────────────────────────────
-// v20.7 — per-season matches.csv split. To keep `matches.csv` small as
-// seasons accumulate, archived seasons are stored in their own files
-// (`matches_2000_01.csv`, …) on Drive while the in-memory `DB.matches.r`
-// stays unified so every view / standings / audit codepath works
-// unchanged. `_matchesSeasonFids` maps season → Drive file id so
-// subsequent saves don't create duplicate files.
+// v21.1 — per-season matches files, only current writable. Each season's
+// matches live in their own `matches_<season>.csv`. Past seasons are
+// READ-ONLY — the app never writes to them after the season is finished.
+// Saves go ONLY to the current season's file (resolved via state.csv
+// `current_date`). On load every archive file is read into the unified
+// `DB.matches.r` for views, with strict deduplication so a row appearing
+// in multiple files (legacy snapshots) is only kept once.
 const _matchesSeasonFids={}; // season → file id for matches_<season>.csv
+// v21.1 — duplicate-key for matches rows. Uses the same natural key as the
+// upsert path (rounds, level, match_number) plus date so two seasons sharing
+// a round code don't collapse onto each other.
+function _matchRowKey(row, h){
+  if(!h||!h.length||!row) return '';
+  const _i=(n)=>h.findIndex(x=>String(x||'').trim().toLowerCase()===n);
+  const ri=_i('rounds'), li=_i('level'), mni=_i('match_number'), di=_i('date'),
+        hi=_i('home_id'), ai=_i('away_id');
+  const get=(i)=>i>=0?String(row[i]==null?'':row[i]).trim():'';
+  return [get(ri),get(li),get(mni),get(di),get(hi),get(ai)].join('|');
+}
 async function loadAll(){
   setSS('busy');
   try{
@@ -1236,11 +1248,25 @@ async function loadAll(){
         DB[name].h=[...ED_DEFAULTS[name]];DB[name].r=[];DB[name].fid=null;
       }
     }
-    // v20.7 — discover & merge every `matches_<season>.csv` file in the
-    // Drive folder. Their rows are appended to DB.matches.r so the rest of
-    // the app sees one unified row list. Each archive's file id is cached
-    // in _matchesSeasonFids so re-saves update in place.
+    // v21.1 — discover every `matches_<season>.csv` and merge into
+    // DB.matches.r, deduplicating against the rows already loaded from the
+    // legacy `matches.csv` (if it still exists) and against earlier
+    // archives in case the prior bug created multiple snapshots for the
+    // same season. The first non-empty header found wins as the canonical
+    // schema. Each season's file id is cached so the next save targets
+    // the right file. When multiple files exist for the same season
+    // (the legacy June snapshot bug), the LAST-modified copy wins for the
+    // fid cache so future saves overwrite the freshest snapshot; older
+    // duplicates contribute rows only via dedup.
     Object.keys(_matchesSeasonFids).forEach(k=>delete _matchesSeasonFids[k]);
+    const seen=new Set();
+    // Seed dedup with whatever the legacy matches.csv already loaded.
+    if(DB.matches.h.length){
+      DB.matches.r.forEach(row=>{
+        const k=_matchRowKey(row, DB.matches.h);
+        if(k) seen.add(k);
+      });
+    }
     try{
       const all=await listFolder(FOLDER_ID,"mimeType='text/csv' or mimeType='application/vnd.google-apps.spreadsheet'").catch(()=>[]);
       const archiveRe=/^matches_(\d{4}_\d{2})\.csv$/i;
@@ -1251,23 +1277,33 @@ async function loadAll(){
         if(!season) continue;
         try{
           const{h,r}=parseCSV(await readFile(f.id,f.mimeType));
-          // First archive seen sets the canonical matches.h if it's empty
-          // (e.g. fresh install). Subsequent rows are remapped to that
-          // schema so columns line up.
           if(!DB.matches.h.length && h.length){
             DB.matches.h=h.slice();
+            // Re-seed dedup with the existing in-memory rows now that we
+            // know the schema (otherwise the seed above ran on an empty h).
+            DB.matches.r.forEach(row=>{
+              const k=_matchRowKey(row, DB.matches.h);
+              if(k) seen.add(k);
+            });
           }
           const mh=DB.matches.h;
+          let added=0,dup=0;
           r.forEach(row=>{
-            // Remap incoming row to the canonical header order.
-            const remapped=mh.map((col,ci)=>{
+            const remapped=mh.map((col)=>{
               const sourceI=h.indexOf(col);
               return sourceI>=0?(row[sourceI]==null?'':row[sourceI]):'';
             });
+            const k=_matchRowKey(remapped, mh);
+            if(k && seen.has(k)){ dup++; return; }
+            if(k) seen.add(k);
             DB.matches.r.push(remapped);
+            added++;
           });
+          // Always overwrite the fid cache — when Drive has multiple files
+          // with the same name (legacy snapshot bug), the LAST one we visit
+          // wins, so the next save target is at least deterministic.
           _matchesSeasonFids[season]=f.id;
-          console.log(`[loadAll] merged ${r.length} rows from matches_${season}.csv`);
+          console.log(`[loadAll] matches_${season}.csv: ${added} rows added, ${dup} duplicates skipped`);
         }catch(e){
           console.warn(`[loadAll] failed to read matches_${season}.csv:`,e);
         }
@@ -1295,13 +1331,10 @@ async function refreshAll(){
 async function saveSheet(name){
   const d=DB[name];
   if(!d.h.length)d.h=[...ED_DEFAULTS[name]];
-  // v20.7 — partition matches.csv by season on save. Current-season rows
-  // (covered by state.csv current_date) stay in matches.csv; every other
-  // season's rows go to matches_<season>.csv. Rows with no parseable date
-  // stay in matches.csv as a safe default. In-memory DB.matches.r is NOT
-  // mutated by the save — the partitioning only affects what's written.
+  // v21.1 — matches saves go to the current season's file only. Past
+  // seasons live in their own files and are never touched by the app.
   if(name==='matches'){
-    await _saveMatchesPartitioned(d);
+    await _saveMatchesCurrentOnly(d);
     return;
   }
   const csv=serCSV(d.h,d.r);
@@ -1310,43 +1343,51 @@ async function saveSheet(name){
   if(name==='teams')rebuildTeamMap();
 }
 
-// v20.7 — write matches.csv as one file per season. The "current" season
-// (covering state.csv `current_date`) stays in `matches.csv`; every other
-// season goes to `matches_<season>.csv`. The in-memory DB.matches.r stays
-// unified for the views. _matchesSeasonFids maps season → file id so we
-// PATCH existing archive files instead of creating duplicates.
-async function _saveMatchesPartitioned(d){
+// v21.1 — write ONLY the current season's matches to its own
+// `matches_<currentSeason>.csv` file. Past-season rows that exist in
+// DB.matches.r (loaded from their archive files at startup) are kept
+// in memory for views but never re-written, so archive files stay frozen
+// once the season ends. Undated rows go with the current season so they
+// don't drift onto disk. If the legacy `matches.csv` file still exists
+// in the folder, it's left alone — it's no longer read or written by
+// the app. The first save after this version creates
+// `matches_<currentSeason>.csv` if it doesn't exist yet.
+async function _saveMatchesCurrentOnly(d){
   const cur=(typeof currentDate==='function')?currentDate():'';
   const curSeason=(cur && typeof seasonFor==='function')?seasonFor(cur):'';
+  if(!curSeason){
+    console.warn('[saveMatches] no current season — falling back to matches.csv');
+    const csv=serCSV(d.h,d.r);
+    const newId=await writeToDrive('matches.csv',csv,d.fid);
+    if(newId) d.fid=newId;
+    return;
+  }
   const di=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
-  // Bucket rows by season. Undated rows + current-season rows → matches.csv.
-  const buckets={}; // season → row[]
   const currentBucket=[];
   d.r.forEach(row=>{
     const dateStr=di>=0?String(row[di]||'').trim():'';
     if(!dateStr){ currentBucket.push(row); return; }
     let s='';
     try{ s=seasonFor(dateStr)||''; }catch(_){}
-    if(!s || s===curSeason){ currentBucket.push(row); return; }
-    (buckets[s]=buckets[s]||[]).push(row);
+    if(!s || s===curSeason) currentBucket.push(row);
+    // Other-season rows: DROPPED from this write (they stay in their
+    // archive file on Drive, untouched). In-memory DB.matches.r is not
+    // mutated, so views still see them.
   });
-  // Write matches.csv (current season + undated).
-  const curCsv=serCSV(d.h,currentBucket);
-  const curId=await writeToDrive('matches.csv',curCsv,d.fid);
-  if(curId) d.fid=curId;
-  console.log(`[saveMatches] matches.csv: ${currentBucket.length} rows (current season ${curSeason||'(none)'})`);
-  // Write every archive bucket.
-  for(const season of Object.keys(buckets)){
-    const csv=serCSV(d.h,buckets[season]);
-    const existingId=_matchesSeasonFids[season]||null;
-    try{
-      const newId=await writeToDrive(`matches_${season}.csv`,csv,existingId);
-      if(newId) _matchesSeasonFids[season]=newId;
-      console.log(`[saveMatches] matches_${season}.csv: ${buckets[season].length} rows`);
-    }catch(e){
-      console.warn(`[saveMatches] failed to write matches_${season}.csv:`,e);
-      throw e;
+  const csv=serCSV(d.h,currentBucket);
+  const existingId=_matchesSeasonFids[curSeason]||null;
+  try{
+    const newId=await writeToDrive(`matches_${curSeason}.csv`,csv,existingId);
+    if(newId){
+      _matchesSeasonFids[curSeason]=newId;
+      // Keep DB.matches.fid pointing at the current-season file so legacy
+      // code paths that read DB.matches.fid still work.
+      d.fid=newId;
     }
+    console.log(`[saveMatches] matches_${curSeason}.csv: ${currentBucket.length} rows (current season only)`);
+  }catch(e){
+    console.warn(`[saveMatches] failed to write matches_${curSeason}.csv:`,e);
+    throw e;
   }
 }
 function detectSeason(){
@@ -4048,23 +4089,13 @@ async function advanceToNextRound(){
   }
   if(isJunCrossing && !_juneNewSeasonPopupShown.has(nextSeason)){
     _juneNewSeasonPopupShown.add(nextSeason);
-    // STEP 1 — SAFETY NET: snapshot the current matches.csv to Drive as
-    // `matches_<curSeason>.csv` before regenerating. The new-season
-    // generation should NOT touch the old season (per v11 upsert fix), but
-    // if it ever does, the user can restore from this snapshot. The
-    // snapshot file is independent of `matches.csv` and is not read back
-    // by the app — it's a pure write-once safety net.
-    try{
-      const csv=serCSV(DB.matches.h, DB.matches.r);
-      const fname=`matches_${curSeason||'unknown'}.csv`;
-      await writeToDrive(fname, csv, null); // no existId → always creates fresh
-      toast(`💾 Snapshot saved: ${fname}`,'');
-      console.log(`[advanceToNextRound] wrote pre-rollover snapshot ${fname}`);
-    }catch(e){
-      // Don't block the rollover on snapshot failure — just warn loudly.
-      console.error('[advanceToNextRound] snapshot save failed:',e);
-      toast('⚠ Snapshot save failed — rollover continues anyway. See console.','warn');
-    }
+    // v21.1 — the legacy "pre-rollover snapshot" step was removed. It used
+    // `writeToDrive(fname, csv, null)` which always created a NEW file, so
+    // every June crossing produced another `matches_<curSeason>.csv` and
+    // those duplicates caused row multiplication on the next reload. The
+    // per-season write model (`_saveMatchesCurrentOnly`) is the canonical
+    // archive path now — past-season files are written once when the
+    // season ends and then left alone.
     // STEP 2 — finalize the just-finished season's MB-R consolidated `MB`
     // ranking (1..76) AND the `BLSZ` aggregate (1..N for every team in
     // teams.csv). Both are needed by next-season draws: `MB` seeds KKQ
