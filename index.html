@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.19.9</title>
+<title>League Manager v2026.05.20.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -862,7 +862,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.19.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3567,6 +3567,50 @@ function _hbHalfPerformance(season, half){
 // `season` always names the half-season being LEFT behind. So in June mode,
 // `season` = "2000_01" (the just-finished season) and the new rows go into
 // "2001_02_A".
+// v20.0 — does calendar.csv have any MB / KK / NK round entries in the
+// given (season, half) window? Used as a hard gate before we open the
+// half-boundary popup: without MB/KK/NK rounds there's nothing to play,
+// so we refuse to run the generation entirely instead of producing an
+// empty half. Returns {ok:bool, present:{MB,KK,NK}, season, half}.
+function _halfHasCoreRounds(targetSeason, half){
+  const d=DB.calendar;
+  const out={ok:false, present:{MB:false,KK:false,NK:false}, season:targetSeason, half};
+  if(!d||!d.r||!d.r.length) return out;
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), si=_hi('season');
+  if(di<0) return out;
+  // Jan-1 split of the target season → autumn-half rows have date < split,
+  // spring-half rows have date >= split.
+  const sy=(()=>{const m=String(targetSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
+  const split=isNaN(sy)?'':(sy+'-01-01');
+  const inThisHalf=(iso)=>{
+    if(!iso||!split) return half==='A';
+    return half==='A' ? iso<split : iso>=split;
+  };
+  const systemCols=new Set();
+  if(di>=0) systemCols.add(di);
+  if(si>=0) systemCols.add(si);
+  const gdi=_hi('game_day'); if(gdi>=0) systemCols.add(gdi);
+  d.r.forEach(r=>{
+    const iso=normalizeDate(r[di])||String(r[di]||'').trim();
+    if(!iso) return;
+    let rs=si>=0?String(r[si]||'').trim():'';
+    if(!rs && typeof seasonFor==='function') rs=seasonFor(iso)||'';
+    if(rs && rs!==targetSeason) return;
+    if(!inThisHalf(iso)) return;
+    for(let c=0;c<r.length;c++){
+      if(systemCols.has(c)) continue;
+      const cell=String(r[c]||'').trim();
+      if(!cell) continue;
+      if(/^MB-/i.test(cell)) out.present.MB=true;
+      else if(/^KK/i.test(cell)) out.present.KK=true;
+      else if(/^NK[WL-]/i.test(cell)||/^NK-/i.test(cell)) out.present.NK=true;
+    }
+  });
+  out.ok=out.present.MB||out.present.KK||out.present.NK;
+  return out;
+}
+
 function _confirmHalfBoundary(season,splitDate,nextDate,mode){
   return new Promise(resolve=>{
     const isJune=String(mode||'')==='S->newA';
@@ -3583,6 +3627,36 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
     const sTag=isJune?(_nextSeasonStr(season)+'_A'):(season+'_S');
     const dstSeason=isJune?_nextSeasonStr(season):season;
     const srcHalf=isJune?'S':'A';
+    const dstHalf=isJune?'A':'S';
+    // v20.0 — HARD GATE: refuse to start a new half generation when the
+    // target (dstSeason, dstHalf) window has NO MB / KK / NK rounds in
+    // calendar.csv. Without those the half is empty and running the gen
+    // would only produce stub rows and overwrite skill baselines — both
+    // bad. Show a non-blocking popup explaining what's missing and bail
+    // with resolve(false) so advanceToNextRound aborts the rollover.
+    const _gate=(typeof _halfHasCoreRounds==='function')
+      ? _halfHasCoreRounds(dstSeason,dstHalf) : {ok:true,present:{MB:true,KK:true,NK:true}};
+    if(!_gate.ok){
+      const missing=['MB','KK','NK'].filter(k=>!_gate.present[k]).join(', ');
+      const halfLabel=dstHalf==='A'?'autumn':'spring';
+      const ov=document.createElement('div');
+      ov.className='panel-overlay open'; ov.style.zIndex='500';
+      const md=document.createElement('div');
+      md.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;width:min(94vw,520px);z-index:501;box-shadow:0 20px 60px rgba(0,0,0,.25);';
+      md.innerHTML=
+        `<h3 style="margin:0 0 8px;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;color:#c0392b;">⚠ Cannot start new half-season</h3>`+
+        `<p style="margin:0 0 10px;color:var(--text);font-size:13px;line-height:1.5;">No <b>MB</b>, <b>KK</b>, or <b>NK</b> rounds are scheduled in <code>calendar.csv</code> for the <b>${halfLabel} half of ${esc(dstSeason)}</b>.</p>`+
+        `<p style="margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.5;">Missing competitions: <b>${esc(missing||'(all three)')}</b>.<br>Add the round entries for that period via ⚙ Data Editor → Calendar (Merge CSV), then try again.</p>`+
+        `<div style="display:flex;justify-content:flex-end;gap:8px;">`+
+        `<button type="button" id="hbGateOk" class="tbtn" style="background:var(--green);color:#fff;border-color:var(--green);">Got it</button>`+
+        `</div>`;
+      document.body.appendChild(ov);
+      document.body.appendChild(md);
+      const teardown=()=>{ov.remove();md.remove();resolve(false);};
+      md.querySelector('#hbGateOk').addEventListener('click',teardown);
+      ov.addEventListener('click',teardown);
+      return;
+    }
     const crossingLabel=isJune?`AUTUMN half of ${esc(_nextSeasonStr(season)||'?')}`:`SPRING half of ${esc(season||'?')}`;
     const previousLabel=isJune?`spring half of ${esc(season||'?')}`:`autumn half of ${esc(season||'?')}`;
     // Build a per-half preview of which competition rounds will be (re)generated
@@ -3666,8 +3740,42 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
           }
         }
       }
-      return arr.sort((a,b)=>a.name.localeCompare(b.name));
+      return arr;
     })();
+    // v20.0 — group teams by (org, division) the same way the ⚽ Add match
+    // dropdown does. ORG is read from teams.csv via `teamById(id).org`
+    // (defaults to '(none)' for blank). Inside each org, BLSZ is split into
+    // MB1 / MB2 / MB3 / Rest via `_playDivisionFor`; non-BLSZ orgs use a
+    // single 'All' tier so they still get an org-level group heading.
+    const _orgOf=(tid)=>{
+      const t=(typeof teamById==='function')?teamById(tid):null;
+      const o=(t&&String(t.org||'').trim())||'';
+      return o||'(none)';
+    };
+    const _divOf=(tid,org)=>{
+      if(String(org||'').trim()!=='BLSZ') return 'All';
+      return (typeof _playDivisionFor==='function')?_playDivisionFor(tid):'Rest';
+    };
+    const _ORG_ORDER=['BLSZ','CHL','UEFA','EURO','WC','(none)'];
+    const _orgRank=(o)=>{
+      const i=_ORG_ORDER.indexOf(o);
+      return i>=0?i:(_ORG_ORDER.length+o.charCodeAt(0));
+    };
+    const _DIV_ORDER=['MB1','MB2','MB3','Rest','All'];
+    teamsArr.forEach(tt=>{
+      tt.org=_orgOf(tt.tid);
+      tt.div=_divOf(tt.tid,tt.org);
+    });
+    teamsArr.sort((a,b)=>{
+      const oa=_orgRank(a.org), ob=_orgRank(b.org);
+      if(oa!==ob) return oa-ob;
+      if(a.org!==b.org) return a.org.localeCompare(b.org);
+      const da=_DIV_ORDER.indexOf(a.div), db=_DIV_ORDER.indexOf(b.div);
+      const dar=da>=0?da:_DIV_ORDER.length;
+      const dbr=db>=0?db:_DIV_ORDER.length;
+      if(dar!==dbr) return dar-dbr;
+      return a.name.localeCompare(b.name);
+    });
     // Read autumn baseline per team. Fall back to defaultSkills() when the
     // team has no _A row so every team is always editable.
     const _defaults=(typeof defaultSkills==='function')?defaultSkills():{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};
@@ -3702,7 +3810,18 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
       return (r>0?'+':'')+s;
     };
 
+    // v20.0 — emit a sticky "ORG · Division" heading row each time either
+    // changes during the iteration. Heading rows span all 8 columns and
+    // carry no data-row attribute, so the existing save loop (which iterates
+    // every `input[data-tid]`) ignores them.
+    let _curOrg='', _curDiv='';
     const rowsHtml=teamsArr.map(tt=>{
+      let headerRow='';
+      if(tt.org!==_curOrg || tt.div!==_curDiv){
+        _curOrg=tt.org; _curDiv=tt.div;
+        const divLabel=tt.div==='All'?'':(' · '+tt.div);
+        headerRow=`<tr class="hb-group-row"><td colspan="8" class="hb-group-cell">${esc(tt.org)}${esc(divLabel)}</td></tr>`;
+      }
       const a=_autAll[tt.tid].skills;
       const perf=_perfMap.get(tt.tid);
       const adj=_initAdj(tt.tid);
@@ -3716,7 +3835,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
       const aTitle=_autSource[tt.tid]==='default'?'No _A row — default baseline 50':'Previous half-season `skills` value';
       const avgTitle=perf?`Average of ${perf.samples} rand-roll cell(s) across this team's ${perf.matches} autumn match(es). Perf Δ only applies when matches > 10 (this team: ${perf.matches}${perf.applied?' — applied':' — too few, treated as 0'})`:'No autumn rolls recorded';
       const recTitle=perf&&perf.applied?`Previous skills (${a}) + Perf Δ (${_fmtDelta(perf.perfDelta)})`:'Same as previous skills (perf Δ not applied)';
-      return `<tr data-row="${esc(tt.tid)}">`+
+      return headerRow+`<tr data-row="${esc(tt.tid)}">`+
         `<td class="hb-team" title="${esc(tt.tid)}">${esc(tt.name)}</td>`+
         `<td class="hb-avg" title="${esc(avgTitle)}">${esc(avgStr)}</td>`+
         `<td class="hb-samp" title="Matches played in autumn (perf Δ applies only when > 10)">${esc(nStr)}</td>`+
@@ -3768,6 +3887,9 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
       '.hb-table tbody td.hb-team{position:sticky;left:0;background:var(--surface);text-align:left;font-family:"Inter",sans-serif;font-weight:500;white-space:nowrap;}'+
       '.hb-table tbody tr:hover td{background:var(--surface2);}'+
       '.hb-table tbody tr:hover td.hb-team{background:var(--surface2);}'+
+      // v20.0 — group heading rows (ORG · Division).
+      '.hb-table tbody tr.hb-group-row td.hb-group-cell{background:var(--surface2);font-family:"Bebas Neue",sans-serif;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);text-align:left;padding:8px 10px;border-top:2px solid var(--border);position:sticky;left:0;}'+
+      '.hb-table tbody tr.hb-group-row:hover td{background:var(--surface2) !important;}'+
       '.hb-table td.hb-aut{color:var(--muted);}'+
       '.hb-table td.hb-aut-default{color:var(--dimmed);font-style:italic;}'+
       '.hb-table td.hb-avg{color:var(--muted);}'+
