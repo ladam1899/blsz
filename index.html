@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.2</title>
+<title>League Manager v2026.05.20.3</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -203,6 +203,24 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 .st-table col.c-n{width:26px;}
 .st-table col.c-gd{width:32px;}
 .st-table col.c-pts{width:32px;}
+.st-table col.c-form{width:78px;}
+.st-table td.c-form{padding:6px 4px;text-align:center;white-space:nowrap;}
+.st-table th.c-form{text-align:center;}
+/* v20.3 — form-guide chips. 12×12 squares (newest left), W=green, D=amber,
+   L=red. The matching `.form-row-full` is a wider flex strip used by the
+   season-schedule popup and the per-competition expanded popup. */
+.form-chip{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 1px;font-size:0;line-height:12px;vertical-align:middle;cursor:help;}
+.form-chip.fc-w{background:#16a34a;}
+.form-chip.fc-d{background:#f59e0b;}
+.form-chip.fc-l{background:#dc2626;}
+.form-empty{color:var(--muted);font-style:italic;font-size:11px;}
+.form-row-full{display:flex;flex-wrap:wrap;gap:3px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin:0 0 12px;}
+.form-row-full .form-chip{width:14px;height:14px;border-radius:3px;margin:0;}
+/* v20.3 — "previous round" chip in the round-card header. Same circular
+   shape as `.rc-add` but a subtle ghost style so it's clearly a
+   navigation hint, not a primary action. */
+.rc-prev{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;font-size:14px;line-height:1;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:50%;cursor:pointer;padding:0;transition:background .15s,color .15s,transform .15s;}
+.rc-prev:hover{background:var(--green);color:#fff;border-color:var(--green);transform:scale(1.06);}
 .st-table th{background:var(--surface);padding:6px 4px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
 .st-table th.n{text-align:center;}
 .st-table td{padding:6px 4px;border-bottom:1px solid var(--border);vertical-align:middle;}
@@ -863,7 +881,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.3</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2322,6 +2340,32 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   // the round code when the user has uploaded the corresponding PNG.
   const _cupLogo=(typeof cupLogoFor==='function')?cupLogoFor(info.round):null;
   const _cupHtml=_cupLogo?`<img class="rc-cup-logo" src="${_cupLogo}" alt="" title="${esc(_lgRoundFamily(info.round)||'')}">`:'';
+  // v20.3 — "previous round of same league" indicator. Walks every calendar
+  // round of the same family (`_lgRoundFamily`), finds the most recent entry
+  // whose date sits strictly before this card's date, and renders a small
+  // ⟲ chip in the header. Hover surfaces the previous round's code + date.
+  // Clicking jumps the Matches view to that round.
+  const _prevSame=(()=>{
+    try{
+      const fam=(typeof _lgRoundFamily==='function')?_lgRoundFamily(info.round):'';
+      if(!fam) return null;
+      const all=(typeof _lgCalendarRounds==='function')?_lgCalendarRounds():[];
+      const same=all.filter(r=>{
+        if(r.key===info.key) return false;
+        const rf=_lgRoundFamily(r.round);
+        if(rf!==fam) return false;
+        // Same season as this card so we don't jump across years.
+        const _sa=r.season||(typeof seasonFor==='function'?seasonFor(r.date):'');
+        const _sb=info.season||(typeof seasonFor==='function'?seasonFor(info.date):'');
+        if(_sa&&_sb&&_sa!==_sb) return false;
+        return r.date && r.date<info.date;
+      }).sort((a,b)=>a.date.localeCompare(b.date));
+      return same.length?same[same.length-1]:null;
+    }catch(_){return null;}
+  })();
+  const _prevHtml=_prevSame
+    ? `<button class="rc-prev" onclick="event.stopPropagation();lgPickRound('${esc(_prevSame.key).replace(/'/g,'&#39;')}')" title="Previous ${esc(_lgRoundFamily(info.round)||'')} round: ${esc(_prevSame.round)} · ${esc(_prevSame.date)} (${esc(formatDate(_prevSame.date))})">⟲</button>`
+    : '';
   return`<div class="round-card ${status}" id="lgRc-${_lgCssId(info.key)}">
     <div class="rc-hdr" style="border-left:4px solid ${col}">
       <div>
@@ -2329,6 +2373,7 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
         <div class="rc-sub">${formatDate(info.date)}${info.game_day?' · Game day '+esc(info.game_day):''}${info.season?' · '+esc(seasonLabel(info.season)):''}</div>
       </div>
       <div class="rc-play">
+        ${_prevHtml}
         <span class="rc-stage">${esc(stageLabel)}</span>
         ${_addBtn}
       </div>
@@ -2715,6 +2760,43 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
     else{stats[h].d++;stats[a].d++;stats[h].pts++;stats[a].pts++;}
   });
   const table=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf||String(a.name).localeCompare(String(b.name),'hu'));
+  // v20.3 — per-team form guide (last N matches in THIS competition pool).
+  // Uses the same `included` row list that built the stats above, so the
+  // form squares reflect exactly the matches contributing to the standings.
+  // Returns an array of {result:'W'|'D'|'L', date, round, opp, score} sorted
+  // newest-first. `limit` caps the count (5 for the inline column; Infinity
+  // for the popup that shows every match in the league).
+  const _formForTeam=(tid,limit)=>{
+    const lim=(limit==null||limit===Infinity)?Infinity:Math.max(0,limit|0);
+    const sortable=included.map(r=>{
+      const h=c.home>=0?String(r[c.home]||'').trim():'';
+      const a=c.away>=0?String(r[c.away]||'').trim():'';
+      if(h!==tid&&a!==tid) return null;
+      const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
+      const aS=c.as>=0?parseInt(r[c.as]):NaN;
+      if(isNaN(hs)||isNaN(aS)) return null;
+      const d=c.date>=0?normalizeDate(r[c.date]):'';
+      const ed=_effDate(r,d);
+      const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+      const rNum=_roundNumber(rd);
+      // Sort key: round number (preferred for same-tournament) AND date as
+      // tie-breaker. Pack into a single sortable string so the same `sort`
+      // call works for both same-tournament and cross-tournament rows.
+      const skey=`${ed||'0000-00-00'}_${String(rNum||0).padStart(6,'0')}`;
+      const isHome=(h===tid);
+      const my=isHome?hs:aS, opp=isHome?aS:hs;
+      const oppId=isHome?a:h;
+      const t=(typeof teamById==='function')?teamById(oppId):{name:oppId};
+      const res=my>opp?'W':my<opp?'L':'D';
+      return {result:res, date:ed||d, round:rd, opp:String(t.name||oppId), score:`${hs}-${aS}`, isHome, skey};
+    }).filter(Boolean).sort((a,b)=>a.skey<b.skey?1:a.skey>b.skey?-1:0);
+    return lim===Infinity?sortable:sortable.slice(0,lim);
+  };
+  const _formChipHTML=(f)=>{
+    const cls=f.result==='W'?'fc-w':f.result==='D'?'fc-d':'fc-l';
+    const title=`${esc(f.date)} · ${esc(f.round)} · ${f.isHome?'H':'A'} vs ${esc(f.opp)} · ${esc(f.score)} (${f.result})`;
+    return `<span class="form-chip ${cls}" title="${title}">${f.result}</span>`;
+  };
   // ── Previous-round snapshot (for the place-change Δ column) ────────────
   // Re-aggregate from `included` minus any row in the CURRENT card's round
   // (sameTournament: rNum < cardNumber; otherwise: ed < roundDate). Skip if
@@ -2769,8 +2851,8 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
                   :(isKK?`<th class="c-dest" title="${esc(_kkColTitle)}">${esc(_kkColLabel)}</th>`
                   :(isMbR?`<th class="c-dest" title="${esc(_mbrColTitle)}">MB</th>`:''));
     html+=`<table class="st-table">
-      <colgroup><col class="c-pos"><col class="c-chg">${_showDest?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"></colgroup>
-      <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${_destHdr}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th></tr></thead>
+      <colgroup><col class="c-pos"><col class="c-chg">${_showDest?'<col class="c-dest">':''}<col class="c-team"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gd"><col class="c-pts"><col class="c-form"></colgroup>
+      <thead><tr><th>#</th><th class="c-chg" title="Place change since the previous round">Δ</th>${_destHdr}<th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GD</th><th class="n">Pts</th><th class="c-form" title="Form: last 5 matches in this competition (newest on the left). Click to expand to every match.">Form</th></tr></thead>
       <tbody>`;
     table.forEach((t,i)=>{
       const pos=i+1,total=table.length;
@@ -2823,6 +2905,16 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
         const md=_kkDestForPlace('MB-R',level,pos);
         destCell=`<td class="c-dest" title="${esc(_mbrColTitle)}">${esc(md)}</td>`;
       }
+      // v20.3 — last-5 form column. Click expands to every match in this
+      // competition via openTeamFormPopup (rendered into the shared modal).
+      const _form5=_formForTeam(t.id,5);
+      const _formCellTitle=_form5.length?'Click to see every match in this competition':'No form yet';
+      // The cup label is what the popup needs to filter when expanded — we
+      // already have `hdrLabel` (level or rounds-prefix) and `groupPrefix`
+      // (the rounds-prefix). Pass both via data-attrs through the click.
+      const _compLbl=esc((hdrLabel||groupPrefix||'')+'').replace(/'/g,'&#39;');
+      const formClick=`event.stopPropagation();openTeamFormPopup('${tid}','${esc(season)}','${_compLbl}','${esc(groupPrefix||'')}','${esc(level||'')}')`;
+      const formCell=`<td class="c-form" onclick="${formClick}" style="cursor:pointer" title="${esc(_formCellTitle)}">${_form5.map(_formChipHTML).join('')||'<span class="form-empty">—</span>'}</td>`;
       html+=`<tr class="st-row ${rowCls}" onclick="openTeamProfile('${tid}','${esc(season)}')" title="Open team profile — ${ttl}">
         <td><span class="pos-badge ${pc}">${pos}</span></td>
         <td class="c-chg">${chgHTML}</td>
@@ -2830,6 +2922,7 @@ function _lgLevelStandCardHTML(info,c,level,seasonHint,status,reveal,groupMode){
         <td class="team"><div class="team-cell"><div class="team-badge-sm" style="background:${logo?'#fff':safeColor(t.color)}">${logo?`<img src="${logo}" alt="">`:esc(t.name.slice(0,3).toUpperCase())}</div><div class="team-name-block"><span class="team-name" title="${esc(t.name)}">${esc(t.name)}</span>${metaLine}</div></div></td>
         <td class="n">${t.p}</td><td class="n">${t.w}</td><td class="n">${t.d}</td><td class="n">${t.l}</td>
         <td class="n">${gd}</td><td class="pts">${t.pts}</td>
+        ${formCell}
       </tr>`;
     });
     html+=`</tbody></table>`;
@@ -3123,15 +3216,23 @@ function openTeamProfile(teamId,seasonHint,leagueFilter){
   const skLevel=_teamMBGroup(t.id,season);
   if(skLevel)meta.push(`<div class="im-row"><span class="im-k">Division</span><b>${esc(skLevel)}</b></div>`);
   meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)}</b></div>`);
-  // All PLAYED season matches for this team. v17.2: filter out unplayed
-  // (no full-time score) and future (date > current_date) rows up-front
-  // so the list only ever shows finished games. v20.2: also respect the
-  // league filter (MB / KK / NK / Other / all) and reverse the date order
-  // so newest sits at the top.
+  // v20.3 — show every season match for this team where BOTH opponents are
+  // DECIDED (real team IDs present in both home_id and away_id). Played
+  // matches render with scores; future-but-decided matches render without
+  // scores (passes revealScore=false to _imMatchRowHTML). Rows where the
+  // opponent is still a placeholder/blank are skipped entirely — those
+  // are the "not yet decided" fixtures the user does not want to see.
   const matches=DB.matches.r.filter(r=>{
-    const h=c.home>=0?String(r[c.home]||''):'';
-    const a=c.away>=0?String(r[c.away]||''):'';
+    const h=c.home>=0?String(r[c.home]||'').trim():'';
+    const a=c.away>=0?String(r[c.away]||'').trim():'';
     if(h!==teamId&&a!==teamId)return false;
+    // Both sides must be filled in — otherwise the fixture isn't decided.
+    if(!h||!a) return false;
+    // Skip rows whose opponent isn't a real team_id (placeholder tokens
+    // like `KKQ-1-1` aren't in the teams map). Use _teamMap directly so we
+    // don't pay the teamById() fallback that returns a synthetic shell.
+    if(!_teamMap) rebuildTeamMap();
+    if(!_teamMap.has(h)||!_teamMap.has(a)) return false;
     if(season){
       const date=c.date>=0?normalizeDate(r[c.date]):'';
       if(!date) return false;
@@ -3141,7 +3242,7 @@ function openTeamProfile(teamId,seasonHint,leagueFilter){
       const rnd=c.rounds>=0?String(r[c.rounds]||''):'';
       if(_matchLeagueBucket(rnd)!==league) return false;
     }
-    return _isMatchPlayedInApp(r,c);
+    return true;
   }).sort((a,b)=>{
     const da=c.date>=0?normalizeDate(a[c.date]):'';
     const db=c.date>=0?normalizeDate(b[c.date]):'';
@@ -3227,6 +3328,39 @@ function openTeamProfile(teamId,seasonHint,leagueFilter){
     <label>League:</label>
     <select onchange="openTeamProfile('${_tidEsc}','${esc(season)}',this.value)">${_leagueOpts}</select>
   </div>`;
+  // v20.3 — form-line for the team's PLAYED matches under the active filter.
+  // No 5-match cap, one chip per match, newest-first (matches list order).
+  // Skips future-but-decided rows so the squares only reflect real results.
+  const _formAll=(()=>{
+    const out=[];
+    matches.forEach(r=>{
+      if(!_isMatchPlayedInApp(r,c)) return;
+      const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
+      const aS=c.as>=0?parseInt(r[c.as]):NaN;
+      if(isNaN(hs)||isNaN(aS)) return;
+      const h=c.home>=0?String(r[c.home]||'').trim():'';
+      const isHome=(h===teamId);
+      const my=isHome?hs:aS, opp=isHome?aS:hs;
+      const oppId=isHome?String(r[c.away]||'').trim():h;
+      const oppT=teamById(oppId);
+      out.push({
+        result:my>opp?'W':my<opp?'L':'D',
+        date:c.date>=0?normalizeDate(r[c.date]):'',
+        round:c.rounds>=0?String(r[c.rounds]||''):'',
+        opp:String(oppT.name||oppId),
+        score:`${hs}-${aS}`,
+        isHome
+      });
+    });
+    return out;
+  })();
+  const _formStrip=_formAll.length
+    ? `<div class="form-row-full">${_formAll.map(f=>{
+        const cls=f.result==='W'?'fc-w':f.result==='D'?'fc-d':'fc-l';
+        const ttl=`${esc(f.date)} · ${esc(f.round)} · ${f.isHome?'H':'A'} vs ${esc(f.opp)} · ${esc(f.score)} (${f.result})`;
+        return `<span class="form-chip ${cls}" title="${ttl}">${f.result}</span>`;
+      }).join('')}</div>`
+    : `<div class="im-empty">No played matches yet in this league for this season.</div>`;
   document.getElementById('infoModalTitle').innerHTML=
     `<span>${esc(t.name)}</span><span class="im-sub">${esc(seasonTxt)} · season schedule</span>`;
   document.getElementById('infoModalBody').innerHTML=
@@ -3234,6 +3368,8 @@ function openTeamProfile(teamId,seasonHint,leagueFilter){
     seasonBar+
     `<div class="im-section-hdr">Season totals</div>`+
     summary+
+    `<div class="im-section-hdr">Form ${league?'· '+esc(league):''} <span class="sc">${_formAll.length} match${_formAll.length===1?'':'es'}</span></div>`+
+    _formStrip+
     `<div class="im-section-hdr">Results <span class="sc">${_resultsRows.length} row${_resultsRows.length===1?'':'s'}</span></div>`+
     resultsHTML+
     `<div class="im-section-hdr">All ${seasonTxt} matches <span class="sc">${matches.length} row${matches.length===1?'':'s'}</span></div>`+
@@ -3254,6 +3390,100 @@ function _matchLeagueBucket(roundsCell){
   if(fam==='NK') return 'NK';
   return 'Other';
 }
+// v20.3 — competition-scoped form popup. Renders every PLAYED match for
+// `teamId` in `season` within the given competition (identified by either
+// `groupPrefix` like `MB-B` or `KKARA` plus optional `level` like `1M` /
+// `I`). Same chip squares as the standings column, just unlimited. Newest
+// first. Opened from the Form-column click on the standings card.
+function openTeamFormPopup(teamId, season, compLabel, groupPrefix, level){
+  if(!teamId) return;
+  const t=(typeof teamById==='function')?teamById(teamId):{id:teamId,name:teamId,color:'#888'};
+  const c=(typeof _lgMatchCols==='function')?_lgMatchCols():null;
+  if(!c) return;
+  const _roundPrefix=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?m[1]:String(code||'');};
+  const _roundNumber=(code)=>{const m=String(code||'').match(/^(.+)-(\d+)$/);return m?parseInt(m[2]):NaN;};
+  // Pull every season match where `teamId` played in the requested
+  // competition pool. Same prefix + level scoping as the standings card
+  // uses, so the form-popup match list matches what the inline column was
+  // summarizing. Played-only (full-time score recorded AND in the app's
+  // played timeline).
+  const rows=DB.matches.r.filter(r=>{
+    const h=c.home>=0?String(r[c.home]||'').trim():'';
+    const a=c.away>=0?String(r[c.away]||'').trim():'';
+    if(h!==teamId&&a!==teamId) return false;
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    if(groupPrefix){
+      if(_roundPrefix(rd)!==groupPrefix) return false;
+    }
+    if(level){
+      const lv=c.level>=0?String(r[c.level]||'').trim():'';
+      if(lv!==level) return false;
+    }
+    if(season){
+      const d=c.date>=0?normalizeDate(r[c.date]):'';
+      if(!d) return false;
+      if(seasonFor(d)!==season) return false;
+    }
+    if(!_isMatchPlayedInApp(r,c)) return false;
+    const hs=c.hs>=0?parseInt(r[c.hs]):NaN;
+    const aS=c.as>=0?parseInt(r[c.as]):NaN;
+    return !isNaN(hs)&&!isNaN(aS);
+  }).map(r=>{
+    const h=c.home>=0?String(r[c.home]||'').trim():'';
+    const a=c.away>=0?String(r[c.away]||'').trim():'';
+    const hs=parseInt(r[c.hs]), aS=parseInt(r[c.as]);
+    const d=c.date>=0?normalizeDate(r[c.date]):'';
+    const rd=c.rounds>=0?String(r[c.rounds]||'').trim():'';
+    const isHome=(h===teamId);
+    const my=isHome?hs:aS, opp=isHome?aS:hs;
+    const oppId=isHome?a:h;
+    const oppT=(typeof teamById==='function')?teamById(oppId):{name:oppId};
+    return {
+      result:my>opp?'W':my<opp?'L':'D',
+      date:d, round:rd, opp:String(oppT.name||oppId), score:`${hs}-${aS}`,
+      isHome, row:r
+    };
+  }).sort((x,y)=>{
+    const dx=x.date||'', dy=y.date||'';
+    const nx=_roundNumber(x.round)||0, ny=_roundNumber(y.round)||0;
+    if(dx!==dy) return dx<dy?1:-1;
+    return ny<nx?1:ny>nx?-1:0;
+  });
+  // Counters for the small summary line.
+  let w=0,drw=0,l=0,gf=0,ga=0;
+  rows.forEach(f=>{
+    if(f.result==='W') w++; else if(f.result==='D') drw++; else l++;
+    const [a,b]=String(f.score).split('-').map(n=>parseInt(n)||0);
+    if(f.isHome){ gf+=a; ga+=b; } else { gf+=b; ga+=a; }
+  });
+  const chips=rows.map(f=>{
+    const cls=f.result==='W'?'fc-w':f.result==='D'?'fc-d':'fc-l';
+    const ttl=`${esc(f.date)} · ${esc(f.round)} · ${f.isHome?'H':'A'} vs ${esc(f.opp)} · ${esc(f.score)} (${f.result})`;
+    return `<span class="form-chip ${cls}" title="${ttl}">${f.result}</span>`;
+  }).join('');
+  const rowsHtml=rows.length
+    ? `<div class="im-match-list">${rows.map(f=>_imMatchRowHTML(f.row,c,true)).join('')}</div>`
+    : `<div class="im-empty">No matches played yet in this competition.</div>`;
+  const logo=(typeof logoFor==='function')?logoFor(teamId,season):null;
+  const logoHtml=logo
+    ?`<div class="im-team-logo" style="background:#fff"><img src="${logo}" alt=""></div>`
+    :`<div class="im-team-logo" style="background:${safeColor(t.color||'#888')}">${esc((teamId||'').slice(0,3).toUpperCase())}</div>`;
+  const seasonTxt=season?seasonLabel(season):'All seasons';
+  document.getElementById('infoModalTitle').innerHTML=
+    `<span>${esc(t.name||teamId)}</span><span class="im-sub">${esc(compLabel||groupPrefix||'')} form · ${esc(seasonTxt)}</span>`;
+  document.getElementById('infoModalBody').innerHTML=
+    `<div class="im-team-hdr">${logoHtml}<div class="im-team-meta">`+
+      `<div class="im-row"><span class="im-k">Competition</span><b>${esc(compLabel||groupPrefix||'—')}</b></div>`+
+      `<div class="im-row"><span class="im-k">Season</span><b>${esc(seasonTxt)}</b></div>`+
+      `<div class="im-row"><span class="im-k">Record</span><b>${w}W · ${drw}D · ${l}L · GF ${gf} · GA ${ga}</b></div>`+
+    `</div></div>`+
+    `<div class="im-section-hdr">Form (newest first) <span class="sc">${rows.length} match${rows.length===1?'':'es'}</span></div>`+
+    `<div class="form-row-full">${chips||'<span class="form-empty">No form yet</span>'}</div>`+
+    `<div class="im-section-hdr">All matches</div>`+
+    rowsHtml;
+  document.getElementById('infoModal').classList.add('open');
+}
+
 function openHeadToHead(aId,bId,leagueFilter,seasonFilter){
   if(!aId||!bId)return;
   const a=teamById(aId),b=teamById(bId);
