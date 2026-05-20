@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.1</title>
+<title>League Manager v2026.05.20.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -320,7 +320,8 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
   .im-match .im-score{font-size:14px;}
 }
 /* Season dropdown row at the top of the team-profile modal. */
-.im-season-bar{display:flex;align-items:center;gap:8px;margin:6px 0 12px;font-size:12px;color:var(--muted);}
+.im-season-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:6px 0 12px;font-size:12px;color:var(--muted);}
+.im-h2h-filter{padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;}
 .im-season-bar select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text);outline:none;cursor:pointer;}
 .im-season-bar select:focus{border-color:var(--green);}
 .im-h2h-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:6px 0 14px;}
@@ -862,7 +863,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -3064,7 +3065,7 @@ function _imMatchRowHTML(row,c,revealScore){
     <div class="im-rnd" title="${esc(rnd)}">${esc(rnd)}</div>
   </div>`;
 }
-function openTeamProfile(teamId,seasonHint){
+function openTeamProfile(teamId,seasonHint,leagueFilter){
   if(!teamId)return;
   const t=teamById(teamId);
   const c=_lgMatchCols();
@@ -3072,6 +3073,9 @@ function openTeamProfile(teamId,seasonHint){
   // The dropdown lets the user switch between every season this team has any
   // matches in (re-renders by calling openTeamProfile recursively).
   const season=seasonHint||(typeof seasonFor==='function'?seasonFor(currentDate()):'');
+  // v20.2 — league filter: '' = all leagues, otherwise MB / KK / NK / Other
+  // (mirrors the head-to-head popup's filter semantics).
+  const league=String(leagueFilter==null?'':leagueFilter);
   // Collect every season this team appears in for the dropdown options.
   const teamSeasons=(()=>{
     const set=new Set();
@@ -3121,7 +3125,9 @@ function openTeamProfile(teamId,seasonHint){
   meta.push(`<div class="im-row"><span class="im-k">Skill</span><b title="${skPts} pts (½ star ≈ 15 pts, ★ ≈ 30 pts)" style="cursor:help">${_starRowHTML(skPts)}</b></div>`);
   // All PLAYED season matches for this team. v17.2: filter out unplayed
   // (no full-time score) and future (date > current_date) rows up-front
-  // so the list only ever shows finished games.
+  // so the list only ever shows finished games. v20.2: also respect the
+  // league filter (MB / KK / NK / Other / all) and reverse the date order
+  // so newest sits at the top.
   const matches=DB.matches.r.filter(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
     const a=c.away>=0?String(r[c.away]||''):'';
@@ -3131,11 +3137,15 @@ function openTeamProfile(teamId,seasonHint){
       if(!date) return false;
       if(seasonFor(date)!==season) return false;
     }
+    if(league){
+      const rnd=c.rounds>=0?String(r[c.rounds]||''):'';
+      if(_matchLeagueBucket(rnd)!==league) return false;
+    }
     return _isMatchPlayedInApp(r,c);
   }).sort((a,b)=>{
     const da=c.date>=0?normalizeDate(a[c.date]):'';
     const db=c.date>=0?normalizeDate(b[c.date]):'';
-    return da<db?-1:da>db?1:0;
+    return da<db?1:da>db?-1:0;
   });
   // Season totals across those matches — only actually-played matches
   // (per app timeline + reveal state) are counted, so future or not-yet-
@@ -3200,15 +3210,23 @@ function openTeamProfile(teamId,seasonHint){
         </div>`).join('')}</div>`
     : `<div class="im-empty">No results recorded for this season.</div>`;
   const seasonTxt=season?seasonLabel(season):'All seasons';
-  // Season selector — only shown when the team has matches in 2+ seasons.
-  // Re-opens the modal for the chosen season via openTeamProfile(...) so the
-  // existing reveal path drives the re-render.
+  // Season + league selectors — always shown in v20.2 so the user can pick
+  // a league bucket even when the team only ever played in one season.
+  // Re-opens the modal for the new (season, league) tuple via recursive
+  // openTeamProfile calls.
   const _tidEsc=esc(teamId).replace(/'/g,"\\'");
-  const seasonBar=teamSeasons.length>=2
-    ? `<div class="im-season-bar"><label>Season:</label><select onchange="openTeamProfile('${_tidEsc}',this.value)">${
-        teamSeasons.map(s=>`<option value="${esc(s)}"${s===season?' selected':''}>${esc(seasonLabel(s))}</option>`).join('')
-      }</select></div>`
-    : '';
+  const _leagueOpts=['','MB','KK','NK','Other'].map(k=>{
+    const lbl=k===''?'All leagues':k;
+    return `<option value="${esc(k)}"${k===league?' selected':''}>${esc(lbl)}</option>`;
+  }).join('');
+  const _seasonOpts=teamSeasons.map(s=>`<option value="${esc(s)}"${s===season?' selected':''}>${esc(seasonLabel(s))}</option>`).join('');
+  const seasonBar=`<div class="im-season-bar">
+    ${teamSeasons.length>=2
+      ? `<label>Season:</label><select onchange="openTeamProfile('${_tidEsc}',this.value,'${esc(league)}')">${_seasonOpts}</select>`
+      : ''}
+    <label>League:</label>
+    <select onchange="openTeamProfile('${_tidEsc}','${esc(season)}',this.value)">${_leagueOpts}</select>
+  </div>`;
   document.getElementById('infoModalTitle').innerHTML=
     `<span>${esc(t.name)}</span><span class="im-sub">${esc(seasonTxt)} · season schedule</span>`;
   document.getElementById('infoModalBody').innerHTML=
@@ -3222,18 +3240,64 @@ function openTeamProfile(teamId,seasonHint){
     listHtml;
   document.getElementById('infoModal').classList.add('open');
 }
-function openHeadToHead(aId,bId){
+// v20.2 — collapse a rounds-cell prefix into one of the four high-level
+// league buckets used by the popup filters: MB / KK / NK / Other. Used by
+// both openHeadToHead and openTeamProfile so the dropdown semantics stay
+// consistent. Returns 'MB' for MB-B / MB-R, 'KK' for every KK phase
+// (KKQ / KKARA / KKROM / KKABC / KKJKL / KKGOR), 'NK' for NKW- / NKL- /
+// NK-W- / NK-L-, otherwise 'Other' (NSZK / CHL / EURO / UEFA / WC /
+// FRIENDLY all fall here).
+function _matchLeagueBucket(roundsCell){
+  const fam=(typeof _lgRoundFamily==='function')?_lgRoundFamily(roundsCell||''):'';
+  if(fam==='MB-B'||fam==='MB-R') return 'MB';
+  if(fam==='KK') return 'KK';
+  if(fam==='NK') return 'NK';
+  return 'Other';
+}
+function openHeadToHead(aId,bId,leagueFilter,seasonFilter){
   if(!aId||!bId)return;
   const a=teamById(aId),b=teamById(bId);
   const c=_lgMatchCols();
-  const rows=DB.matches.r.filter(r=>{
+  // Default season filter = the season covering current_date (the user wanted
+  // current to be the default). leagueFilter defaults to '' = all leagues.
+  const _defSeason=(typeof seasonFor==='function'&&typeof currentDate==='function')
+    ? seasonFor(currentDate()) : '';
+  const league=String(leagueFilter==null?'':leagueFilter);
+  let season=(seasonFilter==null||seasonFilter==='__UNSET__')?_defSeason:String(seasonFilter);
+  // All rows where the two teams faced each other in any direction. We keep
+  // the full list (across every season) for the season-dropdown options,
+  // then derive a `rows` view that respects the active filters.
+  const allRows=DB.matches.r.filter(r=>{
     const h=c.home>=0?String(r[c.home]||''):'';
     const aw=c.away>=0?String(r[c.away]||''):'';
     return (h===aId&&aw===bId)||(h===bId&&aw===aId);
+  });
+  // Seasons present in the full match set — drives the season dropdown.
+  const seasonSet=new Set();
+  allRows.forEach(r=>{
+    const dt=c.date>=0?normalizeDate(r[c.date]):'';
+    if(!dt) return;
+    const s=seasonFor(dt); if(s) seasonSet.add(s);
+  });
+  const seasons=[...seasonSet].sort();
+  // If the requested season isn't in the set (e.g. these teams never met in
+  // the current season), fall through to "all seasons" so the user sees
+  // something instead of an empty list.
+  if(season && !seasons.includes(season)) season='';
+  const rows=allRows.filter(r=>{
+    const rnd=c.rounds>=0?String(r[c.rounds]||''):'';
+    if(league && _matchLeagueBucket(rnd)!==league) return false;
+    if(season){
+      const dt=c.date>=0?normalizeDate(r[c.date]):'';
+      if(!dt) return false;
+      if(seasonFor(dt)!==season) return false;
+    }
+    return true;
   }).sort((x,y)=>{
+    // v20.2 — newest at top, oldest at bottom (was asc by date).
     const dx=c.date>=0?normalizeDate(x[c.date]):'';
     const dy=c.date>=0?normalizeDate(y[c.date]):'';
-    return dx<dy?-1:dx>dy?1:0;
+    return dx<dy?1:dx>dy?-1:0;
   });
   let wA=0,wB=0,drw=0,played=0,gfA=0,gfB=0;
   rows.forEach(r=>{
@@ -3260,12 +3324,29 @@ function openHeadToHead(aId,bId){
   </div>`;
   const listHtml=rows.length
     ? `<div class="im-match-list">${rows.map(r=>_imMatchRowHTML(r,c,true)).join('')}</div>`
-    : `<div class="im-empty">No recorded matches between these two teams.</div>`;
+    : `<div class="im-empty">No recorded matches matching the current filters.</div>`;
+  // Filter bar: League (MB / KK / NK / Other / all) + Season (every season
+  // these two teams met in, plus "All seasons"). Re-renders by calling
+  // openHeadToHead recursively with the new filter values.
+  const _aIdEsc=esc(aId).replace(/'/g,"\\'"),_bIdEsc=esc(bId).replace(/'/g,"\\'");
+  const _leagueOpts=['','MB','KK','NK','Other'].map(k=>{
+    const lbl=k===''?'All leagues':k;
+    return `<option value="${esc(k)}"${k===league?' selected':''}>${esc(lbl)}</option>`;
+  }).join('');
+  const _seasonOpts=`<option value=""${season===''?' selected':''}>All seasons</option>`+
+    seasons.map(s=>`<option value="${esc(s)}"${s===season?' selected':''}>${esc(seasonLabel(s))}</option>`).join('');
+  const filterBar=`<div class="im-season-bar im-h2h-filter">
+    <label>League:</label>
+    <select onchange="openHeadToHead('${_aIdEsc}','${_bIdEsc}',this.value,'${esc(season)}')">${_leagueOpts}</select>
+    <label>Season:</label>
+    <select onchange="openHeadToHead('${_aIdEsc}','${_bIdEsc}','${esc(league)}',this.value)">${_seasonOpts}</select>
+  </div>`;
   document.getElementById('infoModalTitle').innerHTML=
     `<span>${esc(a.name)} — vs — ${esc(b.name)}</span><span class="im-sub">Head-to-head</span>`;
   document.getElementById('infoModalBody').innerHTML=
     stats+
-    `<div class="im-section-hdr">All matches between these two <span class="sc">${rows.length} row${rows.length===1?'':'s'}</span></div>`+
+    filterBar+
+    `<div class="im-section-hdr">Matches <span class="sc">${rows.length} row${rows.length===1?'':'s'}</span></div>`+
     listHtml;
   document.getElementById('infoModal').classList.add('open');
 }
