@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.4</title>
+<title>League Manager v2026.05.20.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -881,7 +881,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1020,7 +1020,7 @@ const ED_DEFAULTS={
   matches:    ['date','rounds','level','match_type','match_number','stadion_name','home_id','away_id','home_score_full_time','away_score_full_time','home_score_first_half','away_score_first_half','notes','first_home_att','first_home_def','second_home_att','second_home_def','extra_home_att','extra_home_def','pen_home','first_away_att','first_away_def','second_away_att','second_away_def','extra_away_att','extra_away_def','pen_away'],
   calendar:   ['game_day','date','competition','round','season'],
   results:    ['season','competition','place','team_id'],
-  team_skills:['team_id','skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties','half_season'],
+  team_skills:['team_id','skills','home','half_season'],
   draw:       ['rounds','level','match_type','match_number','home_team','away_team','notes'],
   state:      ['key','value'],
   trophies:   ['season','MB','NK','KK','NSZK']
@@ -1472,15 +1472,28 @@ function teamSkillsFor(teamId,halfSeason){
   if(!row)row=d.r.find(r=>r[ti]===teamId);
   if(!row)return defaultSkills();
   const num=(name)=>{const i=d.h.indexOf(name);const v=i>=0?parseFloat(row[i]):NaN;return isNaN(v)?0:v;};
+  // v20.5 — per-period skills are CALCULATED, not stored. team_skills.csv
+  // only carries the canonical `skills`, `home`, `half_season` columns now.
+  // `defaultSkills()` (and the simulation formula) derive per-period att/def
+  // and penelties from the overall `skills` value so a single rating drives
+  // every period equivalently. No per-period column reads remain.
+  return defaultSkills(num('skills'),num('home'));
+}
+// v20.5 — derive per-period attack/defence/pen from the team's overall
+// `skills` rating. Per-period columns no longer exist in team_skills.csv.
+// Callers either pass explicit (skills, home) values OR get the legacy
+// 50 / 0 baseline.
+function defaultSkills(skills,home){
+  const s=(skills==null||isNaN(skills))?50:skills;
+  const h=(home==null||isNaN(home))?0:home;
   return{
-    skills:num('skills'),home:num('home'),
-    attack_1h:num('attack_1h'),defence_1h:num('defence_1h'),
-    attack_2h:num('attack_2h'),defence_2h:num('defence_2h'),
-    attack_et:num('attack_et'),defence_et:num('defence_et'),
-    penelties:num('penelties')
+    skills:s,home:h,
+    attack_1h:s,defence_1h:s,
+    attack_2h:s,defence_2h:s,
+    attack_et:s,defence_et:s,
+    penelties:s
   };
 }
-function defaultSkills(){return{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};}
 
 // ── SIMULATION ────────────────────────────────────────────────
 // Randomized match simulation (each run can produce a different score).
@@ -3823,9 +3836,10 @@ async function advanceToNextRound(){
 }
 
 // ── HALF-BOUNDARY SKILL EDITOR ─────────────────────────────────
-// Skill columns copied verbatim from autumn → spring. Only `skills` is
-// editable in the popup; every per-period column is preserved unchanged.
-const _HB_SKILL_COLS=['skills','home','attack_1h','defence_1h','attack_2h','defence_2h','attack_et','defence_et','penelties'];
+// v20.5 — per-period att/def/pen columns are no longer stored in
+// team_skills.csv (they're derived from `skills` at simulation time).
+// The popup only carries the two canonical user-facing columns now.
+const _HB_SKILL_COLS=['skills','home'];
 // Read a single skill value for (team, halfTag) from team_skills.csv.
 // Returns the integer cell value, or NaN if no row matches.
 function _hbReadSkill(teamId, halfTag, col){
@@ -4155,7 +4169,7 @@ function _confirmHalfBoundary(season,splitDate,nextDate,mode){
     });
     // Read autumn baseline per team. Fall back to defaultSkills() when the
     // team has no _A row so every team is always editable.
-    const _defaults=(typeof defaultSkills==='function')?defaultSkills():{skills:50,home:0,attack_1h:50,defence_1h:50,attack_2h:50,defence_2h:50,attack_et:50,defence_et:50,penelties:50};
+    const _defaults=(typeof defaultSkills==='function')?defaultSkills():{skills:50,home:0};
     const _perfMap=_hbHalfPerformance(season,srcHalf);
     const _autAll={}, _autSource={};
     teamsArr.forEach(tt=>{
@@ -5166,20 +5180,14 @@ async function _submitNewTeam(btn){
     });
     const halfNow=(typeof halfSeasonFor==='function'&&typeof currentDate==='function')
       ? halfSeasonFor(currentDate()) : '';
-    // Only `skills`, `home`, and `half_season` are user-entered; per-period
-    // att/def + penelties are derived/calculated downstream so they stay
-    // blank here.
+    // v20.5 — only `skills`, `home`, and `half_season` exist in
+    // team_skills.csv now. Per-period att/def + penelties used to be stored
+    // but are derived from `skills` at simulation time, so we no longer
+    // write them at all.
     const skillObj={
       team_id,
       skills:get('skills'),
       home:get('home'),
-      attack_1h:'',
-      defence_1h:'',
-      attack_2h:'',
-      defence_2h:'',
-      attack_et:'',
-      defence_et:'',
-      penelties:'',
       half_season:halfNow
     };
     const newSkillRow=sd.h.map(col=>skillObj[col]!==undefined?skillObj[col]:'');
