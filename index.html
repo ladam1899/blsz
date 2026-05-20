@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.11</title>
+<title>League Manager v2026.05.20.12</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2487,7 +2487,61 @@ function renderLeagueView(){
   });
 }
 
-function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
+function lgFilterChange(k,v){
+  lgFilter[k]=v;lgSelRound=null;
+  // v2026.05.20.12 — when the user picks a season in the Matches view,
+  // re-read that season's `matches_<season>.csv` from Drive so the view
+  // reflects the on-disk snapshot for that season (per user request:
+  // "if I select a season on the matches site the corresponding file
+  // should be read"). Falls back silently if the file doesn't exist
+  // yet (e.g. season hasn't been written to Drive).
+  if(k==='season' && v){
+    _lgReloadSeasonMatches(v).finally(()=>renderLeagueView());
+  } else {
+    renderLeagueView();
+  }
+}
+// v2026.05.20.12 — fetch `matches_<season>.csv` fresh from Drive and
+// replace the in-memory rows for that season with the file's contents.
+// Undated rows are left alone. If the file isn't found, the in-memory
+// view stays as-is (no destructive wipe).
+async function _lgReloadSeasonMatches(season){
+  if(!season) return;
+  try{
+    const fname=`matches_${season}.csv`;
+    let fid=_matchesSeasonFids[season];
+    let mime='text/csv';
+    if(!fid){
+      const f=await findFile(fname);
+      if(!f) return;
+      fid=f.id; mime=f.mimeType||'text/csv';
+      _matchesSeasonFids[season]=fid;
+    }
+    const txt=await readFile(fid,mime);
+    const {h,r}=parseCSV(txt);
+    if(!h.length) return;
+    if(!DB.matches.h.length) DB.matches.h=h.slice();
+    const mh=DB.matches.h;
+    const di=mh.findIndex(c=>String(c||'').trim().toLowerCase()==='date');
+    if(di<0) return;
+    // Drop in-memory rows that belong to this season; keep undated rows.
+    DB.matches.r=DB.matches.r.filter(row=>{
+      const dStr=String(row[di]||'').trim();
+      if(!dStr) return true;
+      try{ return seasonFor(dStr)!==season; }catch(_){ return true; }
+    });
+    r.forEach(row=>{
+      const remapped=mh.map(col=>{
+        const sourceI=h.indexOf(col);
+        return sourceI>=0?(row[sourceI]==null?'':row[sourceI]):'';
+      });
+      DB.matches.r.push(remapped);
+    });
+    console.log(`[_lgReloadSeasonMatches] refreshed ${fname} → ${r.length} rows`);
+  }catch(e){
+    console.warn(`[_lgReloadSeasonMatches] failed for ${season}:`,e);
+  }
+}
 // Render-all flag: when true, the Matches view skips its anchor-windowing
 // optimisation and renders every visible round. Resets back to false on the
 // next renderLeagueView() call so it only sticks for one render.
@@ -4078,6 +4132,11 @@ async function advanceToNextRound(){
       toast('Half-season transition cancelled — current date kept where it is','warn');
       return;
     }
+    // v2026.05.20.12 — snapshot the just-finished autumn half to
+    // `matches_<curSeason>.csv` BEFORE spring generation runs. Goes through
+    // _saveMatchesCurrentOnly (PATCH on cached fid), so no duplicate files.
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] pre-spring matches snapshot failed:',e); }
     try{
       await generateSeasonFromDraw(nextSeason,'S');
     }catch(e){
@@ -4148,6 +4207,14 @@ async function advanceToNextRound(){
       toast('Season rollover cancelled — current date kept where it is','warn');
       return;
     }
+    // v2026.05.20.12 — snapshot the just-finished spring half (i.e. the
+    // entire curSeason) to `matches_<curSeason>.csv` BEFORE the next
+    // season's autumn generation runs. PATCH via cached fid, so no
+    // duplicate files. After this, the next saveSheet('matches') will
+    // create the brand-new `matches_<nextSeason>.csv` file once
+    // generateSeasonFromDraw populates rows under the new season.
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] pre-newseason matches snapshot failed:',e); }
     // STEP 4 — generate the new season's autumn half.
     try{
       await generateSeasonFromDraw(nextSeason,'A');
