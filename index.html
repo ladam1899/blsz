@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.12</title>
+<title>League Manager v2026.05.20.12.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4248,6 +4248,16 @@ async function advanceToNextRound(){
     }catch(e){ console.warn('[advanceToNextRound] post-rollover jump failed:',e); }
   }
   setState('current_date',_destDate,true);
+  // v2026.05.20.12.1 — after a rollover, current_date now sits inside the
+  // NEW season. The rows generateSeasonFromDraw inserted for that new
+  // season were dropped from earlier saves because the old current_date
+  // still pointed at the previous season's curSeason filter. Flush again
+  // now so `matches_<newSeason>.csv` actually gets created on Drive with
+  // all the freshly-generated rows.
+  if(_jumpToSeason){
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] post-rollover matches save failed:',e); }
+  }
   lgSelRound=null;
   if(!_jumpToSeason) toast(`Current date → ${_destDate}`,'');
   renderLeagueView();
