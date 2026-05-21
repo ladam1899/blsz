@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.1</title>
+<title>League Manager v2026.05.21.2</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.1</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.2</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1628,6 +1628,35 @@ function _calendarHalfBoundaryDates(){
   out.sort();
   return out;
 }
+// v2026.05.21.2 — derive season buckets from the half-season markers
+// in calendar.csv. A bucket spans from marker N to marker N+2 (i.e.
+// is "3 markers wide" and covers two halves). Buckets step by 2
+// markers so they don't overlap. Each bucket's key is the literal
+// "startISO..endISO" string used by the Matches view season filter.
+// Returns [] when fewer than 3 markers exist (filter falls back to
+// the old seasonFor()-based behaviour).
+function _lgMarkerSeasonBuckets(){
+  const dates=(typeof _calendarHalfBoundaryDates==='function')?_calendarHalfBoundaryDates():[];
+  if(dates.length<3) return [];
+  const out=[];
+  for(let i=0;i+2<dates.length;i+=2){
+    const startISO=dates[i], endISO=dates[i+2];
+    out.push({key:`${startISO}..${endISO}`, label:`${startISO} → ${endISO}`, startISO, endISO});
+  }
+  return out;
+}
+// True when `s` is a marker-bucket key (literal "YYYY-MM-DD..YYYY-MM-DD").
+function _isMarkerBucketKey(s){
+  return /^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/.test(String(s||''));
+}
+// True when an ISO date falls inside a marker-bucket key (inclusive start,
+// exclusive end — matches the "start of new half" semantics of markers).
+function _inMarkerBucket(date, key){
+  if(!date||!key) return false;
+  const m=String(key).match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+  if(!m) return false;
+  return date>=m[1] && date<m[2];
+}
 // v2026.05.20.12.3 — fetch the half_seson_sep cell value for a given
 // ISO date (or '' if none). Used by the matches-view round card to show
 // the marker text verbatim.
@@ -2247,7 +2276,13 @@ function _lgFilterRounds(all){
     return false;
   };
   return all.filter(r=>{
-    if(lgFilter.season && _seasonOf(r)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(r.date,lgFilter.season)) return false;
+      } else if(_seasonOf(r)!==lgFilter.season){
+        return false;
+      }
+    }
     const parsed=_lgRoundTypeAndNumber(r.round);
     if(lgFilter.roundType && _lgRoundFamily(r.round)!==lgFilter.roundType)return false;
     if(lgFilter.roundNum&&(!parsed||String(parsed.num)!==String(lgFilter.roundNum)))return false;
@@ -2298,13 +2333,22 @@ function renderLeagueView(){
   // every season (sorted by date, so the earliest 2000_01 rounds appeared at
   // the top). Now the first paint already pins to the season covering
   // `current_date`, matching what subsequent renders see.
-  if(!lgFilter.season && typeof seasonFor==='function'){
-    const _curSeason=seasonFor(curDate);
-    const _hasIt=_curSeason && allRounds.some(r=>{
-      if(r.season) return r.season===_curSeason;
-      return typeof seasonFor==='function' && seasonFor(r.date)===_curSeason;
-    });
-    if(_hasIt) lgFilter.season=_curSeason;
+  if(!lgFilter.season){
+    // v2026.05.21.2 — prefer the marker-derived season bucket that
+    // contains current_date. Falls back to seasonFor()-based label when
+    // calendar.csv has no markers yet.
+    const _buckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
+    const _hit=_buckets.find(b=>_inMarkerBucket(curDate,b.key));
+    if(_hit){
+      lgFilter.season=_hit.key;
+    } else if(typeof seasonFor==='function'){
+      const _curSeason=seasonFor(curDate);
+      const _hasIt=_curSeason && allRounds.some(r=>{
+        if(r.season) return r.season===_curSeason;
+        return typeof seasonFor==='function' && seasonFor(r.date)===_curSeason;
+      });
+      if(_hasIt) lgFilter.season=_curSeason;
+    }
   }
   const visible=_lgFilterRounds(allRounds);
   const current=_lgCurrentRound(visible.length?visible:allRounds,curDate);
@@ -2329,7 +2373,22 @@ function renderLeagueView(){
     if(r&&r.date&&typeof seasonFor==='function') return seasonFor(r.date)||'';
     return '';
   };
-  const allSeasons=[...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
+  // v2026.05.21.2 — when calendar markers exist, season dropdown uses
+  // marker-defined buckets (3 markers wide, 2 halves per bucket). Each
+  // option is keyed by "startISO..endISO" and labelled as a date range.
+  // Falls back to old seasonFor()-based dropdown when no markers exist.
+  const _markerBuckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
+  const _useMarkerBuckets=_markerBuckets.length>0;
+  const allSeasons=_useMarkerBuckets
+    ? _markerBuckets.map(b=>b.key)
+    : [...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
+  const _seasonOptionLabel=(s)=>{
+    if(_useMarkerBuckets){
+      const b=_markerBuckets.find(x=>x.key===s);
+      return b?b.label:s;
+    }
+    return seasonLabel(s);
+  };
   // v19.6 — the season default is now seeded at the top of this function,
   // BEFORE `visible` is computed, so the very first render already filters
   // to the current season. The legacy seed-after-filter block was removed.
@@ -2339,7 +2398,13 @@ function renderLeagueView(){
   // Build round-type and round-number option sets, respecting the other
   // filters (season/year/month and, conditionally, the companion dropdown).
   const baseForRounds=allRounds.filter(r=>{
-    if(lgFilter.season && _seasonOfRound(r)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(r.date,lgFilter.season)) return false;
+      } else if(_seasonOfRound(r)!==lgFilter.season){
+        return false;
+      }
+    }
     if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
     return true;
@@ -2357,7 +2422,13 @@ function renderLeagueView(){
     if(!lgFilter.season&&!lgFilter.year&&!lgFilter.month)return true;
     const d=mc.date>=0?normalizeDate(row[mc.date]):'';
     if(!d)return true; // undateable matches row — don't exclude it
-    if(lgFilter.season&&seasonFor(d)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(d,lgFilter.season)) return false;
+      } else if(seasonFor(d)!==lgFilter.season){
+        return false;
+      }
+    }
     if(lgFilter.year&&!d.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&d.slice(5,7)!==lgFilter.month)return false;
     return true;
@@ -2441,7 +2512,7 @@ function renderLeagueView(){
       <span class="db-label">Season</span>
       <select class="db-sel" onchange="lgFilterChange('season',this.value)">
         <option value="">All</option>
-        ${allSeasons.map(s=>`<option value="${esc(s)}"${lgFilter.season===s?' selected':''}>${esc(seasonLabel(s))}</option>`).join('')}
+        ${allSeasons.map(s=>`<option value="${esc(s)}"${lgFilter.season===s?' selected':''}>${esc(_seasonOptionLabel(s))}</option>`).join('')}
       </select>
       <span class="db-label">Type</span>
       <select class="db-sel" onchange="lgFilterChange('roundType',this.value)">
@@ -2575,6 +2646,29 @@ function lgFilterChange(k,v){
 // view stays as-is (no destructive wipe).
 async function _lgReloadSeasonMatches(season){
   if(!season) return;
+  // v2026.05.21.2 — when the selector value is a marker-bucket key
+  // ("startISO..endISO"), enumerate the seasonFor() labels covered by
+  // that range and reload each one's archive file in turn.
+  if(typeof _isMarkerBucketKey==='function' && _isMarkerBucketKey(season)){
+    const m=String(season).match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+    if(!m) return;
+    const startISO=m[1], endISO=m[2];
+    const seasonSet=new Set();
+    try{
+      const sStart=seasonFor(startISO); if(sStart) seasonSet.add(sStart);
+      // step year-by-year to catch every season touched by the range
+      const sy=parseInt(startISO.slice(0,4)), ey=parseInt(endISO.slice(0,4));
+      for(let y=sy;y<=ey;y++){
+        const sJun=seasonFor(`${y}-08-01`); if(sJun) seasonSet.add(sJun);
+        const sJan=seasonFor(`${y}-02-01`); if(sJan) seasonSet.add(sJan);
+      }
+      const sEnd=seasonFor(endISO); if(sEnd) seasonSet.add(sEnd);
+    }catch(_){}
+    for(const s of seasonSet){
+      try{ await _lgReloadSeasonMatches(s); }catch(_){}
+    }
+    return;
+  }
   try{
     const fname=`matches_${season}.csv`;
     let fid=_matchesSeasonFids[season];
