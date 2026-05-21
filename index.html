@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.5</title>
+<title>League Manager v2026.05.21.6</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.5</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.6</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -2578,7 +2578,15 @@ function renderLeagueView(){
         // chips outside the dropdown were the previous design — the user
         // asked for the round codes IN the dropdown instead, so the chip row
         // is gone and the round codes live in each option's label.
-        const inSeason=(r)=>!lgFilter.season || _seasonOfRound(r)===lgFilter.season;
+        // v2026.05.21.6 — when calendar markers exist, use the
+        // marker-derived season (same rule as the round-card filter)
+        // instead of seasonFor(r.date) so the date dropdown matches
+        // what's visible on the page.
+        const inSeason=(r)=>{
+          if(!lgFilter.season) return true;
+          if(_useMarkerBuckets) return _inMarkerSeason(r.date, lgFilter.season);
+          return _seasonOfRound(r)===lgFilter.season;
+        };
         const inType=(r)=>!lgFilter.roundType || _lgRoundFamily(r.round)===lgFilter.roundType;
         const matches=(r)=>inSeason(r)&&inType(r);
         const matched=allRounds.filter(matches);
