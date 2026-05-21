@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.12.2</title>
+<title>League Manager v2026.05.21.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.12.2</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1604,38 +1604,48 @@ function seasonFor(dateStr){
   const hs=halfSeasonFor(dateStr);
   return hs?hs.slice(0,7):''; // "YYYY_YY"
 }
-// v2026.05.20.12.2 — half-season boundary markers in calendar.csv.
-// A "boundary row" is a calendar.csv row where every non-system cell
-// (i.e. every cell that isn't game_day / date / season) equals '--'.
-// Crossing such a row's date triggers the half-season generation in
-// advanceToNextRound (replaces the hardcoded Jan 1 / Jun 15 split).
+// v2026.05.20.12.3 — half-season boundary markers in calendar.csv.
+// A "boundary row" is a calendar.csv row whose `half_seson_sep` column
+// is non-empty (the cell content — typically "NEW HALF SESON" — is
+// preserved verbatim and used as the round-card label in the matches
+// view). Crossing such a row's date triggers the half-season
+// generation in advanceToNextRound.
 // Returns sorted ascending ISO dates. Empty array when no markers exist.
 function _calendarHalfBoundaryDates(){
   const out=[];
   const d=DB.calendar;
   if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return out;
   const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'), gdi=_hi('game_day'), si=_hi('season');
-  if(di<0) return out;
-  const systemCols=new Set([di]);
-  if(gdi>=0) systemCols.add(gdi);
-  if(si>=0) systemCols.add(si);
+  const di=_hi('date'), hsi=_hi('half_seson_sep');
+  if(di<0||hsi<0) return out;
   d.r.forEach(r=>{
     const rawDate=r[di];
     const iso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
     if(!iso) return;
-    let allDash=true, hasAny=false;
-    for(let c=0;c<d.h.length;c++){
-      if(systemCols.has(c)) continue;
-      const cell=String(r[c]==null?'':r[c]).trim();
-      if(!cell) continue;
-      hasAny=true;
-      if(cell!=='--'){ allDash=false; break; }
-    }
-    if(allDash && hasAny) out.push(iso);
+    const cell=String(r[hsi]==null?'':r[hsi]).trim();
+    if(cell) out.push(iso);
   });
   out.sort();
   return out;
+}
+// v2026.05.20.12.3 — fetch the half_seson_sep cell value for a given
+// ISO date (or '' if none). Used by the matches-view round card to show
+// the marker text verbatim.
+function _calendarHalfBoundaryLabel(iso){
+  if(!iso) return '';
+  const d=DB.calendar;
+  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return '';
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), hsi=_hi('half_seson_sep');
+  if(di<0||hsi<0) return '';
+  for(const r of d.r){
+    const rawDate=r[di];
+    const rIso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
+    if(rIso!==iso) continue;
+    const cell=String(r[hsi]==null?'':r[hsi]).trim();
+    if(cell) return cell;
+  }
+  return '';
 }
 function seasonLabel(s){
   if(!s)return'';
@@ -2120,6 +2130,31 @@ function _lgCalendarRounds(){
       }
     });
   }
+  // v2026.05.20.12.3 — inject a synthetic "half-season separator" round
+  // for every calendar.csv row that has a non-empty `half_seson_sep`
+  // cell. These render as a special block in the matches view whose
+  // Next-Round button generates the new half-season (opens the team-
+  // skills popup, runs generateSeasonFromDraw, jumps to first match).
+  // The synthetic round uses competition='__HALF_SESON_SEP__' so the
+  // existing renderer can detect it and switch to the special UI.
+  try{
+    const hsi=cd.h.findIndex(x=>String(x||'').trim().toLowerCase()==='half_seson_sep');
+    if(hsi>=0){
+      cd.r.forEach(r=>{
+        const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
+        const lbl=String(r[hsi]==null?'':r[hsi]).trim();
+        if(!lbl) return;
+        out.push({
+          date,
+          competition:'__HALF_SESON_SEP__',
+          round:lbl,
+          game_day:gdi>=0?String(r[gdi]||''):'',
+          season:si>=0?String(r[si]||''):'',
+          key:'__HALF_SESON_SEP__||'+date
+        });
+      });
+    }
+  }catch(_){}
   return out.sort((a,b)=>a.date.localeCompare(b.date)||a.competition.localeCompare(b.competition)||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
 }
 function _lgRoundStatus(info,cur){
@@ -2663,6 +2698,40 @@ function lgRevealNextStage(key){
 }
 
 function renderLeagueRoundCardHTML(info,curDate,anchor){
+  // v2026.05.20.12.3 — half-season separator block. Renders a special
+  // round card with a "Generate new half-season" button instead of the
+  // usual matches table. Clicking the button delegates to
+  // advanceToNextRound(), which opens the team-skills popup, runs
+  // generateSeasonFromDraw, snapshots matches, and jumps current_date
+  // to the first round of the new half (existing behaviour).
+  if(info.competition==='__HALF_SESON_SEP__'){
+    const status=_lgRoundStatus(info,curDate);
+    const isCurrent=(status==='current');
+    const isFuture=(status==='future');
+    const lbl=esc(info.round||'NEW HALF SESON');
+    return `<div class="round-card ${status} half-sep" id="lgRc-${_lgCssId(info.key)}" style="border:2px dashed var(--accent,#888);">
+      <div class="rc-hdr" style="border-left:4px solid var(--accent,#888);">
+        <div>
+          <div class="rc-title" style="letter-spacing:.06em;text-transform:uppercase;">⚑ ${lbl}</div>
+          <div class="rc-sub">${formatDate(info.date)}${info.game_day?' · Game day '+esc(info.game_day):''}</div>
+        </div>
+        <div class="rc-play">
+          <span class="rc-stage">${status==='past'?'Generated':isCurrent?'Pending':'Upcoming'}</span>
+        </div>
+      </div>
+      <div class="rc-body" style="padding:14px 16px;">
+        <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px;">
+          Half-season boundary marker. Crossing this date opens the team-skills popup, then generates the new half-season and jumps to its first match.
+        </div>
+        ${(isCurrent||isFuture)?
+          `<button class="tbtn db-now next" onclick="advanceToNextRound()" style="padding:8px 16px;font-weight:600;">
+            ⏭ Generate new half-season
+          </button>`:
+          `<div style="font-size:12px;color:var(--muted);">Already crossed — half-season was generated on this date.</div>`
+        }
+      </div>
+    </div>`;
+  }
   const status=_lgRoundStatus(info,curDate);
   const isAnchor=!!(anchor&&info.key===anchor.key);
   const col=compColor(info.competition);
