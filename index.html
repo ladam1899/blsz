@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.3</title>
+<title>League Manager v2026.05.21.4</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.3</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.4</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1660,10 +1660,21 @@ function _lgMarkerSeasonBuckets(){
   if(lastUsedEnd && dates[dates.length-1]>lastUsedEnd){
     out.push({startISO:lastUsedEnd, endISO:'9999-12-31', _pre:false, _open:true});
   }
-  // Compute YYYY_YY key per bucket via seasonFor(startISO). For the
-  // pre-history bucket we leave the key as __PRE__ and remap below.
+  // Compute YYYY_YY key per bucket via seasonFor(). For the pre-history
+  // bucket, derive the key from seasonFor(endISO - 1 day) so a CSV whose
+  // earliest dated round is BEFORE the first marker still gets a stable
+  // YYYY_YY label (e.g. first marker 2000-07-05 → __PRE__ bucket → key
+  // seasonFor(2000-07-04) = '1999_00').
   out.forEach(b=>{
-    if(b._pre){ b.key='__PRE__'; return; }
+    if(b._pre){
+      try{
+        const ds=new Date(b.endISO);
+        ds.setDate(ds.getDate()-1);
+        const iso=ds.toISOString().slice(0,10);
+        b.key=seasonFor(iso)||'__PRE__';
+      }catch(_){ b.key='__PRE__'; }
+      return;
+    }
     try{ b.key=seasonFor(b.startISO)||`${b.startISO}..${b.endISO}`; }
     catch(_){ b.key=`${b.startISO}..${b.endISO}`; }
   });
@@ -2423,19 +2434,20 @@ function renderLeagueView(){
   // Falls back to old seasonFor()-based dropdown when no markers exist.
   const _markerBuckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
   const _useMarkerBuckets=_markerBuckets.length>0;
-  if(_useMarkerBuckets){
-    _markerBuckets.forEach(b=>{
-      if(b._pre){
-        // Derive a YYYY_YY key from the earliest round before the first marker.
-        const preDates=allRounds.map(r=>r.date).filter(d=>d && d<b.endISO).sort();
-        if(preDates.length){
-          try{ b.key=seasonFor(preDates[0])||b.key; }catch(_){}
-        }
-      }
-    });
-  }
+  // (v2026.05.21.4) Pre-history key derivation moved inside
+  // _lgMarkerSeasonBuckets() so every call site sees the same YYYY_YY
+  // key (filter helpers, dropdown, default seed, etc.).
+  // Direct date-range membership test against each bucket's own start/end,
+  // not via _inMarkerBucket(key) — that helper rebuilds buckets internally
+  // and would lose our remapped pre-history key (__PRE__ → 1999_00).
+  const _bucketContainsDate=(b,d)=>{
+    if(!d) return false;
+    if(b._pre) return d<b.endISO;
+    if(b._open) return d>=b.startISO;
+    return d>=b.startISO && d<b.endISO;
+  };
   const _usedBuckets=_useMarkerBuckets
-    ? _markerBuckets.filter(b=>allRounds.some(r=>_inMarkerBucket(r.date,b.key)))
+    ? _markerBuckets.filter(b=>allRounds.some(r=>_bucketContainsDate(b,r.date)))
     : [];
   const allSeasons=_useMarkerBuckets
     ? _usedBuckets.map(b=>b.key)
@@ -2563,7 +2575,7 @@ function renderLeagueView(){
     <div class="date-bar">
       <span class="db-label">Season</span>
       <select class="db-sel" onchange="lgFilterChange('season',this.value)">
-        <option value="">All</option>
+        ${_useMarkerBuckets?'':'<option value="">All</option>'}
         ${allSeasons.map(s=>`<option value="${esc(s)}"${lgFilter.season===s?' selected':''}>${esc(_seasonOptionLabel(s))}</option>`).join('')}
       </select>
       <span class="db-label">Type</span>
