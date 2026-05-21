@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.6</title>
+<title>League Manager v2026.05.21.7</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.6</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.7</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1604,38 +1604,13 @@ function seasonFor(dateStr){
   const hs=halfSeasonFor(dateStr);
   return hs?hs.slice(0,7):''; // "YYYY_YY"
 }
-// v2026.05.20.12.3 — half-season boundary markers in calendar.csv.
-// A "boundary row" is a calendar.csv row whose `half_seson_sep` column
-// is non-empty (the cell content — typically "NEW HALF SESON" — is
-// preserved verbatim and used as the round-card label in the matches
-// view). Crossing such a row's date triggers the half-season
-// generation in advanceToNextRound.
-// Returns sorted ascending ISO dates. Empty array when no markers exist.
-function _calendarHalfBoundaryDates(){
-  const out=[];
-  const d=DB.calendar;
-  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return out;
-  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
-  const di=_hi('date'), hsi=_hi('half_seson_sep');
-  if(di<0||hsi<0) return out;
-  d.r.forEach(r=>{
-    const rawDate=r[di];
-    const iso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
-    if(!iso) return;
-    const cell=String(r[hsi]==null?'':r[hsi]).trim();
-    if(cell) out.push(iso);
-  });
-  out.sort();
-  return out;
-}
-// v2026.05.21.5 — derive season buckets from the half_seson_sep cell
-// TEXT, not just the dates. The marker text is expected to be
-// "NEW HALF SESON <prevHalf>" where prevHalf is a half-season label
-// like "1999_00_S" or "2000_01_A". The marker tells us the half-season
-// the dates STRICTLY BEFORE it belong to.
-//
-// Returns sorted ascending [{date, label, prevHalf, prevSeason}].
-// Empty when no markers exist.
+// v2026.05.21.7 — parse marker cells from calendar.csv. Three kinds:
+//   • "YYYY_YY-start"          → season starts on this row's date (inclusive)
+//   • "YYYY_YY-end"            → season ends on this row's date (inclusive)
+//   • "NEW HALF SESON"         → "generate new half-season" trigger row
+// A row may carry start+end markers for different seasons; the cell
+// may contain ANY of the three forms (the parser scans the whole
+// cell text). Returns sorted ascending [{date, kind, season, label, raw}].
 function _lgMarkerInfo(){
   const out=[];
   const d=DB.calendar;
@@ -1649,57 +1624,56 @@ function _lgMarkerInfo(){
     if(!iso) return;
     const cell=String(r[hsi]==null?'':r[hsi]).trim();
     if(!cell) return;
-    // Parse "<anything><spaces>YYYY_YY_(A|S)" — the half-season token at
-    // the END of the cell. Fall back to '' when no token is found.
-    const m=cell.match(/(\d{4}_\d{2}_[AS])\s*$/i);
-    const prevHalf=m?m[1].toUpperCase():'';
-    const prevSeason=prevHalf?prevHalf.slice(0,7):'';
-    out.push({date:iso, label:cell, prevHalf, prevSeason});
+    // Walk the cell; a single cell may contain multiple tokens on
+    // separate lines (e.g. "1999_00-end\n2000_01-start").
+    cell.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean).forEach(tok=>{
+      let m;
+      if((m=tok.match(/^(\d{4}_\d{2})-start$/i))){
+        out.push({date:iso, kind:'start', season:m[1], label:tok, raw:cell});
+      } else if((m=tok.match(/^(\d{4}_\d{2})-end$/i))){
+        out.push({date:iso, kind:'end', season:m[1], label:tok, raw:cell});
+      } else if(/^new\s+half\s+seson/i.test(tok)){
+        out.push({date:iso, kind:'gen', season:'', label:tok, raw:cell});
+      }
+    });
   });
   out.sort((a,b)=>a.date.localeCompare(b.date));
   return out;
 }
-// Compute the YYYY_YY season label for an ISO date using the marker
-// text in calendar.csv. The date inherits the prevSeason of the FIRST
-// marker whose own date is strictly AFTER the ISO date. When the date
-// is after every marker, the season is incremented from the last
-// marker's prevHalf:
-//   2000_01_A → next season half is 2000_01_S
-//   2000_01_S → next season half is 2001_02_A
-// Returns '' when no markers exist (caller falls back to seasonFor()).
-function _markerSeasonForDate(iso){
-  const markers=_lgMarkerInfo();
-  if(!markers.length) return '';
-  // First marker AT or AFTER iso — the marker row itself belongs to
-  // the season it closes (so it appears as the last block of that
-  // season in the Matches view).
-  const next=markers.find(m=>m.date>=iso);
-  if(next) return next.prevSeason||'';
-  // After all markers: extrapolate one half forward from the last one.
-  const last=markers[markers.length-1];
-  if(!last.prevHalf) return '';
-  const m=last.prevHalf.match(/^(\d{4})_(\d{2})_([AS])$/);
-  if(!m) return '';
-  const y=parseInt(m[1]), half=m[3];
-  if(half==='A') return `${y}_${m[2]}`; // _A → _S in same season
-  // _S → next season _A
-  const ny=y+1;
-  return `${ny}_${String((ny+1)%100).padStart(2,'0')}`;
+// Build { season → {startISO, endISO} } from the start/end markers.
+function _lgSeasonRanges(){
+  const map=Object.create(null);
+  _lgMarkerInfo().forEach(m=>{
+    if(!m.season) return;
+    if(!map[m.season]) map[m.season]={startISO:'', endISO:''};
+    if(m.kind==='start') map[m.season].startISO=m.date;
+    if(m.kind==='end')   map[m.season].endISO=m.date;
+  });
+  return map;
 }
-// Returns sorted-unique list of season keys derived from every round's
-// date via _markerSeasonForDate. Used to populate the Matches view
-// season dropdown.
+// Returns the season (YYYY_YY) whose [start, end] range contains iso.
+// '' if no markers exist or iso falls outside every defined range.
+function _markerSeasonForDate(iso){
+  const ranges=_lgSeasonRanges();
+  for(const s of Object.keys(ranges)){
+    const r=ranges[s];
+    if(!r.startISO || !r.endISO) continue;
+    if(iso>=r.startISO && iso<=r.endISO) return s;
+  }
+  return '';
+}
+// Returns sorted-unique list of season keys that have at least one round.
 function _lgMarkerSeasonKeys(allRounds){
-  const markers=_lgMarkerInfo();
-  if(!markers.length) return [];
-  const set=new Set();
+  const ranges=_lgSeasonRanges();
+  const keys=Object.keys(ranges).filter(s=>ranges[s].startISO && ranges[s].endISO);
+  if(!keys.length) return [];
+  const used=new Set();
   (allRounds||[]).forEach(r=>{
     const s=_markerSeasonForDate(r.date);
-    if(s) set.add(s);
+    if(s) used.add(s);
   });
-  return [...set].sort();
+  return keys.filter(k=>used.has(k)).sort();
 }
-// True when an ISO date belongs to the given marker-derived season key.
 function _inMarkerSeason(date, key){
   if(!date||!key) return false;
   return _markerSeasonForDate(date)===key;
@@ -1713,6 +1687,10 @@ function _isMarkerBucketKey(s){
   return /^\d{4}_\d{2}$/.test(String(s));
 }
 function _inMarkerBucket(date, key){ return _inMarkerSeason(date, key); }
+// Returns sorted ascending ISO dates of "NEW HALF SESON" generator rows.
+function _calendarHalfBoundaryDates(){
+  return _lgMarkerInfo().filter(m=>m.kind==='gen').map(m=>m.date).sort();
+}
 // v2026.05.20.12.3 — fetch the half_seson_sep cell value for a given
 // ISO date (or '' if none). Used by the matches-view round card to show
 // the marker text verbatim.
@@ -2202,8 +2180,12 @@ function _lgCalendarRounds(){
       out.push({date,competition:comp,round,game_day:gdi>=0?String(r[gdi]||''):'',season:si>=0?String(r[si]||''):'',key:comp+'||'+round});
     });
   } else {
-    // Wide schema: scan every non-system column
-    const sys=new Set([di,gdi,si].filter(x=>x>=0));
+    // Wide schema: scan every non-system column. v2026.05.21.7 — also
+    // treat `half_seson_sep` as a system column so its NEW-HALF-SESON
+    // marker text isn't mis-parsed as a round code (was producing
+    // duplicate ghost round blocks).
+    const hsi=cd.h.findIndex(x=>String(x||'').trim().toLowerCase()==='half_seson_sep');
+    const sys=new Set([di,gdi,si,hsi].filter(x=>x>=0));
     cd.r.forEach(r=>{
       const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
       for(let c=0;c<cd.h.length;c++){
@@ -2215,30 +2197,37 @@ function _lgCalendarRounds(){
       }
     });
   }
-  // v2026.05.20.12.3 — inject a synthetic "half-season separator" round
-  // for every calendar.csv row that has a non-empty `half_seson_sep`
-  // cell. These render as a special block in the matches view whose
-  // Next-Round button generates the new half-season (opens the team-
-  // skills popup, runs generateSeasonFromDraw, jumps to first match).
-  // The synthetic round uses competition='__HALF_SESON_SEP__' so the
-  // existing renderer can detect it and switch to the special UI.
+  // v2026.05.21.7 — inject a synthetic "half-season generator" round
+  // for every calendar.csv row whose half_seson_sep cell contains the
+  // "NEW HALF SESON" trigger (kind==='gen'). Other marker kinds
+  // (start/end) define the season's date range only — they don't
+  // render as a round block.
   try{
-    const hsi=cd.h.findIndex(x=>String(x||'').trim().toLowerCase()==='half_seson_sep');
-    if(hsi>=0){
-      cd.r.forEach(r=>{
-        const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
-        const lbl=String(r[hsi]==null?'':r[hsi]).trim();
-        if(!lbl) return;
-        out.push({
-          date,
-          competition:'__HALF_SESON_SEP__',
-          round:lbl,
-          game_day:gdi>=0?String(r[gdi]||''):'',
-          season:si>=0?String(r[si]||''):'',
-          key:'__HALF_SESON_SEP__||'+date
-        });
+    const markers=(typeof _lgMarkerInfo==='function')?_lgMarkerInfo():[];
+    // v2026.05.21.7 — pin the generator block to the season that just
+    // ended (so it appears as the LAST block of that season, not the
+    // first of the next). Find the season whose `end` is on or just
+    // before this generator's date.
+    const ranges=(typeof _lgSeasonRanges==='function')?_lgSeasonRanges():{};
+    const seasonForGen=(genDate)=>{
+      let best='', bestEnd='';
+      for(const s of Object.keys(ranges)){
+        const e=ranges[s].endISO;
+        if(!e) continue;
+        if(e<=genDate && (!bestEnd || e>bestEnd)){ bestEnd=e; best=s; }
+      }
+      return best;
+    };
+    markers.filter(m=>m.kind==='gen').forEach(m=>{
+      out.push({
+        date:m.date,
+        competition:'__HALF_SESON_SEP__',
+        round:m.label||'NEW HALF SESON',
+        game_day:'',
+        season:seasonForGen(m.date),
+        key:'__HALF_SESON_SEP__||'+m.date
       });
-    }
+    });
   }catch(_){}
   return out.sort((a,b)=>a.date.localeCompare(b.date)||a.competition.localeCompare(b.competition)||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
 }
@@ -2450,7 +2439,14 @@ function renderLeagueView(){
   // filters (season/year/month and, conditionally, the companion dropdown).
   const baseForRounds=allRounds.filter(r=>{
     if(lgFilter.season){
-      if(_isMarkerBucketKey(lgFilter.season)){
+      // v2026.05.21.7 — synthetic rounds (e.g. half-season generator)
+      // carry an explicit `season` property. Honor it before falling
+      // back to date-range membership tests.
+      if(r.season && r.season===lgFilter.season){
+        /* explicit season match — keep */
+      } else if(r.season && r.season!==lgFilter.season){
+        return false;
+      } else if(_isMarkerBucketKey(lgFilter.season)){
         if(!_inMarkerBucket(r.date,lgFilter.season)) return false;
       } else if(_seasonOfRound(r)!==lgFilter.season){
         return false;
@@ -2858,30 +2854,22 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
   // generateSeasonFromDraw, snapshots matches, and jumps current_date
   // to the first round of the new half (existing behaviour).
   if(info.competition==='__HALF_SESON_SEP__'){
-    const status=_lgRoundStatus(info,curDate);
-    const isCurrent=(status==='current');
-    const isFuture=(status==='future');
     const lbl=esc(info.round||'NEW HALF SESON');
-    return `<div class="round-card ${status} half-sep" id="lgRc-${_lgCssId(info.key)}" style="border:2px dashed var(--accent,#888);">
+    return `<div class="round-card half-sep" id="lgRc-${_lgCssId(info.key)}" style="border:2px dashed var(--accent,#888);">
       <div class="rc-hdr" style="border-left:4px solid var(--accent,#888);">
         <div>
           <div class="rc-title" style="letter-spacing:.06em;text-transform:uppercase;">⚑ ${lbl}</div>
-          <div class="rc-sub">${formatDate(info.date)}${info.game_day?' · Game day '+esc(info.game_day):''}</div>
+          <div class="rc-sub">${formatDate(info.date)}</div>
         </div>
-        <div class="rc-play">
-          <span class="rc-stage">${status==='past'?'Generated':isCurrent?'Pending':'Upcoming'}</span>
-        </div>
+        <div class="rc-play"></div>
       </div>
       <div class="rc-body" style="padding:14px 16px;">
         <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px;">
-          Half-season boundary marker. Crossing this date opens the team-skills popup, then generates the new half-season and jumps to its first match.
+          Clicking opens the team-skills editor, then generates the new half-season and jumps to its first match.
         </div>
-        ${(isCurrent||isFuture)?
-          `<button class="tbtn db-now next" onclick="advanceToNextRound()" style="padding:8px 16px;font-weight:600;">
-            ⏭ Generate new half-season
-          </button>`:
-          `<div style="font-size:12px;color:var(--muted);">Already crossed — half-season was generated on this date.</div>`
-        }
+        <button class="tbtn db-now next" onclick="_runHalfSeasonGenerator('${esc(info.date)}')" style="padding:8px 16px;font-weight:600;">
+          ⏭ Generate new half-season
+        </button>
       </div>
     </div>`;
   }
@@ -4338,6 +4326,29 @@ const _springPopupShown=new Set();
 // crossing. Keyed by the NEW season (the one starting on the autumn side).
 const _juneNewSeasonPopupShown=new Set();
 
+// v2026.05.21.7 — explicit "generate new half-season" entry point fired
+// by the inline NEW HALF SESON round block. Sets current_date to the
+// day BEFORE the marker (so the boundary detection in advanceToNextRound
+// fires this exact marker), clears the once-per-session guards so the
+// popup re-opens regardless of any prior dismissal, then delegates to
+// advanceToNextRound() — same popup → snapshot → generate → jump flow.
+async function _runHalfSeasonGenerator(markerDate){
+  if(!markerDate){ toast('Marker date missing','err'); return; }
+  try{
+    // Step current_date back by 1 day so advanceToNextRound() finds
+    // `markerDate` as its `next.date` and treats it as a crossing.
+    const ds=new Date(markerDate);
+    if(isNaN(ds)){ toast('Invalid marker date '+markerDate,'err'); return; }
+    ds.setDate(ds.getDate()-1);
+    const iso=ds.toISOString().slice(0,10);
+    setState('current_date', iso, true);
+    // Clear once-per-session guards so the popup opens even if the
+    // user already dismissed it earlier in this session.
+    try{ _springPopupShown.clear(); }catch(_){}
+    try{ _juneNewSeasonPopupShown.clear(); }catch(_){}
+  }catch(e){ console.warn('[_runHalfSeasonGenerator] setup failed:',e); }
+  await advanceToNextRound();
+}
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
