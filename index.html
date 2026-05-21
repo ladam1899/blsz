@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.20.11</title>
+<title>League Manager v2026.05.21.8</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.20.11</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.8</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1604,6 +1604,112 @@ function seasonFor(dateStr){
   const hs=halfSeasonFor(dateStr);
   return hs?hs.slice(0,7):''; // "YYYY_YY"
 }
+// v2026.05.21.7 — parse marker cells from calendar.csv. Three kinds:
+//   • "YYYY_YY-start"          → season starts on this row's date (inclusive)
+//   • "YYYY_YY-end"            → season ends on this row's date (inclusive)
+//   • "NEW HALF SESON"         → "generate new half-season" trigger row
+// A row may carry start+end markers for different seasons; the cell
+// may contain ANY of the three forms (the parser scans the whole
+// cell text). Returns sorted ascending [{date, kind, season, label, raw}].
+function _lgMarkerInfo(){
+  const out=[];
+  const d=DB.calendar;
+  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return out;
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), hsi=_hi('half_seson_sep');
+  if(di<0||hsi<0) return out;
+  d.r.forEach(r=>{
+    const rawDate=r[di];
+    const iso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
+    if(!iso) return;
+    const cell=String(r[hsi]==null?'':r[hsi]).trim();
+    if(!cell) return;
+    // Walk the cell; a single cell may contain multiple tokens on
+    // separate lines (e.g. "1999_00-end\n2000_01-start").
+    cell.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean).forEach(tok=>{
+      let m;
+      if((m=tok.match(/^(\d{4}_\d{2})-start$/i))){
+        out.push({date:iso, kind:'start', season:m[1], label:tok, raw:cell});
+      } else if((m=tok.match(/^(\d{4}_\d{2})-end$/i))){
+        out.push({date:iso, kind:'end', season:m[1], label:tok, raw:cell});
+      } else if(/^new\s+half\s+seson/i.test(tok)){
+        out.push({date:iso, kind:'gen', season:'', label:tok, raw:cell});
+      }
+    });
+  });
+  out.sort((a,b)=>a.date.localeCompare(b.date));
+  return out;
+}
+// Build { season → {startISO, endISO} } from the start/end markers.
+function _lgSeasonRanges(){
+  const map=Object.create(null);
+  _lgMarkerInfo().forEach(m=>{
+    if(!m.season) return;
+    if(!map[m.season]) map[m.season]={startISO:'', endISO:''};
+    if(m.kind==='start') map[m.season].startISO=m.date;
+    if(m.kind==='end')   map[m.season].endISO=m.date;
+  });
+  return map;
+}
+// Returns the season (YYYY_YY) whose [start, end] range contains iso.
+// '' if no markers exist or iso falls outside every defined range.
+function _markerSeasonForDate(iso){
+  const ranges=_lgSeasonRanges();
+  for(const s of Object.keys(ranges)){
+    const r=ranges[s];
+    if(!r.startISO || !r.endISO) continue;
+    if(iso>=r.startISO && iso<=r.endISO) return s;
+  }
+  return '';
+}
+// Returns sorted-unique list of season keys that have at least one round.
+function _lgMarkerSeasonKeys(allRounds){
+  const ranges=_lgSeasonRanges();
+  const keys=Object.keys(ranges).filter(s=>ranges[s].startISO && ranges[s].endISO);
+  if(!keys.length) return [];
+  const used=new Set();
+  (allRounds||[]).forEach(r=>{
+    const s=_markerSeasonForDate(r.date);
+    if(s) used.add(s);
+  });
+  return keys.filter(k=>used.has(k)).sort();
+}
+function _inMarkerSeason(date, key){
+  if(!date||!key) return false;
+  return _markerSeasonForDate(date)===key;
+}
+// Back-compat aliases — every call site that used to ask "is this a
+// marker bucket key" / "is this date in this bucket" now answers the
+// marker-text question instead.
+function _isMarkerBucketKey(s){
+  if(!s) return false;
+  if(!_lgMarkerInfo().length) return false;
+  return /^\d{4}_\d{2}$/.test(String(s));
+}
+function _inMarkerBucket(date, key){ return _inMarkerSeason(date, key); }
+// Returns sorted ascending ISO dates of "NEW HALF SESON" generator rows.
+function _calendarHalfBoundaryDates(){
+  return _lgMarkerInfo().filter(m=>m.kind==='gen').map(m=>m.date).sort();
+}
+// v2026.05.20.12.3 — fetch the half_seson_sep cell value for a given
+// ISO date (or '' if none). Used by the matches-view round card to show
+// the marker text verbatim.
+function _calendarHalfBoundaryLabel(iso){
+  if(!iso) return '';
+  const d=DB.calendar;
+  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return '';
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), hsi=_hi('half_seson_sep');
+  if(di<0||hsi<0) return '';
+  for(const r of d.r){
+    const rawDate=r[di];
+    const rIso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
+    if(rIso!==iso) continue;
+    const cell=String(r[hsi]==null?'':r[hsi]).trim();
+    if(cell) return cell;
+  }
+  return '';
+}
 function seasonLabel(s){
   if(!s)return'';
   const m=s.match(/^(\d{4})_(\d{2})/);
@@ -2074,8 +2180,12 @@ function _lgCalendarRounds(){
       out.push({date,competition:comp,round,game_day:gdi>=0?String(r[gdi]||''):'',season:si>=0?String(r[si]||''):'',key:comp+'||'+round});
     });
   } else {
-    // Wide schema: scan every non-system column
-    const sys=new Set([di,gdi,si].filter(x=>x>=0));
+    // Wide schema: scan every non-system column. v2026.05.21.7 — also
+    // treat `half_seson_sep` as a system column so its NEW-HALF-SESON
+    // marker text isn't mis-parsed as a round code (was producing
+    // duplicate ghost round blocks).
+    const hsi=cd.h.findIndex(x=>String(x||'').trim().toLowerCase()==='half_seson_sep');
+    const sys=new Set([di,gdi,si,hsi].filter(x=>x>=0));
     cd.r.forEach(r=>{
       const date=normalizeDate(di>=0?r[di]:'');if(!date)return;
       for(let c=0;c<cd.h.length;c++){
@@ -2087,6 +2197,38 @@ function _lgCalendarRounds(){
       }
     });
   }
+  // v2026.05.21.7 — inject a synthetic "half-season generator" round
+  // for every calendar.csv row whose half_seson_sep cell contains the
+  // "NEW HALF SESON" trigger (kind==='gen'). Other marker kinds
+  // (start/end) define the season's date range only — they don't
+  // render as a round block.
+  try{
+    const markers=(typeof _lgMarkerInfo==='function')?_lgMarkerInfo():[];
+    // v2026.05.21.7 — pin the generator block to the season that just
+    // ended (so it appears as the LAST block of that season, not the
+    // first of the next). Find the season whose `end` is on or just
+    // before this generator's date.
+    const ranges=(typeof _lgSeasonRanges==='function')?_lgSeasonRanges():{};
+    const seasonForGen=(genDate)=>{
+      let best='', bestEnd='';
+      for(const s of Object.keys(ranges)){
+        const e=ranges[s].endISO;
+        if(!e) continue;
+        if(e<=genDate && (!bestEnd || e>bestEnd)){ bestEnd=e; best=s; }
+      }
+      return best;
+    };
+    markers.filter(m=>m.kind==='gen').forEach(m=>{
+      out.push({
+        date:m.date,
+        competition:'__HALF_SESON_SEP__',
+        round:m.label||'NEW HALF SESON',
+        game_day:'',
+        season:seasonForGen(m.date),
+        key:'__HALF_SESON_SEP__||'+m.date
+      });
+    });
+  }catch(_){}
   return out.sort((a,b)=>a.date.localeCompare(b.date)||a.competition.localeCompare(b.competition)||String(a.round).localeCompare(String(b.round),undefined,{numeric:true}));
 }
 function _lgRoundStatus(info,cur){
@@ -2179,7 +2321,13 @@ function _lgFilterRounds(all){
     return false;
   };
   return all.filter(r=>{
-    if(lgFilter.season && _seasonOf(r)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(r.date,lgFilter.season)) return false;
+      } else if(_seasonOf(r)!==lgFilter.season){
+        return false;
+      }
+    }
     const parsed=_lgRoundTypeAndNumber(r.round);
     if(lgFilter.roundType && _lgRoundFamily(r.round)!==lgFilter.roundType)return false;
     if(lgFilter.roundNum&&(!parsed||String(parsed.num)!==String(lgFilter.roundNum)))return false;
@@ -2230,13 +2378,21 @@ function renderLeagueView(){
   // every season (sorted by date, so the earliest 2000_01 rounds appeared at
   // the top). Now the first paint already pins to the season covering
   // `current_date`, matching what subsequent renders see.
-  if(!lgFilter.season && typeof seasonFor==='function'){
-    const _curSeason=seasonFor(curDate);
-    const _hasIt=_curSeason && allRounds.some(r=>{
-      if(r.season) return r.season===_curSeason;
-      return typeof seasonFor==='function' && seasonFor(r.date)===_curSeason;
-    });
-    if(_hasIt) lgFilter.season=_curSeason;
+  if(!lgFilter.season){
+    // v2026.05.21.5 — prefer the marker-derived season key that
+    // contains current_date. Falls back to seasonFor() label when
+    // calendar.csv has no markers yet.
+    const _markerSeason=(typeof _markerSeasonForDate==='function')?_markerSeasonForDate(curDate):'';
+    if(_markerSeason){
+      lgFilter.season=_markerSeason;
+    } else if(typeof seasonFor==='function'){
+      const _curSeason=seasonFor(curDate);
+      const _hasIt=_curSeason && allRounds.some(r=>{
+        if(r.season) return r.season===_curSeason;
+        return typeof seasonFor==='function' && seasonFor(r.date)===_curSeason;
+      });
+      if(_hasIt) lgFilter.season=_curSeason;
+    }
   }
   const visible=_lgFilterRounds(allRounds);
   const current=_lgCurrentRound(visible.length?visible:allRounds,curDate);
@@ -2261,7 +2417,18 @@ function renderLeagueView(){
     if(r&&r.date&&typeof seasonFor==='function') return seasonFor(r.date)||'';
     return '';
   };
-  const allSeasons=[...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
+  // v2026.05.21.5 — season dropdown is driven by marker TEXT in
+  // calendar.csv (format "NEW HALF SESON <YYYY_YY_(A|S)>"). Each round's
+  // date is mapped to a YYYY_YY season key via _markerSeasonForDate;
+  // the dropdown lists every distinct season key that has at least one
+  // round. Falls back to the seasonFor()-based dropdown when no
+  // markers exist.
+  const _markerSeasonKeys=(typeof _lgMarkerSeasonKeys==='function')?_lgMarkerSeasonKeys(allRounds):[];
+  const _useMarkerBuckets=_markerSeasonKeys.length>0;
+  const allSeasons=_useMarkerBuckets
+    ? _markerSeasonKeys
+    : [...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
+  const _seasonOptionLabel=(s)=>seasonLabel(s) || s;
   // v19.6 — the season default is now seeded at the top of this function,
   // BEFORE `visible` is computed, so the very first render already filters
   // to the current season. The legacy seed-after-filter block was removed.
@@ -2271,7 +2438,20 @@ function renderLeagueView(){
   // Build round-type and round-number option sets, respecting the other
   // filters (season/year/month and, conditionally, the companion dropdown).
   const baseForRounds=allRounds.filter(r=>{
-    if(lgFilter.season && _seasonOfRound(r)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      // v2026.05.21.7 — synthetic rounds (e.g. half-season generator)
+      // carry an explicit `season` property. Honor it before falling
+      // back to date-range membership tests.
+      if(r.season && r.season===lgFilter.season){
+        /* explicit season match — keep */
+      } else if(r.season && r.season!==lgFilter.season){
+        return false;
+      } else if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(r.date,lgFilter.season)) return false;
+      } else if(_seasonOfRound(r)!==lgFilter.season){
+        return false;
+      }
+    }
     if(lgFilter.year&&!r.date.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&r.date.slice(5,7)!==lgFilter.month)return false;
     return true;
@@ -2289,7 +2469,13 @@ function renderLeagueView(){
     if(!lgFilter.season&&!lgFilter.year&&!lgFilter.month)return true;
     const d=mc.date>=0?normalizeDate(row[mc.date]):'';
     if(!d)return true; // undateable matches row — don't exclude it
-    if(lgFilter.season&&seasonFor(d)!==lgFilter.season)return false;
+    if(lgFilter.season){
+      if(_isMarkerBucketKey(lgFilter.season)){
+        if(!_inMarkerBucket(d,lgFilter.season)) return false;
+      } else if(seasonFor(d)!==lgFilter.season){
+        return false;
+      }
+    }
     if(lgFilter.year&&!d.startsWith(lgFilter.year))return false;
     if(lgFilter.month&&d.slice(5,7)!==lgFilter.month)return false;
     return true;
@@ -2372,8 +2558,8 @@ function renderLeagueView(){
     <div class="date-bar">
       <span class="db-label">Season</span>
       <select class="db-sel" onchange="lgFilterChange('season',this.value)">
-        <option value="">All</option>
-        ${allSeasons.map(s=>`<option value="${esc(s)}"${lgFilter.season===s?' selected':''}>${esc(seasonLabel(s))}</option>`).join('')}
+        ${_useMarkerBuckets?'':'<option value="">All</option>'}
+        ${allSeasons.map(s=>`<option value="${esc(s)}"${lgFilter.season===s?' selected':''}>${esc(_seasonOptionLabel(s))}</option>`).join('')}
       </select>
       <span class="db-label">Type</span>
       <select class="db-sel" onchange="lgFilterChange('roundType',this.value)">
@@ -2388,7 +2574,15 @@ function renderLeagueView(){
         // chips outside the dropdown were the previous design — the user
         // asked for the round codes IN the dropdown instead, so the chip row
         // is gone and the round codes live in each option's label.
-        const inSeason=(r)=>!lgFilter.season || _seasonOfRound(r)===lgFilter.season;
+        // v2026.05.21.6 — when calendar markers exist, use the
+        // marker-derived season (same rule as the round-card filter)
+        // instead of seasonFor(r.date) so the date dropdown matches
+        // what's visible on the page.
+        const inSeason=(r)=>{
+          if(!lgFilter.season) return true;
+          if(_useMarkerBuckets) return _inMarkerSeason(r.date, lgFilter.season);
+          return _seasonOfRound(r)===lgFilter.season;
+        };
         const inType=(r)=>!lgFilter.roundType || _lgRoundFamily(r.round)===lgFilter.roundType;
         const matches=(r)=>inSeason(r)&&inType(r);
         const matched=allRounds.filter(matches);
@@ -2487,7 +2681,84 @@ function renderLeagueView(){
   });
 }
 
-function lgFilterChange(k,v){lgFilter[k]=v;lgSelRound=null;renderLeagueView();}
+function lgFilterChange(k,v){
+  lgFilter[k]=v;lgSelRound=null;
+  // v2026.05.20.12 — when the user picks a season in the Matches view,
+  // re-read that season's `matches_<season>.csv` from Drive so the view
+  // reflects the on-disk snapshot for that season (per user request:
+  // "if I select a season on the matches site the corresponding file
+  // should be read"). Falls back silently if the file doesn't exist
+  // yet (e.g. season hasn't been written to Drive).
+  if(k==='season' && v){
+    _lgReloadSeasonMatches(v).finally(()=>renderLeagueView());
+  } else {
+    renderLeagueView();
+  }
+}
+// v2026.05.20.12 — fetch `matches_<season>.csv` fresh from Drive and
+// replace the in-memory rows for that season with the file's contents.
+// Undated rows are left alone. If the file isn't found, the in-memory
+// view stays as-is (no destructive wipe).
+async function _lgReloadSeasonMatches(season){
+  if(!season) return;
+  // v2026.05.21.2 — when the selector value is a marker-bucket key
+  // ("startISO..endISO"), enumerate the seasonFor() labels covered by
+  // that range and reload each one's archive file in turn.
+  if(typeof _isMarkerBucketKey==='function' && _isMarkerBucketKey(season)){
+    const m=String(season).match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+    if(!m) return;
+    const startISO=m[1], endISO=m[2];
+    const seasonSet=new Set();
+    try{
+      const sStart=seasonFor(startISO); if(sStart) seasonSet.add(sStart);
+      // step year-by-year to catch every season touched by the range
+      const sy=parseInt(startISO.slice(0,4)), ey=parseInt(endISO.slice(0,4));
+      for(let y=sy;y<=ey;y++){
+        const sJun=seasonFor(`${y}-08-01`); if(sJun) seasonSet.add(sJun);
+        const sJan=seasonFor(`${y}-02-01`); if(sJan) seasonSet.add(sJan);
+      }
+      const sEnd=seasonFor(endISO); if(sEnd) seasonSet.add(sEnd);
+    }catch(_){}
+    for(const s of seasonSet){
+      try{ await _lgReloadSeasonMatches(s); }catch(_){}
+    }
+    return;
+  }
+  try{
+    const fname=`matches_${season}.csv`;
+    let fid=_matchesSeasonFids[season];
+    let mime='text/csv';
+    if(!fid){
+      const f=await findFile(fname);
+      if(!f) return;
+      fid=f.id; mime=f.mimeType||'text/csv';
+      _matchesSeasonFids[season]=fid;
+    }
+    const txt=await readFile(fid,mime);
+    const {h,r}=parseCSV(txt);
+    if(!h.length) return;
+    if(!DB.matches.h.length) DB.matches.h=h.slice();
+    const mh=DB.matches.h;
+    const di=mh.findIndex(c=>String(c||'').trim().toLowerCase()==='date');
+    if(di<0) return;
+    // Drop in-memory rows that belong to this season; keep undated rows.
+    DB.matches.r=DB.matches.r.filter(row=>{
+      const dStr=String(row[di]||'').trim();
+      if(!dStr) return true;
+      try{ return seasonFor(dStr)!==season; }catch(_){ return true; }
+    });
+    r.forEach(row=>{
+      const remapped=mh.map(col=>{
+        const sourceI=h.indexOf(col);
+        return sourceI>=0?(row[sourceI]==null?'':row[sourceI]):'';
+      });
+      DB.matches.r.push(remapped);
+    });
+    console.log(`[_lgReloadSeasonMatches] refreshed ${fname} → ${r.length} rows`);
+  }catch(e){
+    console.warn(`[_lgReloadSeasonMatches] failed for ${season}:`,e);
+  }
+}
 // Render-all flag: when true, the Matches view skips its anchor-windowing
 // optimisation and renders every visible round. Resets back to false on the
 // next renderLeagueView() call so it only sticks for one render.
@@ -2576,6 +2847,32 @@ function lgRevealNextStage(key){
 }
 
 function renderLeagueRoundCardHTML(info,curDate,anchor){
+  // v2026.05.20.12.3 — half-season separator block. Renders a special
+  // round card with a "Generate new half-season" button instead of the
+  // usual matches table. Clicking the button delegates to
+  // advanceToNextRound(), which opens the team-skills popup, runs
+  // generateSeasonFromDraw, snapshots matches, and jumps current_date
+  // to the first round of the new half (existing behaviour).
+  if(info.competition==='__HALF_SESON_SEP__'){
+    const lbl=esc(info.round||'NEW HALF SESON');
+    return `<div class="round-card half-sep" id="lgRc-${_lgCssId(info.key)}" style="border:2px dashed var(--accent,#888);">
+      <div class="rc-hdr" style="border-left:4px solid var(--accent,#888);">
+        <div>
+          <div class="rc-title" style="letter-spacing:.06em;text-transform:uppercase;">⚑ ${lbl}</div>
+          <div class="rc-sub">${formatDate(info.date)}</div>
+        </div>
+        <div class="rc-play"></div>
+      </div>
+      <div class="rc-body" style="padding:14px 16px;">
+        <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px;">
+          Clicking opens the team-skills editor, then generates the new half-season and jumps to its first match.
+        </div>
+        <button class="tbtn db-now next" onclick="_runHalfSeasonGenerator('${esc(info.date)}')" style="padding:8px 16px;font-weight:600;">
+          ⏭ Generate new half-season
+        </button>
+      </div>
+    </div>`;
+  }
   const status=_lgRoundStatus(info,curDate);
   const isAnchor=!!(anchor&&info.key===anchor.key);
   const col=compColor(info.competition);
@@ -4029,6 +4326,97 @@ const _springPopupShown=new Set();
 // crossing. Keyed by the NEW season (the one starting on the autumn side).
 const _juneNewSeasonPopupShown=new Set();
 
+// v2026.05.21.8 — explicit "generate new half-season" entry point fired
+// by the inline NEW HALF SESON round block. Derives the destination half
+// directly from `halfSeasonFor(markerDate)` and calls _confirmHalfBoundary
+// with explicit (season, mode) args, then runs the post-popup snapshot /
+// generation / jump itself.
+//
+// Why not delegate to advanceToNextRound: that path infers the crossing
+// mode by comparing `seasonFor(cur)` against `seasonFor(next.date)` which
+// is hard-coded to a June 15 cutover. Markers that don't sit exactly on
+// that cutover (e.g. a NEW HALF SESON row on 2000-07-05) end up with
+// curSeason === nextSeason → misclassified as a Jan A→S crossing, so the
+// team-skills popup reads the wrong baseline (e.g. 2000_01_A instead of
+// the strictly-previous 1999_00_S). Going through _confirmHalfBoundary
+// directly with the (season,mode) pair we compute here fixes that —
+// baseline data always comes from the half immediately before the
+// marker's half.
+async function _runHalfSeasonGenerator(markerDate){
+  if(!markerDate){ toast('Marker date missing','err'); return; }
+  const ds=new Date(markerDate);
+  if(isNaN(ds)){ toast('Invalid marker date '+markerDate,'err'); return; }
+  const dstHalfTag=(typeof halfSeasonFor==='function')?halfSeasonFor(markerDate):'';
+  const m=/^(\d{4}_\d{2})_(A|S)$/.exec(dstHalfTag||'');
+  if(!m){ toast('Could not resolve half for '+markerDate,'err'); return; }
+  const dstSeason=m[1], dstHalf=m[2];
+  const _prevSeasonStr=(s)=>{
+    const mm=String(s||'').match(/^(\d{4})_(\d{2})$/);
+    if(!mm) return s;
+    const y=parseInt(mm[1])-1;
+    return `${y}_${String((y+1)%100).padStart(2,'0')}`;
+  };
+  // `season` arg for _confirmHalfBoundary names the JUST-ENDING season,
+  // i.e. the one we read baselines from.
+  //   dstHalf='S' → A→S within same season → season = dstSeason     (aTag=season+'_A')
+  //   dstHalf='A' → S→newA cross-season    → season = prevSeason     (aTag=season+'_S')
+  const popupSeason=(dstHalf==='S')?dstSeason:_prevSeasonStr(dstSeason);
+  const mode=(dstHalf==='S')?'A->S':'S->newA';
+  // Clear once-per-session guards so a repeat click still opens the popup.
+  try{ _springPopupShown.clear(); }catch(_){}
+  try{ _juneNewSeasonPopupShown.clear(); }catch(_){}
+
+  const ok=await _confirmHalfBoundary(popupSeason, markerDate, markerDate, mode);
+  if(!ok){ toast('Half-season generation cancelled','warn'); return; }
+
+  // Mirror advanceToNextRound's post-popup work, but scoped to this
+  // marker's (dstSeason, dstHalf).
+  if(mode==='S->newA'){
+    // Finalize the just-finished season's MB / BLSZ rankings + trophies so
+    // next-season draws have the input rows they need.
+    try{
+      const mbN=(typeof _writeMbConsolidatedRanking==='function')?_writeMbConsolidatedRanking(popupSeason):0;
+      const blszN=(typeof _writeBlszOverallRanking==='function')?_writeBlszOverallRanking(popupSeason):0;
+      if(mbN>0||blszN>0){
+        await saveSheet('results');
+        toast(`📊 Finalized ${popupSeason}: ${mbN} MB rows · ${blszN} BLSZ rows`,'');
+      }
+    }catch(e){ console.error('[_runHalfSeasonGenerator] MB/BLSZ write failed:',e); }
+    try{
+      if(typeof _finalizeSeasonTrophies==='function'){
+        const op=_finalizeSeasonTrophies(popupSeason);
+        if(op!=='noop'){ await saveSheet('trophies'); toast(`🥇 Trophies ${op} for ${popupSeason}`,''); }
+      }
+    }catch(e){ console.error('[_runHalfSeasonGenerator] trophies write failed:',e); }
+  }
+  // Snapshot the just-finished half before regenerating.
+  try{ await saveSheet('matches'); }
+  catch(e){ console.warn('[_runHalfSeasonGenerator] pre-gen matches snapshot failed:',e); }
+  try{
+    await generateSeasonFromDraw(dstSeason, dstHalf);
+  }catch(e){
+    console.error('[_runHalfSeasonGenerator] generation failed:',e);
+    toast(`${dstHalf==='A'?'Autumn':'Spring'} generation failed — see console`,'err');
+    return;
+  }
+  // Jump current_date to first calendar entry of the just-generated half.
+  let destDate=markerDate;
+  try{
+    const all=_lgCalendarRounds();
+    const dates=all.map(r=>r.date)
+      .filter(d=>d && seasonFor(d)===dstSeason && halfSeasonFor(d).endsWith('_'+dstHalf));
+    if(dates.length){
+      destDate=dates.sort()[0];
+      lgFilter.season=dstSeason;
+      toast(`Jumped to first ${dstHalf==='A'?'autumn':'spring'} match of ${dstSeason}: ${destDate}`,'');
+    }
+  }catch(e){ console.warn('[_runHalfSeasonGenerator] post-gen jump failed:',e); }
+  setState('current_date', destDate, true);
+  try{ await saveSheet('matches'); }
+  catch(e){ console.warn('[_runHalfSeasonGenerator] post-gen matches save failed:',e); }
+  lgSelRound=null;
+  renderLeagueView();
+}
 async function advanceToNextRound(){
   // Move current_date forward to the first calendar round strictly after today.
   const cur=currentDate();
@@ -4045,22 +4433,26 @@ async function advanceToNextRound(){
   // We compute both crossings up-front from the NEXT round's date so a long
   // jump (e.g. Dec → July) doesn't lose either step.
   const nextSeason=(typeof seasonFor==='function')?seasonFor(next.date):'';
-  // January split (Jan 1 of the spring half of `nextSeason`).
-  const sy=(()=>{const m=String(nextSeason||'').match(/^(\d{4})_/);return m?parseInt(m[1])+1:NaN;})();
-  const janSplit=isNaN(sy)?'':(sy+'-01-01');
-  const isJanCrossing=!!(janSplit && (!cur || cur<janSplit) && next.date>=janSplit);
-  // June rollover: midnight of mid-June of `nextSeason`'s spring year. After
-  // this point the date belongs to a NEW season (the one starting that autumn).
-  // halfSeasonFor() considers June 15 the cutover, so we use the same.
   const curSeason=cur?(typeof seasonFor==='function'?seasonFor(cur):''):'';
-  const junSplitForCur=(()=>{
-    const m=String(curSeason||'').match(/^(\d{4})_/);
-    if(!m) return '';
-    return (parseInt(m[1])+1)+'-06-15';
-  })();
-  const isJunCrossing=!!(curSeason && nextSeason && curSeason!==nextSeason
-                         && junSplitForCur && (!cur || cur<junSplitForCur)
-                         && next.date>=junSplitForCur);
+  // v2026.05.20.12.2 — calendar-marker-based half-boundary detection.
+  // A '--' marker row in calendar.csv (every non-system cell == '--')
+  // defines a half-season boundary. We pick the first marker strictly
+  // after `cur` and on/before `next.date`. The marker's season decides
+  // the crossing type:
+  //   markerSeason === curSeason  → A->S within-season (Jan-style)
+  //   markerSeason !== curSeason  → S->newA cross-season (Jun-style)
+  // No markers ⇒ no half-boundary fires (hardcoded Jan 1 / Jun 15
+  // detection has been removed per user request).
+  const _allMarkers=(typeof _calendarHalfBoundaryDates==='function')?_calendarHalfBoundaryDates():[];
+  const _crossedMarkers=_allMarkers.filter(d=>(!cur || d>cur) && d<=next.date);
+  let janSplit='', junSplitForCur='';
+  for(const md of _crossedMarkers){
+    const ms=(typeof seasonFor==='function')?seasonFor(md):'';
+    if(ms && ms===curSeason && !junSplitForCur){ junSplitForCur=md; }
+    else if(ms && ms===nextSeason && !janSplit){ janSplit=md; }
+  }
+  const isJanCrossing=!!(janSplit);
+  const isJunCrossing=!!(curSeason && nextSeason && curSeason!==nextSeason && junSplitForCur);
   console.log(`[advanceToNextRound] cur=${cur} next=${next.date} curSeason=${curSeason} nextSeason=${nextSeason} janSplit=${janSplit} junSplit=${junSplitForCur} janX=${isJanCrossing} junX=${isJunCrossing}`);
 
   // After a successful rollover (Jan 1 spring or Jun 15 autumn) we override
@@ -4078,6 +4470,11 @@ async function advanceToNextRound(){
       toast('Half-season transition cancelled — current date kept where it is','warn');
       return;
     }
+    // v2026.05.20.12 — snapshot the just-finished autumn half to
+    // `matches_<curSeason>.csv` BEFORE spring generation runs. Goes through
+    // _saveMatchesCurrentOnly (PATCH on cached fid), so no duplicate files.
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] pre-spring matches snapshot failed:',e); }
     try{
       await generateSeasonFromDraw(nextSeason,'S');
     }catch(e){
@@ -4148,6 +4545,14 @@ async function advanceToNextRound(){
       toast('Season rollover cancelled — current date kept where it is','warn');
       return;
     }
+    // v2026.05.20.12 — snapshot the just-finished spring half (i.e. the
+    // entire curSeason) to `matches_<curSeason>.csv` BEFORE the next
+    // season's autumn generation runs. PATCH via cached fid, so no
+    // duplicate files. After this, the next saveSheet('matches') will
+    // create the brand-new `matches_<nextSeason>.csv` file once
+    // generateSeasonFromDraw populates rows under the new season.
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] pre-newseason matches snapshot failed:',e); }
     // STEP 4 — generate the new season's autumn half.
     try{
       await generateSeasonFromDraw(nextSeason,'A');
@@ -4181,6 +4586,16 @@ async function advanceToNextRound(){
     }catch(e){ console.warn('[advanceToNextRound] post-rollover jump failed:',e); }
   }
   setState('current_date',_destDate,true);
+  // v2026.05.20.12.1 — after a rollover, current_date now sits inside the
+  // NEW season. The rows generateSeasonFromDraw inserted for that new
+  // season were dropped from earlier saves because the old current_date
+  // still pointed at the previous season's curSeason filter. Flush again
+  // now so `matches_<newSeason>.csv` actually gets created on Drive with
+  // all the freshly-generated rows.
+  if(_jumpToSeason){
+    try{ await saveSheet('matches'); }
+    catch(e){ console.warn('[advanceToNextRound] post-rollover matches save failed:',e); }
+  }
   lgSelRound=null;
   if(!_jumpToSeason) toast(`Current date → ${_destDate}`,'');
   renderLeagueView();
