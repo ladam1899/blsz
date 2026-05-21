@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.12</title>
+<title>League Manager v2026.05.21.13</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.12</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.13</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1328,13 +1328,17 @@ async function refreshAll(){
   document.getElementById('app').innerHTML='<div class="loading"><div class="spinner"></div>Refreshing…</div>';
   await loadAll();
 }
-async function saveSheet(name){
+async function saveSheet(name, opts){
   const d=DB[name];
   if(!d.h.length)d.h=[...ED_DEFAULTS[name]];
   // v21.1 — matches saves go to the current season's file only. Past
   // seasons live in their own files and are never touched by the app.
+  // v2026.05.21.13 — opts.season lets callers override the destination
+  // season (used by Generate Season when targetSeason differs from the
+  // current_date's season, so newly-generated rows actually land in
+  // matches_{targetSeason}.csv instead of being filtered out).
   if(name==='matches'){
-    await _saveMatchesCurrentOnly(d);
+    await _saveMatchesCurrentOnly(d, opts && opts.season);
     return;
   }
   const csv=serCSV(d.h,d.r);
@@ -1352,10 +1356,18 @@ async function saveSheet(name){
 // in the folder, it's left alone — it's no longer read or written by
 // the app. The first save after this version creates
 // `matches_<currentSeason>.csv` if it doesn't exist yet.
-async function _saveMatchesCurrentOnly(d){
-  const cur=(typeof currentDate==='function')?currentDate():'';
-  const curSeason=(cur && typeof seasonFor==='function')?seasonFor(cur):'';
-  if(!curSeason){
+async function _saveMatchesCurrentOnly(d, seasonOverride){
+  // v2026.05.21.13 — seasonOverride lets Generate Season target the
+  // season it just populated even when current_date hasn't crossed yet
+  // (the rollover bumps current_date AFTER generation). Without this,
+  // newly-generated rows for a future season were filtered out and the
+  // matches_{newSeason}.csv file was never created on Drive.
+  let targetSeason=String(seasonOverride||'').trim();
+  if(!targetSeason){
+    const cur=(typeof currentDate==='function')?currentDate():'';
+    targetSeason=(cur && typeof seasonFor==='function')?seasonFor(cur):'';
+  }
+  if(!targetSeason){
     console.warn('[saveMatches] no current season — falling back to matches.csv');
     const csv=serCSV(d.h,d.r);
     const newId=await writeToDrive('matches.csv',csv,d.fid);
@@ -1363,30 +1375,30 @@ async function _saveMatchesCurrentOnly(d){
     return;
   }
   const di=d.h.findIndex(h=>String(h||'').trim().toLowerCase()==='date');
-  const currentBucket=[];
+  const bucket=[];
   d.r.forEach(row=>{
     const dateStr=di>=0?String(row[di]||'').trim():'';
-    if(!dateStr){ currentBucket.push(row); return; }
+    if(!dateStr){ bucket.push(row); return; }
     let s='';
     try{ s=seasonFor(dateStr)||''; }catch(_){}
-    if(!s || s===curSeason) currentBucket.push(row);
+    if(!s || s===targetSeason) bucket.push(row);
     // Other-season rows: DROPPED from this write (they stay in their
     // archive file on Drive, untouched). In-memory DB.matches.r is not
     // mutated, so views still see them.
   });
-  const csv=serCSV(d.h,currentBucket);
-  const existingId=_matchesSeasonFids[curSeason]||null;
+  const csv=serCSV(d.h,bucket);
+  const existingId=_matchesSeasonFids[targetSeason]||null;
   try{
-    const newId=await writeToDrive(`matches_${curSeason}.csv`,csv,existingId);
+    const newId=await writeToDrive(`matches_${targetSeason}.csv`,csv,existingId);
     if(newId){
-      _matchesSeasonFids[curSeason]=newId;
-      // Keep DB.matches.fid pointing at the current-season file so legacy
+      _matchesSeasonFids[targetSeason]=newId;
+      // Keep DB.matches.fid pointing at the just-written file so legacy
       // code paths that read DB.matches.fid still work.
       d.fid=newId;
     }
-    console.log(`[saveMatches] matches_${curSeason}.csv: ${currentBucket.length} rows (current season only)`);
+    console.log(`[saveMatches] matches_${targetSeason}.csv: ${bucket.length} rows (override=${seasonOverride||'(none)'})`);
   }catch(e){
-    console.warn(`[saveMatches] failed to write matches_${curSeason}.csv:`,e);
+    console.warn(`[saveMatches] failed to write matches_${targetSeason}.csv:`,e);
     throw e;
   }
 }
@@ -9065,7 +9077,10 @@ async function generateSeasonFromDraw(targetSeason, half){
     console.warn(`[GenerateSeason] ${nkUnresolved.length} NK unresolved sides. Sample:`,nkUnresolved.slice(0,10));
   }
   try{
-    await saveSheet('matches');
+    // v2026.05.21.13 — pass targetSeason so _saveMatchesCurrentOnly writes
+    // matches_{targetSeason}.csv even when current_date is still in the
+    // previous season (rollover bumps current_date AFTER this returns).
+    await saveSheet('matches',{season:targetSeason});
     if(resRows>0){
       try{ await saveSheet('results'); }
       catch(e){ toast('⚠ Results save failed: '+(e.message||e),'err'); }
