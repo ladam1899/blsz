@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.9</title>
+<title>League Manager v2026.05.21.10</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.9</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.10</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -4410,14 +4410,19 @@ async function _runHalfSeasonGenerator(markerDate){
     toast(`${dstHalf==='A'?'Autumn':'Spring'} generation failed — see console`,'err');
     return;
   }
-  // Jump current_date to first calendar entry of the just-generated half.
+  // Jump current_date to the first REAL round strictly after the NEW HALF
+  // SESON marker (i.e. the first round of the just-generated half). Skips
+  // pseudo-rounds for marker rows (competition='__HALF_SESON_SEP__'). Falls
+  // back to the marker date itself if nothing later is in the calendar.
   let destDate=markerDate;
   try{
     const all=_lgCalendarRounds();
-    const dates=all.map(r=>r.date)
-      .filter(d=>d && seasonFor(d)===dstSeason && halfSeasonFor(d).endsWith('_'+dstHalf));
+    const dates=all
+      .filter(r=>r && r.date && r.date>markerDate && r.competition!=='__HALF_SESON_SEP__')
+      .map(r=>r.date)
+      .sort();
     if(dates.length){
-      destDate=dates.sort()[0];
+      destDate=dates[0];
       lgFilter.season=dstSeason;
       toast(`Jumped to first ${dstHalf==='A'?'autumn':'spring'} match of ${dstSeason}: ${destDate}`,'');
     }
