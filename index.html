@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.4</title>
+<title>League Manager v2026.05.21.5</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.4</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.5</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1628,84 +1628,91 @@ function _calendarHalfBoundaryDates(){
   out.sort();
   return out;
 }
-// v2026.05.21.3 — derive season buckets from the half-season markers
-// in calendar.csv. A bucket = one football season = the date range
-// between every other marker (markers come every ~6 months, so every
-// other one is a season boundary).
-//   • Bucket i (i>=1): rounds with date in [markers[2i-2], markers[2i])
-//     — that's "season opening marker → next season's opening marker".
-//   • Bucket 0 (pre-history): rounds with date < markers[0]. Used for
-//     pre-marker calendar entries (e.g. EURO 2000 in June 2000 before
-//     the 2000-07-05 marker). Label derives from seasonFor() of the
-//     earliest such date in allRounds.
-//   • Trailing bucket: rounds with date >= markers[lastEvenIndex] go
-//     into a final open-ended bucket whose end is +infinity.
-// Each bucket's KEY is the seasonFor() label of its startISO (so the
-// dropdown still shows "1999_00", "2000_01", …). Returns [] when no
-// markers exist (filter falls back to seasonFor()-based behaviour).
-function _lgMarkerSeasonBuckets(){
-  const dates=(typeof _calendarHalfBoundaryDates==='function')?_calendarHalfBoundaryDates():[];
-  if(!dates.length) return [];
+// v2026.05.21.5 — derive season buckets from the half_seson_sep cell
+// TEXT, not just the dates. The marker text is expected to be
+// "NEW HALF SESON <prevHalf>" where prevHalf is a half-season label
+// like "1999_00_S" or "2000_01_A". The marker tells us the half-season
+// the dates STRICTLY BEFORE it belong to.
+//
+// Returns sorted ascending [{date, label, prevHalf, prevSeason}].
+// Empty when no markers exist.
+function _lgMarkerInfo(){
   const out=[];
-  // Pre-history bucket (every round before the first marker).
-  out.push({key:'__PRE__', startISO:'0000-00-00', endISO:dates[0], _pre:true});
-  // Season buckets: every other marker pair.
-  for(let i=0; i<dates.length-2; i+=2){
-    const startISO=dates[i], endISO=dates[i+2];
-    out.push({startISO, endISO, _pre:false});
-  }
-  // Open trailing bucket (rounds after the last "pair end" we covered).
-  const lastPairEnd=dates.length>=3?dates[dates.length-1-((dates.length-1)%2)]:dates[0];
-  const lastUsedEnd=out[out.length-1]?out[out.length-1].endISO:dates[0];
-  if(lastUsedEnd && dates[dates.length-1]>lastUsedEnd){
-    out.push({startISO:lastUsedEnd, endISO:'9999-12-31', _pre:false, _open:true});
-  }
-  // Compute YYYY_YY key per bucket via seasonFor(). For the pre-history
-  // bucket, derive the key from seasonFor(endISO - 1 day) so a CSV whose
-  // earliest dated round is BEFORE the first marker still gets a stable
-  // YYYY_YY label (e.g. first marker 2000-07-05 → __PRE__ bucket → key
-  // seasonFor(2000-07-04) = '1999_00').
-  out.forEach(b=>{
-    if(b._pre){
-      try{
-        const ds=new Date(b.endISO);
-        ds.setDate(ds.getDate()-1);
-        const iso=ds.toISOString().slice(0,10);
-        b.key=seasonFor(iso)||'__PRE__';
-      }catch(_){ b.key='__PRE__'; }
-      return;
-    }
-    try{ b.key=seasonFor(b.startISO)||`${b.startISO}..${b.endISO}`; }
-    catch(_){ b.key=`${b.startISO}..${b.endISO}`; }
+  const d=DB.calendar;
+  if(!d||!d.r||!d.r.length||!d.h||!d.h.length) return out;
+  const _hi=(n)=>d.h.findIndex(h=>String(h||'').trim().toLowerCase()===n);
+  const di=_hi('date'), hsi=_hi('half_seson_sep');
+  if(di<0||hsi<0) return out;
+  d.r.forEach(r=>{
+    const rawDate=r[di];
+    const iso=(typeof normalizeDate==='function'?normalizeDate(rawDate):'')||String(rawDate||'').trim();
+    if(!iso) return;
+    const cell=String(r[hsi]==null?'':r[hsi]).trim();
+    if(!cell) return;
+    // Parse "<anything><spaces>YYYY_YY_(A|S)" — the half-season token at
+    // the END of the cell. Fall back to '' when no token is found.
+    const m=cell.match(/(\d{4}_\d{2}_[AS])\s*$/i);
+    const prevHalf=m?m[1].toUpperCase():'';
+    const prevSeason=prevHalf?prevHalf.slice(0,7):'';
+    out.push({date:iso, label:cell, prevHalf, prevSeason});
   });
+  out.sort((a,b)=>a.date.localeCompare(b.date));
   return out;
 }
-// True when `s` matches any known marker bucket's key (a YYYY_YY label
-// OR the special __PRE__ key). Falls back to literal range-key regex
-// for backwards compatibility with older callers.
-function _isMarkerBucketKey(s){
-  const v=String(s||'');
-  if(v==='__PRE__') return true;
-  if(/^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/.test(v)) return true;
-  const buckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
-  return buckets.some(b=>b.key===v);
+// Compute the YYYY_YY season label for an ISO date using the marker
+// text in calendar.csv. The date inherits the prevSeason of the FIRST
+// marker whose own date is strictly AFTER the ISO date. When the date
+// is after every marker, the season is incremented from the last
+// marker's prevHalf:
+//   2000_01_A → next season half is 2000_01_S
+//   2000_01_S → next season half is 2001_02_A
+// Returns '' when no markers exist (caller falls back to seasonFor()).
+function _markerSeasonForDate(iso){
+  const markers=_lgMarkerInfo();
+  if(!markers.length) return '';
+  // First marker AT or AFTER iso — the marker row itself belongs to
+  // the season it closes (so it appears as the last block of that
+  // season in the Matches view).
+  const next=markers.find(m=>m.date>=iso);
+  if(next) return next.prevSeason||'';
+  // After all markers: extrapolate one half forward from the last one.
+  const last=markers[markers.length-1];
+  if(!last.prevHalf) return '';
+  const m=last.prevHalf.match(/^(\d{4})_(\d{2})_([AS])$/);
+  if(!m) return '';
+  const y=parseInt(m[1]), half=m[3];
+  if(half==='A') return `${y}_${m[2]}`; // _A → _S in same season
+  // _S → next season _A
+  const ny=y+1;
+  return `${ny}_${String((ny+1)%100).padStart(2,'0')}`;
 }
-// True when an ISO date falls inside a marker-bucket key. The key can
-// be a YYYY_YY season label (looked up in the buckets array) or the
-// literal "startISO..endISO" form (legacy callers).
-function _inMarkerBucket(date, key){
+// Returns sorted-unique list of season keys derived from every round's
+// date via _markerSeasonForDate. Used to populate the Matches view
+// season dropdown.
+function _lgMarkerSeasonKeys(allRounds){
+  const markers=_lgMarkerInfo();
+  if(!markers.length) return [];
+  const set=new Set();
+  (allRounds||[]).forEach(r=>{
+    const s=_markerSeasonForDate(r.date);
+    if(s) set.add(s);
+  });
+  return [...set].sort();
+}
+// True when an ISO date belongs to the given marker-derived season key.
+function _inMarkerSeason(date, key){
   if(!date||!key) return false;
-  const m=String(key).match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
-  if(m) return date>=m[1] && date<m[2];
-  const buckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
-  const b=buckets.find(x=>x.key===key);
-  if(!b) return false;
-  // Pre-history: any date strictly before the first marker.
-  if(b._pre) return date<b.endISO;
-  // Open trailing: any date at or after start.
-  if(b._open) return date>=b.startISO;
-  return date>=b.startISO && date<b.endISO;
+  return _markerSeasonForDate(date)===key;
 }
+// Back-compat aliases — every call site that used to ask "is this a
+// marker bucket key" / "is this date in this bucket" now answers the
+// marker-text question instead.
+function _isMarkerBucketKey(s){
+  if(!s) return false;
+  if(!_lgMarkerInfo().length) return false;
+  return /^\d{4}_\d{2}$/.test(String(s));
+}
+function _inMarkerBucket(date, key){ return _inMarkerSeason(date, key); }
 // v2026.05.20.12.3 — fetch the half_seson_sep cell value for a given
 // ISO date (or '' if none). Used by the matches-view round card to show
 // the marker text verbatim.
@@ -2383,13 +2390,12 @@ function renderLeagueView(){
   // the top). Now the first paint already pins to the season covering
   // `current_date`, matching what subsequent renders see.
   if(!lgFilter.season){
-    // v2026.05.21.2 — prefer the marker-derived season bucket that
-    // contains current_date. Falls back to seasonFor()-based label when
+    // v2026.05.21.5 — prefer the marker-derived season key that
+    // contains current_date. Falls back to seasonFor() label when
     // calendar.csv has no markers yet.
-    const _buckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
-    const _hit=_buckets.find(b=>_inMarkerBucket(curDate,b.key));
-    if(_hit){
-      lgFilter.season=_hit.key;
+    const _markerSeason=(typeof _markerSeasonForDate==='function')?_markerSeasonForDate(curDate):'';
+    if(_markerSeason){
+      lgFilter.season=_markerSeason;
     } else if(typeof seasonFor==='function'){
       const _curSeason=seasonFor(curDate);
       const _hasIt=_curSeason && allRounds.some(r=>{
@@ -2422,35 +2428,16 @@ function renderLeagueView(){
     if(r&&r.date&&typeof seasonFor==='function') return seasonFor(r.date)||'';
     return '';
   };
-  // v2026.05.21.3 — when calendar markers exist, season dropdown
-  // options are derived from marker buckets (one option per football
-  // season delimited by markers). Each option's KEY is the YYYY_YY
-  // label from seasonFor(bucket.startISO) so the dropdown still reads
-  // like the legacy season selector. Filtering uses date-range
-  // membership against the bucket's [startISO, endISO).
-  //   • Buckets that don't contain a single round are hidden.
-  //   • The pre-history bucket (rounds before the first marker) is
-  //     labelled by seasonFor() of the earliest pre-history round.
-  // Falls back to old seasonFor()-based dropdown when no markers exist.
-  const _markerBuckets=(typeof _lgMarkerSeasonBuckets==='function')?_lgMarkerSeasonBuckets():[];
-  const _useMarkerBuckets=_markerBuckets.length>0;
-  // (v2026.05.21.4) Pre-history key derivation moved inside
-  // _lgMarkerSeasonBuckets() so every call site sees the same YYYY_YY
-  // key (filter helpers, dropdown, default seed, etc.).
-  // Direct date-range membership test against each bucket's own start/end,
-  // not via _inMarkerBucket(key) — that helper rebuilds buckets internally
-  // and would lose our remapped pre-history key (__PRE__ → 1999_00).
-  const _bucketContainsDate=(b,d)=>{
-    if(!d) return false;
-    if(b._pre) return d<b.endISO;
-    if(b._open) return d>=b.startISO;
-    return d>=b.startISO && d<b.endISO;
-  };
-  const _usedBuckets=_useMarkerBuckets
-    ? _markerBuckets.filter(b=>allRounds.some(r=>_bucketContainsDate(b,r.date)))
-    : [];
+  // v2026.05.21.5 — season dropdown is driven by marker TEXT in
+  // calendar.csv (format "NEW HALF SESON <YYYY_YY_(A|S)>"). Each round's
+  // date is mapped to a YYYY_YY season key via _markerSeasonForDate;
+  // the dropdown lists every distinct season key that has at least one
+  // round. Falls back to the seasonFor()-based dropdown when no
+  // markers exist.
+  const _markerSeasonKeys=(typeof _lgMarkerSeasonKeys==='function')?_lgMarkerSeasonKeys(allRounds):[];
+  const _useMarkerBuckets=_markerSeasonKeys.length>0;
   const allSeasons=_useMarkerBuckets
-    ? _usedBuckets.map(b=>b.key)
+    ? _markerSeasonKeys
     : [...new Set(allRounds.map(_seasonOfRound))].filter(Boolean).sort();
   const _seasonOptionLabel=(s)=>seasonLabel(s) || s;
   // v19.6 — the season default is now seeded at the top of this function,
