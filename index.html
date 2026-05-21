@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.8</title>
+<title>League Manager v2026.05.21.9</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.8</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.9</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1716,10 +1716,21 @@ function seasonLabel(s){
   return m?`${m[1]}/${m[2]}`:s;
 }
 
+// v2026.05.21.9 — tolerant half-season column lookup. Some users' real
+// team_skills.csv carries the column as `seson` (or `half_seson`) instead
+// of the canonical `half_season`. Match all three, case-insensitive.
+function _tsHalfCol(d){
+  if(!d||!d.h||!d.h.length) return -1;
+  for(let i=0;i<d.h.length;i++){
+    const k=String(d.h[i]||'').trim().toLowerCase();
+    if(k==='half_season'||k==='seson'||k==='half_seson') return i;
+  }
+  return -1;
+}
 function teamSkillsFor(teamId,halfSeason){
   const d=DB.team_skills;
   if(!d.h.length||!d.r.length)return defaultSkills();
-  const ti=d.h.indexOf('team_id'),hsi=d.h.indexOf('half_season');
+  const ti=d.h.indexOf('team_id'),hsi=_tsHalfCol(d);
   if(ti<0)return defaultSkills();
   // Lookup order:
   //   1. exact half-season match
@@ -4610,7 +4621,7 @@ const _HB_SKILL_COLS=['skills','home'];
 // Returns the integer cell value, or NaN if no row matches.
 function _hbReadSkill(teamId, halfTag, col){
   const d=DB.team_skills; if(!d||!d.r||!d.h)return NaN;
-  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season'), ci=d.h.indexOf(col);
+  const ti=d.h.indexOf('team_id'), hi=_tsHalfCol(d), ci=d.h.indexOf(col);
   if(ti<0||hi<0||ci<0)return NaN;
   const row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
   if(!row)return NaN;
@@ -4627,7 +4638,7 @@ function _hbReadSkill(teamId, halfTag, col){
 function _hasTeamSkillsRow(teamId, halfSeason){
   const d=DB.team_skills;
   if(!d||!d.h||!d.h.length||!d.r||!d.r.length) return false;
-  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season'), si=d.h.indexOf('skills');
+  const ti=d.h.indexOf('team_id'), hi=_tsHalfCol(d), si=d.h.indexOf('skills');
   if(ti<0) return false;
   const _good=(row)=>{
     if(si<0) return true;
@@ -4750,7 +4761,7 @@ async function _submitMissingSkills(btn){
 
 function _hbUpsertSpringSkill(teamId, halfTag, values){
   const d=DB.team_skills; if(!d||!d.h||!d.h.length)return 'noop';
-  const ti=d.h.indexOf('team_id'), hi=d.h.indexOf('half_season');
+  const ti=d.h.indexOf('team_id'), hi=_tsHalfCol(d);
   if(ti<0||hi<0)return 'noop';
   let row=d.r.find(r=>String(r[ti]||'').trim()===teamId&&String(r[hi]||'').trim()===halfTag);
   if(!row){
