@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.10</title>
+<title>League Manager v2026.05.21.12</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.10</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.12</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1632,8 +1632,12 @@ function _lgMarkerInfo(){
         out.push({date:iso, kind:'start', season:m[1], label:tok, raw:cell});
       } else if((m=tok.match(/^(\d{4}_\d{2})-end$/i))){
         out.push({date:iso, kind:'end', season:m[1], label:tok, raw:cell});
-      } else if(/^new\s+half\s+seson/i.test(tok)){
-        out.push({date:iso, kind:'gen', season:'', label:tok, raw:cell});
+      } else if((m=tok.match(/^new\s+half\s+seson(?:[\s-]+(A|S))?\b/i))){
+        // v2026.05.21.12 — accept optional `-A` / `-S` suffix that explicitly
+        // names the half being generated. "NEW HALF SESON-A" / "NEW HALF
+        // SESON-S" (also "NEW HALF SESON A" / "NEW HALF SESON S") set
+        // m.half to 'A' or 'S'. Bare "NEW HALF SESON" leaves it ''.
+        out.push({date:iso, kind:'gen', season:'', half:m[1]?m[1].toUpperCase():'', label:tok, raw:cell});
       }
     });
   });
@@ -2236,6 +2240,7 @@ function _lgCalendarRounds(){
         round:m.label||'NEW HALF SESON',
         game_day:'',
         season:seasonForGen(m.date),
+        half:m.half||'',
         key:'__HALF_SESON_SEP__||'+m.date
       });
     });
@@ -2878,8 +2883,8 @@ function renderLeagueRoundCardHTML(info,curDate,anchor){
         <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px;">
           Clicking opens the team-skills editor, then generates the new half-season and jumps to its first match.
         </div>
-        <button class="tbtn db-now next" onclick="_runHalfSeasonGenerator('${esc(info.date)}')" style="padding:8px 16px;font-weight:600;">
-          ⏭ Generate new half-season
+        <button class="tbtn db-now next" onclick="_runHalfSeasonGenerator('${esc(info.date)}','${esc(info.half||'')}')" style="padding:8px 16px;font-weight:600;">
+          ⏭ Generate new half-season${info.half?` (${esc(info.half)})`:''}
         </button>
       </div>
     </div>`;
@@ -4353,14 +4358,37 @@ const _juneNewSeasonPopupShown=new Set();
 // directly with the (season,mode) pair we compute here fixes that —
 // baseline data always comes from the half immediately before the
 // marker's half.
-async function _runHalfSeasonGenerator(markerDate){
+async function _runHalfSeasonGenerator(markerDate, explicitHalf){
   if(!markerDate){ toast('Marker date missing','err'); return; }
   const ds=new Date(markerDate);
   if(isNaN(ds)){ toast('Invalid marker date '+markerDate,'err'); return; }
-  const dstHalfTag=(typeof halfSeasonFor==='function')?halfSeasonFor(markerDate):'';
+  // v2026.05.21.12 — destination-half resolution order:
+  //   1. `explicitHalf` ('A' / 'S') passed in from the marker — set when the
+  //      calendar row's half_seson_sep cell carries the explicit suffix
+  //      "NEW HALF SESON-A" / "NEW HALF SESON-S".
+  //   2. halfSeasonFor() of the FIRST real calendar round strictly after
+  //      markerDate — robust against markers placed on the last day of the
+  //      old half (e.g. Dec 31 for a spring boundary).
+  //   3. halfSeasonFor(markerDate) itself — final fallback.
+  let dstSeason='', dstHalf='';
+  const eh=String(explicitHalf||'').trim().toUpperCase();
+  let lookupDate=markerDate;
+  try{
+    const all=(typeof _lgCalendarRounds==='function')?_lgCalendarRounds():[];
+    const firstAfter=all
+      .filter(r=>r&&r.date&&r.date>markerDate&&r.competition!=='__HALF_SESON_SEP__')
+      .map(r=>r.date)
+      .sort()[0];
+    if(firstAfter) lookupDate=firstAfter;
+  }catch(_){ /* fall back to markerDate */ }
+  const dstHalfTag=(typeof halfSeasonFor==='function')?halfSeasonFor(lookupDate):'';
   const m=/^(\d{4}_\d{2})_(A|S)$/.exec(dstHalfTag||'');
-  if(!m){ toast('Could not resolve half for '+markerDate,'err'); return; }
-  const dstSeason=m[1], dstHalf=m[2];
+  if(!m){ toast('Could not resolve half for '+markerDate+' (lookup '+lookupDate+')','err'); return; }
+  dstSeason=m[1];
+  dstHalf=(eh==='A'||eh==='S')?eh:m[2];
+  if((eh==='A'||eh==='S') && eh!==m[2]){
+    console.log(`[_runHalfSeasonGenerator] marker explicit half '${eh}' overrides date-derived '${m[2]}' (season ${dstSeason})`);
+  }
   const _prevSeasonStr=(s)=>{
     const mm=String(s||'').match(/^(\d{4})_(\d{2})$/);
     if(!mm) return s;
