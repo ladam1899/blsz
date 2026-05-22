@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>League Manager v2026.05.21.15</title>
+<title>League Manager v2026.05.22.1</title>
 <!--
   ╔══════════════════════════════════════════════════════════╗
   ║  PUBLIC FILE — contains zero personal / team data        ║
@@ -900,7 +900,7 @@ header{background:var(--green);height:var(--hdr);padding:0 20px;display:flex;ali
 <!-- Header -->
 <header>
   <div style="display:flex;align-items:center;gap:0">
-    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.21.15</span></div>
+    <div class="logo">⚽ League Manager <span style="font-size:.6em;opacity:.55;font-weight:400;margin-left:.4em">v2026.05.22.1</span></div>
     <span class="logo-season" id="seasonLabel"></span>
   </div>
   <div class="hdr-right">
@@ -1333,7 +1333,7 @@ async function saveSheet(name, opts){
   if(!d.h.length)d.h=[...ED_DEFAULTS[name]];
   // v21.1 — matches saves go to the current season's file only. Past
   // seasons live in their own files and are never touched by the app.
-  // v2026.05.21.15 — opts.season lets callers override the destination
+  // v2026.05.21.13 — opts.season lets callers override the destination
   // season (used by Generate Season when targetSeason differs from the
   // current_date's season, so newly-generated rows actually land in
   // matches_{targetSeason}.csv instead of being filtered out).
@@ -1357,7 +1357,7 @@ async function saveSheet(name, opts){
 // the app. The first save after this version creates
 // `matches_<currentSeason>.csv` if it doesn't exist yet.
 async function _saveMatchesCurrentOnly(d, seasonOverride){
-  // v2026.05.21.15 — seasonOverride lets Generate Season target the
+  // v2026.05.21.13 — seasonOverride lets Generate Season target the
   // season it just populated even when current_date hasn't crossed yet
   // (the rollover bumps current_date AFTER generation). Without this,
   // newly-generated rows for a future season were filtered out and the
@@ -3715,6 +3715,11 @@ function _lgBuildPeriodLine(row,c){
   const hsF=c.hs>=0?parseInt(row[c.hs]):NaN;
   const asF=c.as>=0?parseInt(row[c.as]):NaN;
   const mtype=c.mtype>=0?String(row[c.mtype]||'').trim():'';
+  const rndRaw=c.rounds>=0?String(row[c.rounds]||'').trim():'';
+  // v2026.05.22.1 — NKW- rounds get a compact format: "(h-a)  ET h:a" or
+  // "(h-a)  Pen: h:a". HT in parens, FT omitted (main score line already
+  // shows the cumulative total), only ET / PEN appended when they exist.
+  const isNkw=/^NKW-/i.test(rndRaw);
   // League / group / first-leg matches (match_type = 0): show ONLY the
   // half-time score in parentheses, nothing else.
   if(mtype==='0'){
@@ -3738,6 +3743,20 @@ function _lgBuildPeriodLine(row,c){
   while((mm=labelRe.exec(cleaned))){
     const k=mm[1].toUpperCase();
     parsed[k]={h:parseInt(mm[2]),a:parseInt(mm[3])};
+  }
+  // v2026.05.22.1 — NKW- compact format: "(h-a)  ET h:a" / "(h-a)  Pen: h:a"
+  if(isNkw){
+    const ht=parsed['HT']||(parsed['1H']?{h:parsed['1H'].h,a:parsed['1H'].a}:null);
+    const htStr=(ht&&!isNaN(ht.h)&&!isNaN(ht.a))
+      ?`(${ht.h}-${ht.a})`
+      :((!isNaN(h1)&&!isNaN(a1))?`(${h1}-${a1})`:'');
+    const et=parsed['ET']||parsed['AET'];
+    const pen=parsed['PEN'];
+    const tail=[];
+    if(et&&!isNaN(et.h)&&!isNaN(et.a)) tail.push(`ET ${et.h}:${et.a}`);
+    if(pen&&!isNaN(pen.h)&&!isNaN(pen.a)) tail.push(`Pen: ${pen.h}:${pen.a}`);
+    if(htStr||tail.length) return [htStr,...tail].filter(Boolean).join('  ');
+    // Fall through to legacy fallback if nothing parsed.
   }
   const parts=[];
   const pp=(labelKey,displayLabel)=>{
@@ -9085,7 +9104,7 @@ async function generateSeasonFromDraw(targetSeason, half){
     console.warn(`[GenerateSeason] ${nkUnresolved.length} NK unresolved sides. Sample:`,nkUnresolved.slice(0,10));
   }
   try{
-    // v2026.05.21.15 — pass targetSeason so _saveMatchesCurrentOnly writes
+    // v2026.05.21.13 — pass targetSeason so _saveMatchesCurrentOnly writes
     // matches_{targetSeason}.csv even when current_date is still in the
     // previous season (rollover bumps current_date AFTER this returns).
     await saveSheet('matches',{season:targetSeason});
